@@ -9,6 +9,8 @@ import android.graphics.Color
  * - "Sólido (iPhone)": igual al teclado de iOS 26/27 (gris oscuro o claro según el sistema).
  * - Transparente / Predeterminado: Liquid Glass con desenfoque.
  * - AMOLED: negro puro.
+ * - Liquid Glass de color: vidrio teñido con el color de la app que estás usando,
+ *   con un difuminado que es más intenso arriba y se aclara hacia abajo.
  * Con "Combinar con la app", el color de acento sale del ícono de la app que estás usando.
  */
 data class Tema(
@@ -26,6 +28,8 @@ data class Tema(
     val desenfoque: Int,
     /** Color del ícono/texto sobre la tecla de acción (blanco o negro según el acento) */
     val textoAcento: Int = 0xFFFFFFFF.toInt(),
+    /** Color de la parte de arriba del fondo (0 = fondo de un solo color) */
+    val fondoArriba: Int = 0,
 ) {
     companion object {
         private fun a(alfa: Int, rgb: Int) = (alfa shl 24) or (rgb and 0xFFFFFF)
@@ -38,13 +42,50 @@ data class Tema(
 
         private fun conAcento(t: Tema, acento: Int?): Tema {
             if (acento == null) return t
-            val lum = (0.299 * Color.red(acento) + 0.587 * Color.green(acento) + 0.114 * Color.blue(acento)) / 255.0
             val fondoArmonizado = if (t.fondo == 0xFF000000.toInt()) t.fondo else mezclar(t.fondo, acento, 0.05f)
             return t.copy(
                 azul = acento,
-                textoAcento = if (lum > 0.68) 0xFF000000.toInt() else 0xFFFFFFFF.toInt(),
+                textoAcento = textoSobre(acento),
                 fondo = fondoArmonizado,
             )
+        }
+
+        private fun textoSobre(acento: Int): Int {
+            val lum = (0.299 * Color.red(acento) + 0.587 * Color.green(acento) + 0.114 * Color.blue(acento)) / 255.0
+            return if (lum > 0.68) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
+        }
+
+        /** Liquid Glass teñido con el color de la app (verde en WhatsApp, rosado en Instagram…) */
+        private fun vidrioDeColor(context: Context, oscuro: Boolean, conDesenfoque: Boolean, color: Int): Tema {
+            val base = if (oscuro) 0xFF121214.toInt() else 0xFFF4F5F8.toInt()
+            val blanco = 0xFFFFFFFF.toInt()
+            val tinte = mezclar(base, color, if (oscuro) 0.26f else 0.20f)
+            val tinteArriba = mezclar(base, color, if (oscuro) 0.48f else 0.38f)
+            val teclaRgb = mezclar(blanco, color, if (oscuro) 0.20f else 0.07f)
+            val radioBlur = if (conDesenfoque) (Medidas.escala(context) * 26).toInt() else 0
+            return Tema(
+                oscuro = oscuro,
+                fondo = a(if (conDesenfoque) 0x78 else 0xDC, tinte),
+                fondoArriba = a(if (conDesenfoque) 0x9E else 0xEA, tinteArriba),
+                tecla = a(if (oscuro) 0x3A else 0xB8, teclaRgb),
+                teclaFuncion = a(if (oscuro) 0x22 else 0x6E, teclaRgb),
+                teclaPresionada = a(if (oscuro) 0x80 else 0xE6, mezclar(blanco, color, 0.15f)),
+                sombra = 0,
+                texto = if (oscuro) blanco else 0xFF000000.toInt(),
+                textoSecundario = if (oscuro) 0xFFB4B4BA.toInt() else 0xFF5E5E64.toInt(),
+                azul = color,
+                borde = a(if (oscuro) 0x50 else 0xB3, mezclar(blanco, color, 0.30f)),
+                brillo = a(if (oscuro) 0x30 else 0x70, blanco),
+                desenfoque = radioBlur,
+                textoAcento = textoSobre(color),
+            )
+        }
+
+        /** Color de acento del sistema (Material You), para cuando la app no tiene color */
+        private fun acentoSistema(context: Context, oscuro: Boolean): Int = try {
+            context.getColor(if (oscuro) android.R.color.system_accent1_300 else android.R.color.system_accent1_500)
+        } catch (_: Exception) {
+            if (oscuro) 0xFF0A84FF.toInt() else 0xFF007AFF.toInt()
         }
 
         /** conDesenfoque: si el sistema puede desenfocar lo que hay detrás. acento: color de la app */
@@ -71,6 +112,9 @@ data class Tema(
                     brillo = a(0x0F, 0xFFFFFF),
                     desenfoque = 0,
                 ), acento)
+            }
+            if (Ajustes.vidrio(context) == "color") {
+                return vidrioDeColor(context, oscuro, conDesenfoque, acento ?: acentoSistema(context, oscuro))
             }
             val nivel = when (Ajustes.vidrio(context)) {
                 "transparente" -> 0

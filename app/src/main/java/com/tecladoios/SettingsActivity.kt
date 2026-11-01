@@ -363,11 +363,13 @@ class SettingsActivity : Activity() {
             filaCheck("Transparente", vidrio == "transparente") { elegir("vidrio", "transparente") },
             filaCheck("Predeterminado", vidrio == "normal") { elegir("vidrio", "normal") },
             filaCheck("Sólido (como iPhone)", vidrio == "tintado") { elegir("vidrio", "tintado") },
+            filaCheck("De color (según la app)", vidrio == "color") { elegir("vidrio", "color") },
             filaInterruptor("Desenfocar el fondo", "desenfoque", true),
             filaInterruptor("Combinar con la app", "adaptar", true),
         ), pie = "“Sólido” es el diseño del teclado del iPhone. “Combinar con la app” toma el color " +
                 "de la app que estás usando (verde en WhatsApp, rosado en Instagram…) para la tecla de " +
-                "acción y un toque sutil del fondo.")
+                "acción y un toque sutil del fondo. “De color” tiñe todo el vidrio con el color de la app, " +
+                "difuminado de arriba hacia abajo; si la app no tiene color, usa el de tu fondo de pantalla.")
 
         val tema = Ajustes.tema(this)
         grupo("Apariencia", listOf(
@@ -405,6 +407,8 @@ class SettingsActivity : Activity() {
                         prefs.edit()
                             .remove("aprendidas")
                             .remove("pares")
+                            .remove("bloqueadas")
+                            .remove("nombres")
                             .putInt("aprendidas_rev", prefs.getInt("aprendidas_rev", 0) + 1)
                             .apply()
                         Toast.makeText(this, "Diccionario restablecido", Toast.LENGTH_SHORT).show()

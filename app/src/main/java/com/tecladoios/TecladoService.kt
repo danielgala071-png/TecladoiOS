@@ -57,6 +57,8 @@ class TecladoService : InputMethodService(),
     private var toqueFino: Boolean? = null
     private var ultimaCorreccion: Pair<String, String>? = null
     private var ultimoEspacio = 0L
+    /** (palabra anterior, palabra, texto que quedó escrito) de lo último que se aprendió */
+    private var ultimaAprendida: Triple<String, String, String>? = null
     /** true justo después de elegir una sugerencia (el espacio lo puso el teclado) */
     private var espacioAutomatico = false
 
@@ -113,7 +115,11 @@ class TecladoService : InputMethodService(),
             orientation = LinearLayout.VERTICAL
             // Panel con un filo de luz arriba, como el teclado del iPhone
             background = GradientDrawable().apply {
-                setColor(t.fondo)
+                // Liquid Glass de color: el tono de la app se difumina de arriba hacia abajo
+                if (t.fondoArriba != 0) {
+                    orientation = GradientDrawable.Orientation.TOP_BOTTOM
+                    colors = intArrayOf(t.fondoArriba, t.fondo, t.fondo)
+                } else setColor(t.fondo)
                 val r = 30f * Medidas.escala(this@TecladoService)
                 cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
                 setStroke(maxOf(1, (resources.displayMetrics.density * 0.6f).toInt()),
@@ -374,7 +380,7 @@ class TecladoService : InputMethodService(),
             return
         }
 
-        val corr = if (autocorreccionActiva) diccionario.corregir(p) else null
+        val corr = if (autocorreccionActiva) diccionario.corregir(p, previa) else null
         val otras = diccionario.sugerir(p, 4, previa).filter { it != corr && it != p }
         val centro = corr?.let { Sugerencia(it, destacada = true) } ?: otras.getOrNull(0)?.let { Sugerencia(it) }
         val derecha = (if (corr != null) otras.getOrNull(0) else otras.getOrNull(1))?.let { Sugerencia(it) }
@@ -388,6 +394,7 @@ class TecladoService : InputMethodService(),
     private fun cerrarPalabra(sufijo: String) {
         val ic = currentInputConnection ?: return
         espacioAutomatico = false
+        ultimaAprendida = null
 
         // 1) Sustitución de texto
         val token = tokenActual()
@@ -420,7 +427,7 @@ class TecladoService : InputMethodService(),
 
         // 2) Autocorrección de la palabra (tildes que faltan y errores de tipeo)
         var nuevaPalabra = palabra
-        if (autocorreccionActiva) diccionario.corregir(palabra)?.let { nuevaPalabra = it }
+        if (autocorreccionActiva) diccionario.corregir(palabra, previa)?.let { nuevaPalabra = it }
 
         // 3) Tildes que dependen de la palabra anterior ("que tal" → "qué tal")
         var nuevaPrevia = previa
@@ -434,6 +441,10 @@ class TecladoService : InputMethodService(),
         if (sugerenciasActivas) {
             diccionario.aprender(nuevaPalabra)
             diccionario.aprenderPar(nuevaPrevia, nuevaPalabra)
+            // Si hay palabra anterior pegada, estás a mitad de oración (sirve para recordar nombres)
+            diccionario.notarMayuscula(nuevaPalabra, previa.isNotEmpty())
+            // Si borras el espacio enseguida, se deshace lo aprendido (era un error)
+            ultimaAprendida = if (sufijo == " ") Triple(nuevaPrevia, nuevaPalabra, nuevaPalabra + sufijo) else null
         }
 
         if (nuevaPrevia == previa && nuevaPalabra == palabra) {
@@ -491,6 +502,7 @@ class TecladoService : InputMethodService(),
 
     override fun texto(s: String) {
         val ic = currentInputConnection ?: return
+        ultimaAprendida = null
         if (s == "?") acentuarPregunta()
         if (s.length == 1 && s[0] in ".,;:!?") {
             // Después de elegir una sugerencia, la puntuación se pega a la palabra: "hola, "
@@ -536,6 +548,8 @@ class TecladoService : InputMethodService(),
         espacioAutomatico = false
         val uc = ultimaCorreccion
         ultimaCorreccion = null
+        val ua = ultimaAprendida
+        ultimaAprendida = null
         if (uc != null) {
             // Deshacer la autocorrección como en iPhone
             val antes = ic.getTextBeforeCursor(uc.second.length, 0)?.toString()
@@ -544,9 +558,18 @@ class TecladoService : InputMethodService(),
                 ic.deleteSurroundingText(uc.second.length, 0)
                 ic.commitText(uc.first, 1)
                 ic.endBatchEdit()
-                diccionario.aprender(uc.first, 2)
+                // La corrección no era lo que querías: se olvida y se aprende lo tuyo
+                if (ua != null) diccionario.desaprender(ua.second, ua.first)
+                uc.first.split(" ").filter { it.isNotBlank() }.forEach {
+                    diccionario.aprender(it, 2)
+                    if (it.all { c -> c.isLowerCase() }) diccionario.notarMayuscula(it, true)
+                }
                 return
             }
+        }
+        // Borraste el espacio justo después de una palabra: no se cuenta como aprendida
+        if (ua != null && ic.getTextBeforeCursor(ua.third.length, 0)?.toString() == ua.third) {
+            diccionario.desaprender(ua.second, ua.first)
         }
         val seleccion = ic.getSelectedText(0)
         if (!seleccion.isNullOrEmpty()) ic.commitText("", 1)
@@ -569,6 +592,7 @@ class TecladoService : InputMethodService(),
 
     override fun moverCursor(pasos: Int) {
         espacioAutomatico = false
+        ultimaAprendida = null
         ultimaCorreccion = null
         val tecla = if (pasos > 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
         repeat(Math.abs(pasos)) { sendDownUpKeyEvents(tecla) }
@@ -605,6 +629,7 @@ class TecladoService : InputMethodService(),
 
     override fun emoji(s: String) {
         ultimaCorreccion = null
+        ultimaAprendida = null
         espacioAutomatico = false
         currentInputConnection?.commitText(s, 1)
     }
@@ -620,7 +645,12 @@ class TecladoService : InputMethodService(),
             ic.deleteSurroundingText(uc.second.length, 0)
             ic.commitText(uc.first + sufijo, 1)
             ic.endBatchEdit()
-            uc.first.split(" ").forEach { diccionario.aprender(it, 2) }
+            ultimaAprendida?.let { diccionario.desaprender(it.second, it.first) }
+            ultimaAprendida = null
+            uc.first.split(" ").filter { it.isNotBlank() }.forEach {
+                diccionario.aprender(it, 2)
+                if (it.all { c -> c.isLowerCase() }) diccionario.notarMayuscula(it, true)
+            }
             ultimaCorreccion = null
             retro(Tipo.LETRA)
             return
@@ -633,9 +663,18 @@ class TecladoService : InputMethodService(),
         ic.endBatchEdit()
         diccionario.aprender(s.texto, if (s.literal) 2 else 1)
         diccionario.aprenderPar(previa, s.texto)
+        ultimaAprendida = Triple(previa, s.texto, s.texto + " ")
         ultimaCorreccion = null
         espacioAutomatico = true
         retro(Tipo.LETRA)
+    }
+
+    /** Mantener presionada una sugerencia → Borrar: el teclado olvida esa palabra */
+    override fun olvidar(s: Sugerencia) {
+        if (dictando) return
+        diccionario.olvidar(s.texto)
+        retro(Tipo.BORRAR)
+        actualizarBarra()
     }
 
     // ---------- Dictado ----------
