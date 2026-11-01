@@ -34,7 +34,7 @@ class KeyPreviewView(context: Context) : View(context) {
 
     private val d = resources.displayMetrics.density
     val pad get() = 12f * d
-    private val anchoPrev get() = keyWidth * 1.14f
+    private val anchoPrev get() = keyWidth * 1.26f
     private val altoPrev get() = keyHeight * 2.3f
 
     fun totalWidth() = (anchoPrev + pad * 2).toInt()
@@ -69,29 +69,39 @@ class KeyPreviewView(context: Context) : View(context) {
         // Vidrio gris azulado translúcido, como en la imagen
         val arriba: Int; val abajo: Int
         if (darkMode) {
-            // Mismo tono que las teclas, más claro y con vidrio, como en iOS
-            val base = aclarar(colorTecla, 0.30f)
-            arriba = (aclarar(base, 0.06f) and 0x00FFFFFF) or (0xF5 shl 24)
-            abajo = (base and 0x00FFFFFF) or (0xF0 shl 24)
+            // "Sobreexpuesta": mucho más clara que las teclas, como la O del iPhone
+            val base = aclarar(colorTecla, 0.50f)
+            arriba = (aclarar(base, 0.10f) and 0x00FFFFFF) or (0xF7 shl 24)
+            abajo = (base and 0x00FFFFFF) or (0xF2 shl 24)
         } else {
-            arriba = 0xFCFFFFFF.toInt(); abajo = 0xF8F1F2F5.toInt()
+            arriba = 0xFFFFFFFF.toInt(); abajo = 0xFAF4F5F8.toInt()
         }
+
+        // Resplandor suave alrededor (luz que se escapa del vidrio)
+        cuerpo.shader = null
+        cuerpo.color = abajo
+        cuerpo.setShadowLayer(14f * d, 0f, 0f, if (darkMode) 0x55FFFFFF else 0x40000000)
+        canvas.drawRoundRect(rect, radio, radio, cuerpo)
+        cuerpo.clearShadowLayer()
+
+        // Cuerpo de vidrio claro, un poco más brillante arriba
         cuerpo.shader = LinearGradient(0f, rect.top, 0f, rect.bottom, arriba, abajo, Shader.TileMode.CLAMP)
-        cuerpo.setShadowLayer(10f * d, 0f, 3f * d, 0x30000000)
         canvas.drawRoundRect(rect, radio, radio, cuerpo)
 
-        // Reflejo de luz arriba (Liquid Glass)
-        brillo.shader = LinearGradient(0f, rect.top, 0f, rect.top + alto * 0.4f,
-            0x4DFFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
+        // Reflejo de luz en la parte de arriba
+        brillo.shader = LinearGradient(0f, rect.top, 0f, rect.top + alto * 0.35f,
+            0x40FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
         canvas.drawRoundRect(rect, radio, radio, brillo)
 
-        borde.color = 0x80FFFFFF.toInt()
+        borde.color = if (darkMode) 0xB3FFFFFF.toInt() else 0x33000000
         canvas.drawRoundRect(rect, radio, radio, borde)
 
         // La letra aparece y sube junto con la cápsula
         val alfaLetra = ((p - 0.25f) / 0.6f).coerceIn(0f, 1f)
         textPaint.color = if (darkMode) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
         textPaint.alpha = (255 * alfaLetra).toInt()
+        // Sombra suave para que la letra blanca resalte sobre el vidrio claro
+        if (darkMode) textPaint.setShadowLayer(4f * d, 0f, 1f * d, 0x59000000) else textPaint.clearShadowLayer()
         textPaint.textSize = keyHeight * 0.6f
         val fm = textPaint.fontMetrics
         // Letra en la parte de arriba de la cápsula, como la "O" del iPhone

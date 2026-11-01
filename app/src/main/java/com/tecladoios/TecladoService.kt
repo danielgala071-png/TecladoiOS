@@ -63,6 +63,7 @@ class TecladoService : InputMethodService(),
 
     override fun onCreate() {
         super.onCreate()
+        Fuentes.iniciar(this)
         diccionario = Diccionario(this)
         vibrador = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             getSystemService(VibratorManager::class.java)?.defaultVibrator

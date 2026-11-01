@@ -7,6 +7,7 @@ import android.util.Log
 class App : Application() {
     override fun onCreate() {
         super.onCreate()
+        Fuentes.iniciar(this)
         val previo = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { hilo, error ->
             try {

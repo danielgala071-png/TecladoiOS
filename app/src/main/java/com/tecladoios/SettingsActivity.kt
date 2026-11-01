@@ -186,7 +186,7 @@ class SettingsActivity : Activity() {
         contenedor.addView(TextView(this).apply {
             text = texto
             textSize = 34f
-            typeface = Typeface.DEFAULT_BOLD
+            Fuentes.aplicar(this, 700)
             setTextColor(colorTexto)
             setPadding(dp(4), dp(12), 0, dp(12))
         })
@@ -196,6 +196,7 @@ class SettingsActivity : Activity() {
         if (titulo != null) {
             contenedor.addView(TextView(this).apply {
                 text = titulo.uppercase()
+                Fuentes.aplicar(this, 400)
                 textSize = 13f
                 setTextColor(gris)
                 setPadding(dp(16), dp(22), dp(16), dp(7))
@@ -225,6 +226,7 @@ class SettingsActivity : Activity() {
         if (pie != null) {
             piePagina = TextView(this).apply {
                 text = pie
+                Fuentes.aplicar(this, 400)
                 textSize = 13f
                 setTextColor(gris)
                 setPadding(dp(16), dp(7), dp(16), 0)
@@ -243,6 +245,7 @@ class SettingsActivity : Activity() {
 
     private fun textoFila(texto: String, color: Int = colorTexto) = TextView(this).apply {
         text = texto
+        Fuentes.aplicar(this, 400)
         textSize = 17f
         setTextColor(color)
         maxLines = 2

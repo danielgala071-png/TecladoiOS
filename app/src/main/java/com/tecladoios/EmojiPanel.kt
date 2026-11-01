@@ -273,7 +273,8 @@ class EmojiGrid(
         var x = margen
         for (s in secciones) {
             inicios.add(x)
-            x += columnasDe(s.emojis.size) * celda
+            // La sección es al menos tan ancha como su título (para que no se encimen)
+            x += maxOf(columnasDe(s.emojis.size) * celda, pinturaTitulo.measureText(s.titulo) + 12f * d)
             finales.add(x)
             x += separacion
         }
