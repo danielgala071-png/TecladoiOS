@@ -29,6 +29,8 @@ class KeyPreviewView(context: Context) : View(context) {
     var darkMode = false
     /** Color de las teclas: la vista previa es del mismo tono, mucho más clara */
     var colorTecla = 0xFF343437.toInt()
+    /** Redondeo de la tecla, para que el pie de la vista previa calce con ella */
+    var radioTecla = 6f * resources.displayMetrics.density
 
     /** 0 = del tamaño de la tecla, 1 = vista previa completa */
     var progreso = 0f
@@ -71,7 +73,7 @@ class KeyPreviewView(context: Context) : View(context) {
         val kl = cx - kw / 2f
         val kr = cx + kw / 2f
         val r = minOf(bh * 0.34f, (der - izq) * 0.28f)
-        val rk = minOf(9f * d, kw * 0.3f)
+        val rk = minOf(radioTecla, kw * 0.3f)
         val n = kh * 0.34f * p            // largo del cuello
 
         path.reset()
@@ -145,10 +147,10 @@ private fun aclarar(c: Int, f: Float): Int {
             (canal((c shr 8) and 0xFF) shl 8) or canal(c and 0xFF)
 }
 
-/** Muestra y anima la cápsula. Se reutiliza para que no parpadee. */
-class KeyPreviewManager(private val anchor: View) {
+/** Muestra y anima una cápsula. Cada dedo usa la suya, así cada toque es independiente. */
+class KeyPreviewManager(private val anchor: View, radioTecla: Float) {
 
-    private val vista = KeyPreviewView(anchor.context)
+    private val vista = KeyPreviewView(anchor.context).apply { this.radioTecla = radioTecla }
     private val popup = PopupWindow(vista).apply {
         isClippingEnabled = false
         isTouchable = false

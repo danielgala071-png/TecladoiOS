@@ -58,7 +58,8 @@ class KeyboardView(
     private val margenAbajo = dp(8f)
     private val sepH = dp(3f)
     private val sepV = dp(5.5f)
-    private val radio = dp(12.5f)
+    // Esquinas pequeñas como el teclado del iPhone (antes 12.5, se veían tipo almohada)
+    private val radio = dp(4.6f)
     private val formaPulso = Path()
 
     // Franja inferior como en iPhone: emoji a la izquierda y micrófono a la derecha
@@ -69,10 +70,9 @@ class KeyboardView(
     var dictando = false
         set(value) { field = value; invalidate() }
 
-    // Efecto líquido al presionar teclas de función (iOS 27)
-    private var teclaPulso: Tecla? = null
-    private var pulso = 0f
-    private var animPulso: ValueAnimator? = null
+    // Efecto líquido al presionar teclas de función (iOS 27): cada tecla anima por su cuenta
+    private val pulsos = HashMap<Tecla, Float>()
+    private val animPulsos = HashMap<Tecla, ValueAnimator>()
 
     // Letra fina como la de iPhone, sin importar el grosor de letra del sistema
     private val fuente: Typeface = Fuentes.tipo(400)
@@ -97,7 +97,11 @@ class KeyboardView(
     private var enterAzul = false
 
     private val presionadas = HashMap<Int, Tecla>()
-    private val preview = KeyPreviewManager(this)
+    /** Dedos cuya letra ya se escribió (porque otro dedo tocó después) pero siguen apoyados */
+    private val escritas = HashSet<Int>()
+    /** Una vista previa por dedo: cada toque tiene su propia animación */
+    private val previews = HashMap<Int, KeyPreviewManager>()
+    private val libres = ArrayDeque<KeyPreviewManager>()
     private val variantes = VariantesPopup(this)
 
     // Acentos al mantener presionado
@@ -238,15 +242,26 @@ class KeyboardView(
         }
     }
 
+    private fun previewDe(id: Int): KeyPreviewManager =
+        previews.getOrPut(id) { libres.removeFirstOrNull() ?: KeyPreviewManager(this, radio * 1.35f) }
+
+    private fun soltarPreview(id: Int) {
+        previews.remove(id)?.let {
+            it.hide()
+            libres.addLast(it)
+        }
+    }
+
     private fun reiniciar() {
-        animPulso?.cancel()
-        teclaPulso = null
-        pulso = 0f
+        animPulsos.values.forEach { it.cancel() }
+        animPulsos.clear()
+        pulsos.clear()
         presionadas.clear()
+        escritas.clear()
         manejador.removeCallbacks(repetirBorrar)
         manejador.removeCallbacks(abrirVariantes)
         manejador.removeCallbacks(activarCursor)
-        preview.hide()
+        for (id in previews.keys.toList()) soltarPreview(id)
         variantes.cerrar()
         punteroVariantes = -1
         punteroLargo = -1
@@ -258,7 +273,7 @@ class KeyboardView(
 
     fun ocultarPreview() {
         reiniciar()
-        preview.dismiss()
+        libres.forEach { it.dismiss() }
     }
 
     override fun onDetachedFromWindow() {
@@ -300,23 +315,24 @@ class KeyboardView(
         )
     }
 
-    private fun animarPulso(t: Tecla?, hasta: Float) {
-        if (t != null) teclaPulso = t
-        animPulso?.cancel()
-        animPulso = ValueAnimator.ofFloat(pulso, hasta).apply {
+    private fun animarPulso(t: Tecla, hasta: Float) {
+        animPulsos.remove(t)?.cancel()
+        val anim = ValueAnimator.ofFloat(pulsos[t] ?: 0f, hasta).apply {
             duration = if (hasta > 0f) 110 else 240
             interpolator = DecelerateInterpolator()
             addUpdateListener {
-                pulso = it.animatedValue as Float
+                val v = it.animatedValue as Float
+                if (hasta == 0f && v <= 0f) pulsos.remove(t) else pulsos[t] = v
                 invalidate()
             }
-            start()
         }
+        animPulsos[t] = anim
+        anim.start()
     }
 
     private fun dibujar(c: Canvas, t: Tecla) {
         val presionada = presionadas.containsValue(t) && !modoCursor
-        val f = if (t === teclaPulso && !modoCursor) pulso else 0f
+        val f = if (!modoCursor) pulsos[t] ?: 0f else 0f
         val colorNormal = when {
             modoCursor -> tema.teclaFuncion
             t.tipo == Tipo.ENTER -> if (enterAzul) tema.azul else tema.teclaFuncion
@@ -430,7 +446,7 @@ class KeyboardView(
         val lista = if (modo == Modo.LETRAS && shift > 0) {
             ops.map { v -> v.uppercase().let { u -> if (u.length == 1) u else v } }
         } else ops
-        preview.hide()
+        soltarPreview(punteroLargo)
         variantes.mostrar(t.rect, lista, width.toFloat(), tema.oscuro)
         punteroVariantes = punteroLargo
         acciones.retro(Tipo.LETRA)
@@ -461,6 +477,8 @@ class KeyboardView(
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                // Primer dedo: si quedó algo colgado de antes (un toque perdido), se limpia
+                if (e.actionMasked == MotionEvent.ACTION_DOWN && presionadas.isNotEmpty()) reiniciar()
                 val i = e.actionIndex
                 val id = e.getPointerId(i)
                 // Escritura rápida: si otro dedo se quedó apoyado y abrió los acentos
@@ -469,6 +487,8 @@ class KeyboardView(
                     val base = teclaLarga
                     variantes.cerrar()
                     presionadas.remove(punteroVariantes)
+                    escritas.remove(punteroVariantes)
+                    soltarPreview(punteroVariantes)
                     punteroVariantes = -1
                     punteroLargo = -1
                     teclaLarga = null
@@ -479,15 +499,16 @@ class KeyboardView(
                 }
                 if (modoCursor) {
                     presionadas.remove(punteroEspacio)
+                    escritas.remove(punteroEspacio)
                     punteroEspacio = -1
                     modoCursor = false
                 }
                 val t = teclaEn(e.getX(i), e.getY(i)) ?: return true
-                // Escritura con dos dedos: la tecla anterior (letra o espacio) se escribe ya
-                val anteriores = presionadas.filterValues {
-                    it.tipo == Tipo.LETRA || it.tipo == Tipo.ESPACIO
-                }.keys.toList()
-                for (k in anteriores) {
+                // Escritura con dos dedos: la letra del otro dedo se escribe ya (así no se
+                // pierde el orden), pero su animación sigue hasta que ese dedo se levante
+                for ((k, previa) in presionadas.toList()) {
+                    if (k in escritas) continue
+                    if (previa.tipo != Tipo.LETRA && previa.tipo != Tipo.ESPACIO) continue
                     if (k == punteroLargo) {
                         manejador.removeCallbacks(abrirVariantes)
                         punteroLargo = -1
@@ -497,7 +518,8 @@ class KeyboardView(
                         manejador.removeCallbacks(activarCursor)
                         punteroEspacio = -1
                     }
-                    presionadas.remove(k)?.let { soltar(it) }
+                    escritas.add(k)
+                    soltar(previa)
                 }
                 presionadas[id] = t
                 presionar(t, id, e.getX(i))
@@ -528,13 +550,15 @@ class KeyboardView(
                         }
                         continue
                     }
+                    // Un dedo cuya letra ya se escribió no cambia de tecla al moverse
+                    if (id in escritas) continue
                     val actual = presionadas[id] ?: continue
                     if (actual.tipo != Tipo.LETRA) continue
                     val t = teclaEn(x, y) ?: continue
                     if (t !== actual && t.tipo == Tipo.LETRA) {
                         presionadas[id] = t
                         programarVariantes(t, id)
-                        if (vistaPrevia) preview.show(t.rect, etiqueta(t), tema)
+                        if (vistaPrevia) previewDe(id).show(t.rect, etiqueta(t), tema)
                         invalidate()
                     }
                 }
@@ -542,7 +566,10 @@ class KeyboardView(
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 val id = e.getPointerId(e.actionIndex)
                 val t = presionadas.remove(id)
-                if (t != null && t === teclaPulso) animarPulso(null, 0f)
+                val yaEscrita = escritas.remove(id)
+                if (t != null && pulsos.containsKey(t) && presionadas.values.none { it === t }) animarPulso(t, 0f)
+                // Cada dedo cierra solo su propia vista previa
+                soltarPreview(id)
                 when (id) {
                     punteroVariantes -> {
                         val elegido = variantes.elegido()
@@ -559,7 +586,7 @@ class KeyboardView(
                         manejador.removeCallbacks(activarCursor)
                         punteroEspacio = -1
                         if (modoCursor) modoCursor = false
-                        else if (t != null) soltar(t)
+                        else if (t != null && !yaEscrita) soltar(t)
                     }
                     else -> {
                         if (id == punteroLargo) {
@@ -567,7 +594,7 @@ class KeyboardView(
                             punteroLargo = -1
                             teclaLarga = null
                         }
-                        if (t != null) soltar(t)
+                        if (t != null && !yaEscrita) soltar(t)
                     }
                 }
                 invalidate()
@@ -582,7 +609,7 @@ class KeyboardView(
         if (t.tipo != Tipo.LETRA && t !in tira) animarPulso(t, 1f)
         when (t.tipo) {
             Tipo.LETRA -> {
-                if (vistaPrevia) preview.show(t.rect, etiqueta(t), tema)
+                if (vistaPrevia) previewDe(id).show(t.rect, etiqueta(t), tema)
                 programarVariantes(t, id)
             }
             Tipo.BORRAR -> {
@@ -613,7 +640,6 @@ class KeyboardView(
     private fun soltar(t: Tecla) {
         when (t.tipo) {
             Tipo.LETRA -> {
-                preview.hide()
                 acciones.texto(etiqueta(t))
                 if (shift == 1 && modo == Modo.LETRAS) shift = 0
                 if (modo != Modo.LETRAS && t.texto == "'" && !soloNumeros) modo = Modo.LETRAS
