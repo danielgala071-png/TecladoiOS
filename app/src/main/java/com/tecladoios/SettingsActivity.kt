@@ -1,0 +1,429 @@
+package com.tecladoios
+
+import android.app.Activity
+import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Intent
+import android.content.res.ColorStateList
+import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.os.Bundle
+import android.provider.Settings
+import android.text.TextUtils
+import android.util.Log
+import android.view.Gravity
+import android.view.View
+import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.Switch
+import android.widget.TextView
+import android.widget.Toast
+
+/** Ajustes con el mismo diseño y nombres que Ajustes > General > Teclado del iPhone. */
+class SettingsActivity : Activity() {
+
+    private val prefs by lazy { Ajustes.prefs(this) }
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    private var oscuro = false
+    private val fondoPantalla get() = if (oscuro) 0xFF000000.toInt() else 0xFFF2F2F7.toInt()
+    private val fondoTarjeta get() = if (oscuro) 0xFF1C1C1E.toInt() else 0xFFFFFFFF.toInt()
+    private val colorTexto get() = if (oscuro) Color.WHITE else Color.BLACK
+    private val colorSeparador get() = if (oscuro) 0xFF38383A.toInt() else 0xFFD1D1D6.toInt()
+    private val gris = 0xFF8E8E93.toInt()
+    private val azul = 0xFF007AFF.toInt()
+    private val verde = 0xFF34C759.toInt()
+    private val rojo = 0xFFFF3B30.toInt()
+
+    private lateinit var contenedor: LinearLayout
+    private var estado: TextView? = null
+    private var pagina = "principal"
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        try {
+            construirPantalla()
+        } catch (e: Throwable) {
+            mostrarError(Log.getStackTraceString(e))
+        }
+    }
+
+    // ---------- Pantalla de error ----------
+
+    private fun mostrarError(texto: String) {
+        val caja = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(24), dp(20), dp(24))
+        }
+        caja.addView(TextView(this).apply {
+            text = "Ocurrió un error. Cópialo y envíaselo a Claude:"
+            textSize = 17f
+            typeface = Typeface.DEFAULT_BOLD
+        })
+        caja.addView(android.widget.Button(this).apply {
+            text = "Copiar error"
+            isAllCaps = false
+            setOnClickListener {
+                getSystemService(ClipboardManager::class.java)
+                    ?.setPrimaryClip(ClipData.newPlainText("error", texto))
+                Toast.makeText(this@SettingsActivity, "Error copiado", Toast.LENGTH_SHORT).show()
+            }
+        })
+        caja.addView(android.widget.Button(this).apply {
+            text = "Borrar y continuar"
+            isAllCaps = false
+            setOnClickListener {
+                getSharedPreferences("tecladoios_error", MODE_PRIVATE).edit().remove("ultimo").apply()
+                recreate()
+            }
+        })
+        caja.addView(TextView(this).apply {
+            text = texto
+            textSize = 12f
+            setTextIsSelectable(true)
+        })
+        setContentView(ScrollView(this).apply {
+            fitsSystemWindows = true
+            addView(caja)
+        })
+    }
+
+    // ---------- Estructura ----------
+
+    private fun construirPantalla() {
+        val previo = getSharedPreferences("tecladoios_error", MODE_PRIVATE).getString("ultimo", null)
+        if (previo != null) {
+            mostrarError(previo)
+            return
+        }
+        oscuro = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
+        actionBar?.hide()
+
+        contenedor = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(8), dp(16), dp(40))
+        }
+        val scroll = ScrollView(this).apply {
+            fitsSystemWindows = true
+            setBackgroundColor(fondoPantalla)
+            addView(contenedor)
+        }
+        setContentView(scroll)
+        dibujar()
+    }
+
+    private fun dibujar() {
+        contenedor.removeAllViews()
+        if (pagina == "atajos") paginaAtajos() else paginaPrincipal()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (pagina != "principal") {
+            pagina = "principal"
+            dibujar()
+        } else {
+            @Suppress("DEPRECATION")
+            super.onBackPressed()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        actualizarEstado()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) actualizarEstado()
+    }
+
+    private fun actualizarEstado() {
+        val e = estado ?: return
+        try {
+            val imm = getSystemService(InputMethodManager::class.java)
+            val activado = imm?.enabledInputMethodList?.any { it.packageName == packageName } == true
+            val elegido = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+                ?.startsWith(packageName) == true
+            e.text = when {
+                elegido -> "TecladoiOS está activo y en uso."
+                activado -> "Activado. Ahora toca “Elegir teclado”."
+                else -> "Primero toca “Activar TecladoiOS” y enciéndelo."
+            }
+        } catch (_: Throwable) { }
+    }
+
+    // ---------- Piezas estilo iOS ----------
+
+    private fun tituloGrande(texto: String) {
+        contenedor.addView(TextView(this).apply {
+            text = texto
+            textSize = 34f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(colorTexto)
+            setPadding(dp(4), dp(12), 0, dp(12))
+        })
+    }
+
+    private fun grupo(titulo: String?, filas: List<View>, pie: String? = null): TextView? {
+        if (titulo != null) {
+            contenedor.addView(TextView(this).apply {
+                text = titulo.uppercase()
+                textSize = 13f
+                setTextColor(gris)
+                setPadding(dp(16), dp(22), dp(16), dp(7))
+            })
+        } else {
+            contenedor.addView(View(this), LinearLayout.LayoutParams(1, dp(22)))
+        }
+        val tarjeta = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                cornerRadius = dp(22).toFloat()
+                setColor(fondoTarjeta)
+            }
+            clipToOutline = true
+        }
+        filas.forEachIndexed { i, fila ->
+            if (i > 0) {
+                tarjeta.addView(View(this).apply { setBackgroundColor(colorSeparador) },
+                    LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, maxOf(1, dp(1) / 2)).apply {
+                        marginStart = dp(16)
+                    })
+            }
+            tarjeta.addView(fila)
+        }
+        contenedor.addView(tarjeta)
+        var piePagina: TextView? = null
+        if (pie != null) {
+            piePagina = TextView(this).apply {
+                text = pie
+                textSize = 13f
+                setTextColor(gris)
+                setPadding(dp(16), dp(7), dp(16), 0)
+            }
+            contenedor.addView(piePagina)
+        }
+        return piePagina
+    }
+
+    private fun fila(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = dp(50)
+        setPadding(dp(16), dp(6), dp(16), dp(6))
+    }
+
+    private fun textoFila(texto: String, color: Int = colorTexto) = TextView(this).apply {
+        text = texto
+        textSize = 17f
+        setTextColor(color)
+        maxLines = 2
+        ellipsize = TextUtils.TruncateAt.END
+    }
+
+    @Suppress("DEPRECATION")
+    private fun filaInterruptor(titulo: String, clave: String, porDefecto: Boolean): View {
+        val f = fila()
+        f.addView(textoFila(titulo), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val estados = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
+        val sw = Switch(this).apply {
+            isChecked = prefs.getBoolean(clave, porDefecto)
+            trackTintList = ColorStateList(estados, intArrayOf(verde, if (oscuro) 0xFF39393D.toInt() else 0xFFE9E9EA.toInt()))
+            thumbTintList = ColorStateList(estados, intArrayOf(Color.WHITE, Color.WHITE))
+            setOnCheckedChangeListener { _, activo -> prefs.edit().putBoolean(clave, activo).apply() }
+        }
+        f.addView(sw)
+        f.setOnClickListener { sw.toggle() }
+        return f
+    }
+
+    private fun filaAccion(titulo: String, color: Int = colorTexto, derecha: String? = "›", accion: () -> Unit): View {
+        val f = fila()
+        f.addView(textoFila(titulo, color), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        if (derecha != null) {
+            f.addView(TextView(this).apply {
+                text = derecha
+                textSize = if (derecha == "›") 22f else 17f
+                setTextColor(gris)
+                maxLines = 1
+            })
+        }
+        f.setOnClickListener { accion() }
+        return f
+    }
+
+    private fun filaCheck(titulo: String, marcado: Boolean, accion: () -> Unit): View {
+        val f = fila()
+        f.addView(textoFila(titulo), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        f.addView(TextView(this).apply {
+            text = if (marcado) "✓" else ""
+            textSize = 19f
+            setTextColor(azul)
+            typeface = Typeface.DEFAULT_BOLD
+        })
+        f.setOnClickListener { accion() }
+        return f
+    }
+
+    // ---------- Página principal ----------
+
+    private fun paginaPrincipal() {
+        tituloGrande("Teclado")
+
+        estado = grupo("Teclados", listOf(
+            filaAccion("Activar TecladoiOS") { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
+            filaAccion("Elegir teclado") {
+                getSystemService(InputMethodManager::class.java)?.showInputMethodPicker()
+            },
+        ), pie = "")
+        actualizarEstado()
+
+        val cantidad = Ajustes.atajos(this).size
+        grupo(null, listOf(
+            filaAccion("Sustitución de texto", derecha = "$cantidad  ›") {
+                pagina = "atajos"
+                dibujar()
+            },
+        ))
+
+        grupo("Todos los teclados", listOf(
+            filaInterruptor("Mayúsculas automáticas", "mayusculas", true),
+            filaInterruptor("Autocorrección", "autocorregir", true),
+            filaInterruptor("Activar Bloq Mayús", "bloq_mayus", true),
+            filaInterruptor("Atajos", "atajos_activos", true),
+            filaInterruptor("Predictivo", "sugerencias", true),
+            filaInterruptor("Previsualización de caracteres", "vista_previa", true),
+            filaInterruptor("Atajo con “.”", "punto_doble", true),
+        ), pie = "Pulsar dos veces la barra espaciadora inserta un punto seguido de un espacio. " +
+                "Mantén pulsada la barra espaciadora para mover el cursor.")
+
+        grupo("Respuesta del teclado", listOf(
+            filaInterruptor("Sonido", "sonido", false),
+            filaInterruptor("Respuesta háptica", "vibrar", true),
+        ))
+
+        val vidrio = Ajustes.vidrio(this)
+        grupo("Liquid Glass", listOf(
+            filaCheck("Transparente", vidrio == "transparente") { elegir("vidrio", "transparente") },
+            filaCheck("Predeterminado", vidrio == "normal") { elegir("vidrio", "normal") },
+            filaCheck("Tintado", vidrio == "tintado") { elegir("vidrio", "tintado") },
+            filaInterruptor("Desenfocar el fondo", "desenfoque", true),
+        ), pie = "“Tintado” hace el teclado más opaco y fácil de leer.")
+
+        val tema = Ajustes.tema(this)
+        grupo("Apariencia", listOf(
+            filaCheck("Automático", tema == "auto") { elegir("tema", "auto") },
+            filaCheck("Claro", tema == "claro") { elegir("tema", "claro") },
+            filaCheck("Oscuro", tema == "oscuro") { elegir("tema", "oscuro") },
+        ))
+
+        grupo(null, listOf(
+            filaAccion("Restablecer diccionario del teclado", rojo, derecha = null) {
+                AlertDialog.Builder(this)
+                    .setMessage("Se borrarán todas las palabras que el teclado aprendió.")
+                    .setPositiveButton("Restablecer diccionario") { _, _ ->
+                        prefs.edit()
+                            .remove("aprendidas")
+                            .remove("pares")
+                            .putInt("aprendidas_rev", prefs.getInt("aprendidas_rev", 0) + 1)
+                            .apply()
+                        Toast.makeText(this, "Diccionario restablecido", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("Cancelar", null)
+                    .show()
+            },
+        ))
+
+        val prueba = EditText(this).apply {
+            hint = "Escribe algo para probar…"
+            minLines = 3
+            gravity = Gravity.TOP
+            background = null
+            setTextColor(colorTexto)
+            setHintTextColor(gris)
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+        }
+        grupo("Prueba", listOf(prueba))
+    }
+
+    private fun elegir(clave: String, valor: String) {
+        prefs.edit().putString(clave, valor).apply()
+        dibujar()
+    }
+
+    // ---------- Sustitución de texto ----------
+
+    private fun paginaAtajos() {
+        estado = null
+        contenedor.addView(TextView(this).apply {
+            text = "‹ Teclado"
+            textSize = 17f
+            setTextColor(azul)
+            setPadding(dp(4), dp(10), dp(4), dp(4))
+            setOnClickListener {
+                pagina = "principal"
+                dibujar()
+            }
+        })
+        tituloGrande("Sustitución de texto")
+
+        val lista = Ajustes.atajos(this)
+        val filas = ArrayList<View>()
+        lista.forEachIndexed { i, (atajo, frase) ->
+            filas.add(filaAccion(frase, derecha = atajo) { editarAtajo(i) })
+        }
+        filas.add(filaAccion("Nueva sustitución", azul, derecha = "+") { editarAtajo(-1) })
+        grupo(null, filas, pie = "Escribe la función rápida y se reemplazará por la frase al poner espacio.")
+    }
+
+    private fun editarAtajo(indice: Int) {
+        val lista = Ajustes.atajos(this)
+        val actual = lista.getOrNull(indice)
+        val caja = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+        val frase = EditText(this).apply {
+            hint = "Frase"
+            setText(actual?.second ?: "")
+        }
+        val atajo = EditText(this).apply {
+            hint = "Función rápida"
+            isSingleLine = true
+            setText(actual?.first ?: "")
+        }
+        caja.addView(frase)
+        caja.addView(atajo)
+
+        val dialogo = AlertDialog.Builder(this)
+            .setTitle(if (actual == null) "Nueva sustitución" else "Editar sustitución")
+            .setView(caja)
+            .setPositiveButton("Guardar") { _, _ ->
+                val f = frase.text.toString().trim()
+                val a = atajo.text.toString().trim()
+                if (f.isNotEmpty() && a.isNotEmpty() && !a.contains(' ')) {
+                    if (actual == null) lista.add(a to f) else lista[indice] = a to f
+                    Ajustes.guardarAtajos(this, lista)
+                    dibujar()
+                } else {
+                    Toast.makeText(this, "La función rápida debe ser una sola palabra", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+        if (actual != null) {
+            dialogo.setNeutralButton("Eliminar") { _, _ ->
+                lista.removeAt(indice)
+                Ajustes.guardarAtajos(this, lista)
+                dibujar()
+            }
+        }
+        dialogo.show()
+    }
+}
