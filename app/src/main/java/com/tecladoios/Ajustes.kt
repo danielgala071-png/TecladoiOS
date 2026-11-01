@@ -41,7 +41,8 @@ object Ajustes {
 
     /** Sustitución de texto: (función rápida, frase) */
     fun atajos(c: Context): MutableList<Pair<String, String>> {
-        val guardado = prefs(c).getString("atajos", null)
+        val p = prefs(c)
+        val guardado = p.getString("atajos", null)
             ?: return ATAJOS_SUGERIDOS.toMutableList()
         val lista = mutableListOf<Pair<String, String>>()
         try {
@@ -51,6 +52,13 @@ object Ajustes {
                 lista.add(par.getString(0) to par.getString(1))
             }
         } catch (_: Exception) { }
+        // Una sola vez: sumar las sustituciones nuevas sin tocar las tuyas
+        if (!p.getBoolean("atajos_v4", false)) {
+            val claves = lista.map { it.first.lowercase() }.toSet()
+            lista += ATAJOS_SUGERIDOS.filter { it.first.lowercase() !in claves }
+            guardarAtajos(c, lista)
+            p.edit().putBoolean("atajos_v4", true).apply()
+        }
         return lista
     }
 
@@ -69,5 +77,23 @@ object Ajustes {
         "aki" to "aquí", "vdd" to "verdad", "grax" to "gracias",
         "q" to "que", "k" to "que", "xk" to "por qué", "bno" to "bueno", "tons" to "entonces",
         "ps" to "pues", "tbn" to "también", "dnd" to "de nada", "kiero" to "quiero", "ke" to "que",
+        // Más abreviaturas comunes del chat
+        "pk" to "porque", "porq" to "porque", "pqe" to "porque", "tmbn" to "también", "tambn" to "también",
+        "tmpc" to "tampoco", "tpc" to "tampoco", "dsps" to "después", "dps" to "después", "dspues" to "después",
+        "mñn" to "mañana", "mñna" to "mañana", "hrs" to "horas", "sgte" to "siguiente",
+        "aprox" to "aproximadamente", "tdo" to "todo", "tds" to "todos", "tdos" to "todos",
+        "nc" to "no sé", "ns" to "no sé", "nse" to "no sé", "nose" to "no sé", "sbs" to "sabes",
+        "stoy" to "estoy", "mxo" to "mucho",
+        "msjs" to "mensajes", "tlf" to "teléfono", "qtal" to "qué tal", "ktal" to "qué tal",
+        "hla" to "hola", "grs" to "gracias", "gcs" to "gracias", "grx" to "gracias", "pls" to "por favor",
+        "plis" to "por favor", "bss" to "besos", "bdias" to "buenos días",
+        "bnas" to "buenas", "bnoches" to "buenas noches", "bn8" to "buenas noches", "btardes" to "buenas tardes",
+        "kien" to "quién", "kmo" to "cómo", "ksa" to "casa", "kasa" to "casa", "aver" to "a ver",
+        "osea" to "o sea", "nomas" to "nomás", "hno" to "hermano", "hna" to "hermana", "nunk" to "nunca",
+        "ntc" to "no te creas", "tqi" to "te quiero", "tq" to "te quiero",
+        "cdte" to "cuídate",
+        "cmo" to "cómo", "xfis" to "por favor", "xfavor" to "por favor",
+        "sldos" to "saludos", "fds" to "fin de semana", "bday" to "cumpleaños",
+        "felicidds" to "felicidades",
     ).distinctBy { it.first.lowercase() }
 }

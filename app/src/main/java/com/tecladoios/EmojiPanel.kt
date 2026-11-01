@@ -145,7 +145,8 @@ class EmojiPanel(
     private val scroll = HorizontalScrollView(context)
     private val categorias = BarraCategorias(context, tema) { i ->
         acciones.retro(Tipo.A_LETRAS)
-        scroll.smoothScrollTo(grilla.inicioDe(i), 0)
+        // Como en iPhone: salta directo a la categoría
+        scroll.scrollTo(grilla.inicioDe(i), 0)
     }
 
     init {
@@ -179,7 +180,7 @@ class EmojiPanel(
         abajo.addView(categorias, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
         val borrar = BotonBorrar(context, tema, { acciones.retro(Tipo.BORRAR) }, { acciones.borrar() })
         abajo.addView(borrar, LayoutParams(dp(52f), LayoutParams.MATCH_PARENT))
-        addView(abajo, LayoutParams(LayoutParams.MATCH_PARENT, dp(42f)))
+        addView(abajo, LayoutParams(LayoutParams.MATCH_PARENT, dp(44f)))
 
         refrescar()
     }
@@ -187,11 +188,13 @@ class EmojiPanel(
     private fun recientes(): List<String> {
         val guardados = prefs.getString("recientes", null)
         return if (guardados.isNullOrBlank()) lista("😂 ❤️ 😍 🙏 😭 👍 😊 🔥 🥰 😅 🤣 💀 😘 🥺 😁 ✨ 😎 🤔 😢 👀")
-        else guardados.split(" ").filter { it.isNotBlank() }
+        else guardados.split(" ").filter { it.isNotBlank() }.take(30)
     }
 
-    /** Se llama al abrir el panel: actualiza "Usados frecuentemente" */
+    /** Se llama al abrir el panel: actualiza "Usados frecuentemente" y vuelve al inicio */
     fun refrescar() {
+        scroll.scrollTo(0, 0)
+        categorias.marcado = 0
         grilla.secciones = listOf(EmojiGrid.Seccion(CATEGORIAS[0].nombre, recientes())) +
                 CATEGORIAS.drop(1).map { EmojiGrid.Seccion(it.nombre, it.emojis) }
     }
@@ -202,7 +205,8 @@ class EmojiPanel(
         val nuevos = recientes().toMutableList()
         nuevos.remove(e)
         nuevos.add(0, e)
-        prefs.edit().putString("recientes", nuevos.take(40).joinToString(" ")).apply()
+        // Como en iPhone: hasta 30 (6 columnas de 5)
+        prefs.edit().putString("recientes", nuevos.take(30).joinToString(" ")).apply()
     }
 }
 
@@ -233,7 +237,7 @@ class BarraCategorias(
         if (n == 0 || width == 0) return
         val ancho = width / n.toFloat()
         val cy = height / 2f
-        gris.textSize = 16f * d
+        gris.textSize = 17f * d
         textoSimbolos.textSize = 13f * d
         textoSimbolos.color = tema.textoSecundario
         val fm = gris.fontMetrics
@@ -282,14 +286,17 @@ class EmojiGrid(
 
     /** Cuánto se ha deslizado (para que el título se quede fijo como en iOS) */
     var desplazamiento = 0
-        set(v) { field = v; invalidate() }
+        set(v) { if (v != field) { field = v; invalidate() } }
 
     private val d = Medidas.escala(context)
-    private val filas = 8 // compacto como en iPhone: emojis pequeños y juntos
-    private val altoTitulo = 22f * d
-    private val margen = 8f * d
-    private val separacion = 14f * d
-    private var celda = 0f
+    /** Igual que el iPhone: 5 filas, con aire entre emoji y emoji */
+    private val filas = 5
+    private val altoTitulo = 30f * d
+    private val margen = 10f * d
+    private val separacion = 12f * d
+    /** Ancho de cada columna: se ven unas 8 columnas y media (la media invita a deslizar) */
+    private val anchoCelda: Float
+    private var altoCelda = 0f
     private val inicios = ArrayList<Float>()
     private val finales = ArrayList<Float>()
     private val pintura = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -297,8 +304,8 @@ class EmojiGrid(
         color = Color.BLACK
     }
     private val pinturaTitulo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 10.5f * d
-        letterSpacing = 0.03f
+        textSize = 12.5f * d
+        letterSpacing = 0.02f
     }.also { Fuentes.aplicar(it, 600) }
     private val fondo = Paint(Paint.ANTI_ALIAS_FLAG)
     private var presionado: Pair<Int, Int>? = null
@@ -306,26 +313,32 @@ class EmojiGrid(
     private var y0 = 0f
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
 
+    init {
+        val m = resources.displayMetrics
+        val columnasVisibles = if (Medidas.horizontal(context)) 14.5f else 8.5f
+        anchoCelda = (m.widthPixels - margen) / columnasVisibles
+    }
+
     private fun columnasDe(n: Int) = (n + filas - 1) / filas
 
     fun inicioDe(i: Int): Int = ((inicios.getOrNull(i) ?: 0f) - margen).toInt().coerceAtLeast(0)
 
     fun seccionEn(x: Int): Int {
         var r = 0
-        for (i in inicios.indices) if (inicios[i] <= x + margen + 20f * d) r = i
+        for (i in inicios.indices) if (inicios[i] <= x + margen + anchoCelda) r = i
         return r
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val alto = MeasureSpec.getSize(heightMeasureSpec)
-        celda = ((alto - altoTitulo - 4f * d) / filas).coerceAtLeast(1f)
+        altoCelda = ((alto - altoTitulo - 6f * d) / filas).coerceAtLeast(1f)
         inicios.clear()
         finales.clear()
         var x = margen
         for (s in secciones) {
             inicios.add(x)
-            // La sección es al menos tan ancha como su título (para que no se encimen)
-            x += maxOf(columnasDe(s.emojis.size) * celda, pinturaTitulo.measureText(s.titulo) + 12f * d)
+            // Como en iOS, cada sección mide lo que miden sus emojis (sin huecos)
+            x += maxOf(1, columnasDe(s.emojis.size)) * anchoCelda
             finales.add(x)
             x += separacion
         }
@@ -333,41 +346,62 @@ class EmojiGrid(
     }
 
     override fun onDraw(c: Canvas) {
-        val clip = c.clipBounds
-        pintura.textSize = celda * 0.84f
+        // Con aceleración por hardware el lienzo no sabe qué parte se ve, así que se calcula
+        // con el desplazamiento: solo se dibujan las ~9 columnas visibles (deslizar fluido)
+        val anchoVisible = (parent as? View)?.width?.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val visIzq = desplazamiento - anchoCelda
+        val visDer = desplazamiento + anchoVisible + anchoCelda
+        // Emoji grande y con aire alrededor, como en el iPhone
+        pintura.textSize = minOf(altoCelda * 0.80f, anchoCelda * 0.70f)
         val fm = pintura.fontMetrics
+        val centroY = -(fm.ascent + fm.descent) / 2f
         pinturaTitulo.color = tema.textoSecundario
+        val fmt = pinturaTitulo.fontMetrics
+        val yTitulo = altoTitulo * 0.5f - (fmt.ascent + fmt.descent) / 2f + 2f * d
         secciones.forEachIndexed { i, s ->
             val ini = inicios.getOrElse(i) { 0f }
             val fin = finales.getOrElse(i) { 0f }
-            if (fin < clip.left || ini > clip.right) return@forEachIndexed
+            if (fin + separacion < visIzq || ini > visDer) return@forEachIndexed
 
-            // Título fijo a la izquierda mientras se ve su sección
+            // Título fijo a la izquierda mientras se ve su sección; el siguiente lo empuja
             val anchoTitulo = pinturaTitulo.measureText(s.titulo)
-            val xt = maxOf(ini + 4f * d, minOf(desplazamiento + margen + 4f * d, fin - anchoTitulo))
-            c.drawText(s.titulo, xt, altoTitulo * 0.7f, pinturaTitulo)
+            val siguiente = inicios.getOrElse(i + 1) { Float.MAX_VALUE }
+            val tope = siguiente - separacion - anchoTitulo
+            val xt = maxOf(ini + 2f * d, minOf(desplazamiento + margen + 2f * d, tope))
+            c.save()
+            c.clipRect(ini, 0f, minOf(siguiente - 4f * d, ini + 100000f), altoTitulo)
+            c.drawText(s.titulo, xt, yTitulo, pinturaTitulo)
+            c.restore()
 
-            s.emojis.forEachIndexed { j, e ->
-                val x = ini + (j / filas) * celda
-                if (x + celda < clip.left || x > clip.right) return@forEachIndexed
-                val y = altoTitulo + (j % filas) * celda
-                if (presionado == Pair(i, j)) {
-                    fondo.color = (tema.teclaPresionada and 0x00FFFFFF) or 0x99000000.toInt()
-                    c.drawRoundRect(x + 1 * d, y + 1 * d, x + celda - 1 * d, y + celda - 1 * d, 7 * d, 7 * d, fondo)
+            // Solo se dibujan las columnas que se ven (cientos de emojis no se tocan)
+            val total = columnasDe(s.emojis.size)
+            val desdeCol = ((visIzq - ini) / anchoCelda).toInt().coerceAtLeast(0)
+            val hastaCol = ((visDer - ini) / anchoCelda).toInt().coerceAtMost(total - 1)
+            for (col in desdeCol..hastaCol) {
+                val x = ini + col * anchoCelda
+                for (fila in 0 until filas) {
+                    val j = col * filas + fila
+                    if (j >= s.emojis.size) break
+                    val y = altoTitulo + fila * altoCelda
+                    if (presionado == Pair(i, j)) {
+                        fondo.color = (tema.teclaPresionada and 0x00FFFFFF) or 0x99000000.toInt()
+                        val r = 9f * d
+                        c.drawRoundRect(x + 2f * d, y + 1f * d, x + anchoCelda - 2f * d, y + altoCelda - 1f * d, r, r, fondo)
+                    }
+                    c.drawText(s.emojis[j], x + anchoCelda / 2f, y + altoCelda / 2f + centroY, pintura)
                 }
-                c.drawText(e, x + celda / 2f, y + celda / 2f - (fm.ascent + fm.descent) / 2f, pintura)
             }
         }
     }
 
     private fun buscar(x: Float, y: Float): Pair<Int, Int>? {
-        if (celda <= 0f || y < altoTitulo) return null
+        if (altoCelda <= 0f || y < altoTitulo) return null
         for (i in secciones.indices) {
             val ini = inicios.getOrElse(i) { 0f }
             val fin = finales.getOrElse(i) { 0f }
             if (x in ini..fin) {
-                val col = ((x - ini) / celda).toInt()
-                val fila = ((y - altoTitulo) / celda).toInt().coerceIn(0, filas - 1)
+                val col = ((x - ini) / anchoCelda).toInt()
+                val fila = ((y - altoTitulo) / altoCelda).toInt().coerceIn(0, filas - 1)
                 val j = col * filas + fila
                 return if (j < secciones[i].emojis.size) Pair(i, j) else null
             }
@@ -382,6 +416,13 @@ class EmojiGrid(
                 x0 = e.x; y0 = e.y
                 presionado = buscar(e.x, e.y)
                 invalidate()
+            }
+            MotionEvent.ACTION_MOVE -> {
+                // Al deslizar ya no es un toque: se quita el resaltado
+                if (presionado != null && (Math.abs(e.x - x0) > slop || Math.abs(e.y - y0) > slop)) {
+                    presionado = null
+                    invalidate()
+                }
             }
             MotionEvent.ACTION_UP -> {
                 val p = presionado

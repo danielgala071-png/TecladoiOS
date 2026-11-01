@@ -25,6 +25,11 @@ class Tecla(val tipo: Tipo, val texto: String = "", val ancho: Float = 1f) {
     val rect = RectF()
     /** Forma con esquinas suaves (se calcula una vez) */
     val forma = Path()
+    // Degradados guardados: así dibujar no crea objetos nuevos en cada cuadro (más fluido)
+    var shaderBrillo: Shader? = null
+    var shaderBorde: Shader? = null
+    var shaderRelleno: Shader? = null
+    var colorRelleno = 0
 }
 
 /** Las teclas dibujadas directamente en pantalla, estilo iPhone. */
@@ -61,6 +66,7 @@ class KeyboardView(
     // Esquinas pequeñas como el teclado del iPhone (antes 12.5, se veían tipo almohada)
     private val radio = dp(4.6f)
     private val formaPulso = Path()
+    private val rectPulso = RectF()
 
     // Franja inferior como en iPhone: emoji a la izquierda y micrófono a la derecha
     private val altoInferior = if (Medidas.horizontal(context)) 0f else dp(42f)
@@ -99,9 +105,8 @@ class KeyboardView(
     private val presionadas = HashMap<Int, Tecla>()
     /** Dedos cuya letra ya se escribió (porque otro dedo tocó después) pero siguen apoyados */
     private val escritas = HashSet<Int>()
-    /** Una vista previa por dedo: cada toque tiene su propia animación */
-    private val previews = HashMap<Int, KeyPreviewManager>()
-    private val libres = ArrayDeque<KeyPreviewManager>()
+    /** Una sola capa fija para las vistas previas: cada toque anima en su propia tecla */
+    private val burbujas = KeyPreviewOverlay(this).apply { radioTecla = radio }
     private val variantes = VariantesPopup(this)
 
     // Acentos al mantener presionado
@@ -206,9 +211,11 @@ class KeyboardView(
                 val w = t.ancho * unidad
                 t.rect.set(x + sepH, top + sepV, x + w - sepH, top + altoFila - sepV)
                 Formas.suave(t.forma, t.rect.left, t.rect.top, t.rect.right, t.rect.bottom, radio)
+                prepararShaders(t)
                 x += w
             }
         }
+        burbujas.altoTecla = altoFila - sepV * 2
         if (conTira) {
             val top = margenArriba + 4 * altoFila
             tira[0].rect.set(0f, top, unidad * 2f, top + altoInferior)
@@ -242,15 +249,29 @@ class KeyboardView(
         }
     }
 
-    private fun previewDe(id: Int): KeyPreviewManager =
-        previews.getOrPut(id) { libres.removeFirstOrNull() ?: KeyPreviewManager(this, radio * 1.35f) }
-
-    private fun soltarPreview(id: Int) {
-        previews.remove(id)?.let {
-            it.hide()
-            libres.addLast(it)
-        }
+    private fun prepararShaders(t: Tecla) {
+        val r = t.rect
+        t.shaderBrillo = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.45f,
+            tema.brillo, tema.brillo and 0x00FFFFFF, Shader.TileMode.CLAMP)
+        t.shaderBorde = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.5f,
+            tema.borde, tema.borde and 0x00FFFFFF, Shader.TileMode.CLAMP)
+        t.shaderRelleno = null
     }
+
+    /** Relleno con un degradado muy sutil (arriba apenas más claro); se reutiliza si el color no cambió */
+    private fun relleno(t: Tecla, color: Int, r: RectF): Shader {
+        val guardado = t.shaderRelleno
+        if (guardado != null && t.colorRelleno == color && r === t.rect) return guardado
+        val nuevo = LinearGradient(0f, r.top, 0f, r.bottom,
+            mezclar(color, 0xFFFFFFFF.toInt(), 0.035f), color, Shader.TileMode.CLAMP)
+        if (r === t.rect) {
+            t.shaderRelleno = nuevo
+            t.colorRelleno = color
+        }
+        return nuevo
+    }
+
+    private fun soltarPreview(id: Int) = burbujas.soltar(id)
 
     private fun reiniciar() {
         animPulsos.values.forEach { it.cancel() }
@@ -261,7 +282,7 @@ class KeyboardView(
         manejador.removeCallbacks(repetirBorrar)
         manejador.removeCallbacks(abrirVariantes)
         manejador.removeCallbacks(activarCursor)
-        for (id in previews.keys.toList()) soltarPreview(id)
+        burbujas.limpiar()
         variantes.cerrar()
         punteroVariantes = -1
         punteroLargo = -1
@@ -273,7 +294,7 @@ class KeyboardView(
 
     fun ocultarPreview() {
         reiniciar()
-        libres.forEach { it.dismiss() }
+        burbujas.cerrar()
     }
 
     override fun onDetachedFromWindow() {
@@ -354,7 +375,7 @@ class KeyboardView(
         }
         // Teclas de función: se iluminan y crecen un poquito, como gota de vidrio
         val colorFondo = if (f > 0f) mezclar(colorNormal, tema.teclaPresionada, f) else colorPrevio
-        val r = if (f > 0f) RectF(t.rect).apply { inset(-dp(2.5f) * f, -dp(2.5f) * f) } else t.rect
+        val r = if (f > 0f) rectPulso.apply { set(t.rect); inset(-dp(2.5f) * f, -dp(2.5f) * f) } else t.rect
 
         val forma = if (f > 0f) {
             Formas.suave(formaPulso, r.left, r.top, r.right, r.bottom, radio + dp(1f) * f)
@@ -369,18 +390,20 @@ class KeyboardView(
             c.restore()
         }
         // Relleno con un degradado muy sutil: arriba apenas más claro (se ve más fino)
-        pintura.shader = LinearGradient(0f, r.top, 0f, r.bottom,
-            mezclar(colorFondo, 0xFFFFFFFF.toInt(), 0.035f), colorFondo, Shader.TileMode.CLAMP)
+        pintura.shader = relleno(t, colorFondo, r)
         c.drawPath(forma, pintura)
         pintura.shader = null
 
         // Liquid Glass: reflejo suave arriba y un filo de luz solo en el borde superior
-        pinturaBrillo.shader = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.45f,
-            tema.brillo, tema.brillo and 0x00FFFFFF, Shader.TileMode.CLAMP)
-        c.drawPath(forma, pinturaBrillo)
-        pinturaBorde.shader = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.5f,
-            tema.borde, tema.borde and 0x00FFFFFF, Shader.TileMode.CLAMP)
-        c.drawPath(forma, pinturaBorde)
+        // (sin brillo ni borde en el tema sólido, para no dibujar de gusto)
+        if (Color.alpha(tema.brillo) > 0) {
+            pinturaBrillo.shader = t.shaderBrillo
+            c.drawPath(forma, pinturaBrillo)
+        }
+        if (Color.alpha(tema.borde) > 0) {
+            pinturaBorde.shader = t.shaderBorde
+            c.drawPath(forma, pinturaBorde)
+        }
 
         // Moviendo el cursor: las teclas quedan en blanco, como en iPhone
         if (modoCursor) return
@@ -446,7 +469,7 @@ class KeyboardView(
         val lista = if (modo == Modo.LETRAS && shift > 0) {
             ops.map { v -> v.uppercase().let { u -> if (u.length == 1) u else v } }
         } else ops
-        soltarPreview(punteroLargo)
+        burbujas.quitar(punteroLargo)
         variantes.mostrar(t.rect, lista, width.toFloat(), tema.oscuro)
         punteroVariantes = punteroLargo
         acciones.retro(Tipo.LETRA)
@@ -558,7 +581,7 @@ class KeyboardView(
                     if (t !== actual && t.tipo == Tipo.LETRA) {
                         presionadas[id] = t
                         programarVariantes(t, id)
-                        if (vistaPrevia) previewDe(id).show(t.rect, etiqueta(t), tema)
+                        if (vistaPrevia) burbujas.mostrar(id, t.rect, etiqueta(t), tema, deslizando = true)
                         invalidate()
                     }
                 }
@@ -609,7 +632,7 @@ class KeyboardView(
         if (t.tipo != Tipo.LETRA && t !in tira) animarPulso(t, 1f)
         when (t.tipo) {
             Tipo.LETRA -> {
-                if (vistaPrevia) previewDe(id).show(t.rect, etiqueta(t), tema)
+                if (vistaPrevia) burbujas.mostrar(id, t.rect, etiqueta(t), tema)
                 programarVariantes(t, id)
             }
             Tipo.BORRAR -> {

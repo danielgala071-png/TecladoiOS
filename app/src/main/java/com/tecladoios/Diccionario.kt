@@ -11,6 +11,11 @@ import java.text.Normalizer
  * Tqrjeta → Tarjeta), letras invertidas, letras dobles, faltantes o sobrantes.
  * Entre los candidatos gana el que mejor combina parecido, frecuencia y contexto.
  *
+ * Rendimiento: el diccionario (más de 20 mil palabras) se ordena una sola vez en
+ * segundo plano. Buscar por prefijo es una búsqueda binaria y la autocorrección solo
+ * revisa las palabras que empiezan con la misma letra o una tecla vecina, así cada
+ * tecla responde en un instante aunque escribas rápido con dos dedos.
+ *
  * Aprendizaje: cuenta las palabras que usas y el orden en que las usas, recuerda los
  * nombres que escribes con mayúscula, "desaprende" lo que borras justo después de
  * escribirlo y permite olvidar palabras manteniendo presionada una sugerencia.
@@ -18,8 +23,6 @@ import java.text.Normalizer
 class Diccionario(context: Context) {
 
     private val prefs = Ajustes.prefs(context)
-    private val base = LinkedHashMap<String, Int>()
-    private val baseMinuscula = HashSet<String>()
     private val normales = HashMap<String, String>()
     private val aprendidas = HashMap<String, Int>()
     private val pares = HashMap<String, HashMap<String, Int>>()
@@ -30,7 +33,26 @@ class Diccionario(context: Context) {
     private var revision = -1
     private var cambios = false
     private var sinGuardar = 0
-    private var totalBase = 0
+
+    /** Diccionario base ya ordenado. Se arma en segundo plano para que el teclado abra al instante. */
+    private class Indice(
+        val palabras: Array<String>,
+        val normal: Array<String>,
+        /** Posiciones ordenadas por la palabra sin tildes (para buscar por prefijo) */
+        val orden: IntArray,
+        /** Palabra sin tildes → la más común que se escribe así ("tambien" → "también") */
+        val mejorPorNormal: HashMap<String, Int>,
+        /** Palabras agrupadas por su primera letra (la autocorrección solo revisa unas pocas) */
+        val porInicial: HashMap<Char, IntArray>,
+        val minusculas: HashSet<String>,
+    ) {
+        val total = palabras.size
+        /** Más alto = más común */
+        fun puntaje(i: Int) = total - i
+    }
+
+    @Volatile
+    private var indice: Indice? = null
 
     // Memoria reutilizable para comparar palabras sin crear basura en cada tecla
     private var fila0 = FloatArray(48)
@@ -38,34 +60,57 @@ class Diccionario(context: Context) {
     private var fila2 = FloatArray(48)
 
     init {
-        val fijas = (BASE + " " + BASE_EXTRA + " " + BASE_TILDES).trim().split(Regex("\\s+"))
+        cargar()
+        val app = context.applicationContext
+        Thread({
+            try { indice = construir(app) } catch (_: Throwable) { }
+        }, "diccionario").apply {
+            priority = Thread.NORM_PRIORITY - 1
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun construir(c: Context): Indice {
+        val fijas = (FRECUENCIA + " " + BASE + " " + BASE_EXTRA + " " + BASE_TILDES).trim().split(ESPACIOS)
         // Diccionario grande (español, Latinoamérica y Perú) desde assets/diccionario.txt
         val archivo = try {
-            context.assets.open("diccionario.txt").bufferedReader().useLines { lineas ->
+            c.assets.open("diccionario.txt").bufferedReader().useLines { lineas ->
                 lineas.map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.toList()
             }
         } catch (_: Exception) { emptyList() }
-        val palabras = fijas + archivo
-        totalBase = palabras.size
-        palabras.forEachIndexed { i, p ->
-            if (!base.containsKey(p)) {
-                base[p] = palabras.size - i
-                baseMinuscula.add(p.lowercase())
-            }
+
+        val vistos = HashSet<String>(fijas.size + archivo.size)
+        val lista = ArrayList<String>(fijas.size + archivo.size)
+        for (p in fijas) if (p.isNotEmpty() && vistos.add(p)) lista.add(p)
+        for (p in archivo) if (vistos.add(p)) lista.add(p)
+
+        val palabras = lista.toTypedArray()
+        val normal = Array(palabras.size) { normal(palabras[it]) }
+        val orden = palabras.indices.sortedWith { a, b -> normal[a].compareTo(normal[b]) }.toIntArray()
+        val mejor = HashMap<String, Int>(palabras.size * 2)
+        val grupos = HashMap<Char, ArrayList<Int>>()
+        val minusculas = HashSet<String>(palabras.size * 2)
+        for (i in palabras.indices) {
+            mejor.putIfAbsent(normal[i], i) // la primera es la más común
+            normal[i].firstOrNull()?.let { grupos.getOrPut(it) { ArrayList() }.add(i) }
+            minusculas.add(palabras[i].lowercase())
         }
-        cargar()
+        val porInicial = HashMap<Char, IntArray>()
+        for ((k, v) in grupos) porInicial[k] = v.toIntArray()
+        return Indice(palabras, normal, orden, mejor, porInicial, minusculas)
     }
 
-    private fun normal(s: String) =
-        Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).replace(MARCAS, "")
+    private fun normal(s: String) = sinTildes(s)
 
+    /** Solo para palabras aprendidas (hilo principal) */
     private fun normalDe(p: String) = normales.getOrPut(p) { normal(p) }
 
     private fun bloqueada(p: String) = bloqueadas.isNotEmpty() && p.lowercase() in bloqueadas
 
-    private fun conoce(p: String): Boolean {
+    private fun conoce(ix: Indice, p: String): Boolean {
         val l = p.lowercase()
-        return l in baseMinuscula || (aprendidas[l] ?: 0) >= 2
+        return l in ix.minusculas || (aprendidas[l] ?: 0) >= 2
     }
 
     private fun igualarMayus(c: String, modelo: String): String = when {
@@ -77,42 +122,29 @@ class Diccionario(context: Context) {
 
     private fun esNombre(c: String) = (nombres[c.lowercase()] ?: 0) >= 2
 
-    /** 0 = la palabra más común del diccionario */
-    private fun rango(s: Int) = totalBase - s
+    /** Primera posición (en el orden alfabético) cuya palabra es >= [np] */
+    private fun desde(ix: Indice, np: String): Int {
+        var a = 0
+        var b = ix.orden.size
+        while (a < b) {
+            val m = (a + b) ushr 1
+            if (ix.normal[ix.orden[m]] < np) a = m + 1 else b = m
+        }
+        return a
+    }
+
+    /** Letras con las que pudo empezar la palabra que quisiste escribir */
+    private fun iniciales(np: String): Set<Char> {
+        val s = LinkedHashSet<Char>()
+        val c = np[0]
+        s.add(c)
+        VECINOS[c]?.let { s.addAll(it) }
+        s.add('h') // "ola" → "hola"
+        if (np.length > 1) s.add(np[1]) // "uqe" → "que"
+        return s
+    }
 
     // ---------- Distancia "de teclado" ----------
-
-    private fun similares(a: Char, b: Char): Boolean = when (a) {
-        'b' -> b == 'v'
-        'v' -> b == 'b'
-        's' -> b == 'z' || b == 'c'
-        'z' -> b == 's' || b == 'c'
-        'c' -> b == 's' || b == 'z' || b == 'k'
-        'i' -> b == 'y'
-        'y' -> b == 'i'
-        'g' -> b == 'j'
-        'j' -> b == 'g'
-        'k' -> b == 'q' || b == 'c'
-        'q' -> b == 'k'
-        else -> false
-    }
-
-    /** Cuánto cuesta haber tocado [a] queriendo tocar [b]: poco si son teclas vecinas */
-    private fun costoCambio(a: Char, b: Char): Float {
-        if (a == b) return 0f
-        // Confusiones típicas de ortografía: b/v, s/c/z, i/y, g/j, k/q/c
-        if (similares(a, b)) return 0.3f
-        val pa = POSICIONES[a] ?: return 1f
-        val pb = POSICIONES[b] ?: return 1f
-        val dx = pa[0] - pb[0]
-        val dy = pa[1] - pb[1]
-        val d = Math.sqrt((dx * dx + dy * dy).toDouble())
-        return when {
-            d <= 1.05 -> 0.4f   // tecla de al lado o justo arriba/abajo
-            d <= 1.6 -> 0.6f    // diagonal
-            else -> 1.2f        // teclas lejanas: es raro equivocarse así
-        }
-    }
 
     /**
      * Distancia entre lo escrito [a] y los primeros [largoB] caracteres de [b].
@@ -175,11 +207,24 @@ class Diccionario(context: Context) {
 
     fun sugerir(prefijo: String, max: Int, previa: String = ""): List<String> {
         if (prefijo.isEmpty()) return emptyList()
+        val ix = indice
         val np = normal(prefijo)
+        if (np.isEmpty()) return emptyList()
         val lp = prefijo.lowercase()
         val res = HashMap<String, Int>()
-        for ((p, s) in base) {
-            if (p.lowercase() != lp && normalDe(p).startsWith(np) && !bloqueada(p)) res[p] = s
+        if (ix != null) {
+            // Todas las palabras que empiezan así (búsqueda binaria, sin recorrer todo)
+            var k = desde(ix, np)
+            var revisadas = 0
+            while (k < ix.orden.size && revisadas < 6000) {
+                val i = ix.orden[k++]
+                if (!ix.normal[i].startsWith(np)) break
+                revisadas++
+                val p = ix.palabras[i]
+                if (p.equals(lp, ignoreCase = true) || bloqueada(p)) continue
+                val s = ix.puntaje(i)
+                if ((res[p] ?: 0) < s) res[p] = s
+            }
         }
         // Contexto: lo que sueles escribir después de la palabra anterior pesa muchísimo
         if (previa.isNotEmpty()) {
@@ -198,20 +243,25 @@ class Diccionario(context: Context) {
             }
         }
         // Si hay pocas, agregar palabras como si hubieras tocado una tecla vecina: "tqrj" → "tarjeta"
-        if (res.size < max + 2 && np.length >= 2) {
+        if (ix != null && res.size < max + 2 && np.length >= 2) {
             val lim = when {
                 np.length <= 3 -> 0.45f
                 np.length <= 5 -> 0.7f
                 else -> 1.1f
             }
-            for ((p, s) in base) {
-                if (res.containsKey(p) || p.lowercase() == lp || bloqueada(p)) continue
-                val n = normalDe(p)
-                val c = minOf(
-                    distancia(np, n, np.length, lim),
-                    distancia(np, n, n.length, lim),
-                )
-                if (c <= lim) res[p] = (s * 0.5f * (1f - c / (lim + 0.6f))).toInt()
+            for (ch in iniciales(np)) {
+                val grupo = ix.porInicial[ch] ?: continue
+                for (i in grupo) {
+                    val p = ix.palabras[i]
+                    if (res.containsKey(p) || p.equals(lp, ignoreCase = true) || bloqueada(p)) continue
+                    val n = ix.normal[i]
+                    if (n.length + 2 < np.length) continue
+                    val c = minOf(
+                        distancia(np, n, np.length, lim),
+                        distancia(np, n, n.length, lim),
+                    )
+                    if (c <= lim) res[p] = (ix.puntaje(i) * 0.5f * (1f - c / (lim + 0.6f))).toInt()
+                }
             }
             for ((p, c) in aprendidas) {
                 if (c < 2 || res.containsKey(p) || p == lp || bloqueada(p)) continue
@@ -225,13 +275,21 @@ class Diccionario(context: Context) {
             .map { igualarMayus(it.key, prefijo) }
     }
 
-    /** Predicción de la siguiente palabra (barra después de un espacio) */
+    /** Predicción de la siguiente palabra (barra después de un espacio), como en iPhone */
     fun siguientes(previa: String, max: Int): List<String> {
         val l = previa.lowercase()
         val res = LinkedHashMap<String, Int>()
         pares[l]?.forEach { (w, c) -> if (!bloqueada(w)) res[w] = c * 10 }
-        val fijas = if (l.isEmpty()) INICIO else PARES_BASE[l]
-        fijas?.forEachIndexed { i, w -> if (!bloqueada(w)) res[w] = (res[w] ?: 0) + (5 - i) }
+        val fijas = if (l.isEmpty()) INICIO else PARES_BASE[l] ?: PARES_BASE[normal(l)]
+        fijas?.forEachIndexed { i, w -> if (!bloqueada(w)) res[w] = (res[w] ?: 0) + (8 - i).coerceAtLeast(1) }
+        // Siempre 3 opciones, como en iPhone: si no hay nada para esa palabra, las más comunes
+        if (res.size < max) {
+            val generales = if (l.isEmpty()) INICIO else GENERALES
+            for (w in generales) {
+                if (res.size >= max) break
+                if (!res.containsKey(w) && w != l && !bloqueada(w)) res[w] = 0
+            }
+        }
         return res.entries.sortedByDescending { it.value }.take(max)
             .map { if (esNombre(it.key)) it.key.replaceFirstChar { c -> c.uppercase() } else it.key }
     }
@@ -241,18 +299,21 @@ class Diccionario(context: Context) {
     /** Devuelve la corrección de [p] o null si está bien escrita. */
     fun corregir(p: String, previa: String = ""): String? {
         if (p.length < 2) return null
+        val ix = indice ?: return null // aún cargando: mejor no tocar nada
         val l = p.lowercase()
-        if (conoce(p)) {
+        if (conoce(ix, p)) {
             // Nombres que siempre escribes con mayúscula: "javier" → "Javier"
             return if (p[0].isLowerCase() && esNombre(l) && !bloqueada(l)) p.replaceFirstChar { it.uppercase() } else null
         }
         val np = normal(p)
+        if (np.isEmpty()) return null
 
         // 1) Solo faltan tildes: "tambien" → "también"
         var mejor: String? = null
         var puntaje = -1
-        for ((c, s) in base) {
-            if (s > puntaje && normalDe(c) == np && !bloqueada(c)) { mejor = c; puntaje = s }
+        ix.mejorPorNormal[np]?.let { i ->
+            val c = ix.palabras[i]
+            if (!bloqueada(c)) { mejor = c; puntaje = ix.puntaje(i) }
         }
         for ((c, n) in aprendidas) {
             if (n >= 2 && n * 40 > puntaje && normalDe(c) == np && !bloqueada(c)) { mejor = c; puntaje = n * 40 }
@@ -263,17 +324,22 @@ class Diccionario(context: Context) {
         if (mejor == null && np.length >= 3 && !yaLaUsaste) {
             val lim = limitePara(np.length)
             var mejorTotal = Float.MAX_VALUE
-            for ((c, s) in base) {
-                val n = normalDe(c)
-                if (Math.abs(n.length - np.length) > 2 || bloqueada(c)) continue
-                val d = distancia(np, n, n.length, lim)
-                if (d > lim) continue
-                val r = rango(s)
-                val ctx = contexto(previa, c)
-                // Si no es un error "de tecla vecina", solo corrige hacia palabras comunes
-                if (d > 0.65f && r > 2500 && ctx == 0f) continue
-                val total = d * 2.5f + Math.log(r + 30.0).toFloat() * 0.3f - ctx
-                if (total < mejorTotal) { mejorTotal = total; mejor = c }
+            for (ch in iniciales(np)) {
+                val grupo = ix.porInicial[ch] ?: continue
+                for (i in grupo) {
+                    val n = ix.normal[i]
+                    if (Math.abs(n.length - np.length) > 2) continue
+                    val c = ix.palabras[i]
+                    if (bloqueada(c)) continue
+                    val d = distancia(np, n, n.length, lim)
+                    if (d > lim) continue
+                    val r = i // 0 = la más común
+                    val ctx = contexto(previa, c)
+                    // Si no es un error "de tecla vecina", solo corrige hacia palabras comunes
+                    if (d > 0.65f && r > 2500 && ctx == 0f) continue
+                    val total = d * 2.5f + Math.log(r + 30.0).toFloat() * 0.3f - ctx
+                    if (total < mejorTotal) { mejorTotal = total; mejor = c }
+                }
             }
             for ((c, n) in aprendidas) {
                 if (n < 2 || bloqueada(c)) continue
@@ -430,6 +496,10 @@ class Diccionario(context: Context) {
 
     companion object {
         private val MARCAS = Regex("\\p{Mn}+")
+        private val ESPACIOS = Regex("\\s+")
+
+        private fun sinTildes(s: String) =
+            Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).replace(MARCAS, "")
         private const val SEP1 = "\u0001"
         private const val SEP2 = "\u0002"
 
@@ -440,7 +510,49 @@ class Diccionario(context: Context) {
             "zxcvbnm".forEachIndexed { i, c -> put(c, floatArrayOf(i + 1.9f, 2f)) }
         }
 
-        private val INICIO = listOf("hola", "yo", "gracias", "ya", "ok")
+        private fun similares(a: Char, b: Char): Boolean = when (a) {
+            'b' -> b == 'v'
+            'v' -> b == 'b'
+            's' -> b == 'z' || b == 'c'
+            'z' -> b == 's' || b == 'c'
+            'c' -> b == 's' || b == 'z' || b == 'k'
+            'i' -> b == 'y'
+            'y' -> b == 'i'
+            'g' -> b == 'j'
+            'j' -> b == 'g'
+            'k' -> b == 'q' || b == 'c'
+            'q' -> b == 'k'
+            else -> false
+        }
+
+        /** Cuánto cuesta haber tocado [a] queriendo tocar [b]: poco si son teclas vecinas */
+        private fun costoCambio(a: Char, b: Char): Float {
+            if (a == b) return 0f
+            // Confusiones típicas de ortografía: b/v, s/c/z, i/y, g/j, k/q/c
+            if (similares(a, b)) return 0.3f
+            val pa = POSICIONES[a] ?: return 1f
+            val pb = POSICIONES[b] ?: return 1f
+            val dx = pa[0] - pb[0]
+            val dy = pa[1] - pb[1]
+            val d = Math.sqrt((dx * dx + dy * dy).toDouble())
+            return when {
+                d <= 1.05 -> 0.4f   // tecla de al lado o justo arriba/abajo
+                d <= 1.6 -> 0.6f    // diagonal
+                else -> 1.2f        // teclas lejanas: es raro equivocarse así
+            }
+        }
+
+        /** Para cada letra: las teclas vecinas y las que se confunden al escribir */
+        private val VECINOS: Map<Char, List<Char>> = HashMap<Char, List<Char>>().apply {
+            val letras = POSICIONES.keys.toList()
+            for (a in letras) put(a, letras.filter { b -> b != a && costoCambio(a, b) < 1f })
+        }
+
+        /** Al empezar una oración (como el iPhone: Hola, Yo, Ya...) */
+        private val INICIO = listOf("hola", "yo", "ya", "gracias", "ok", "buenos", "qué", "no", "sí", "te")
+
+        /** Para cuando no hay predicción propia de la palabra anterior */
+        private val GENERALES = listOf("y", "que", "de", "en", "a", "no", "con", "para")
 
         private val INTERROGATIVAS = mapOf(
             "que" to "qué", "como" to "cómo", "donde" to "dónde", "adonde" to "adónde",
@@ -456,33 +568,234 @@ class Diccionario(context: Context) {
             que miedo|qué miedo; que bueno|qué bueno; que rico|qué rico; que lindo|qué lindo; que linda|qué linda;
             que asco|qué asco; que pena|qué pena; que roche|qué roche; que palta|qué palta; que bien|qué bien;
             que bonito|qué bonito; que feo|qué feo; que raro|qué raro; por que|por qué;
+            que cosa|qué cosa; que tienes|qué tienes; que tiene|qué tiene; que quieres|qué quieres; que quiere|qué quiere;
+            que comiste|qué comiste; que vas|qué vas; que vamos|qué vamos; que dijo|qué dijo; que dijiste|qué dijiste;
+            que hay|qué hay; que haria|qué haría; que harias|qué harías; que significa|qué significa; que hubo|qué hubo;
+            que tan|qué tan; que tanto|qué tanto; que chevere|qué chévere; que bacan|qué bacán; que genial|qué genial;
+            que alegria|qué alegría; que gracioso|qué gracioso; que graciosa|qué graciosa; que triste|qué triste;
+            que lastima|qué lástima; que suerte|qué suerte; que flojera|qué flojera; que sueño|qué sueño; que hambre|qué hambre;
+            que calor|qué calor; que frio|qué frío; que mal|qué mal; que horrible|qué horrible; que locura|qué locura;
+            que te|qué te; que le|qué le; que me|qué me; que nos|qué nos;
             como estas|cómo estás; como esta|cómo está; como estan|cómo están; como fue|cómo fue;
             como asi|cómo así; como vas|cómo vas; como va|cómo va; como sigues|cómo sigues;
-            como haces|cómo haces; como amaneciste|cómo amaneciste;
+            como haces|cómo haces; como amaneciste|cómo amaneciste; como te|cómo te; como se|cómo se;
+            como hago|cómo hago; como hiciste|cómo hiciste; como estuvo|cómo estuvo; como les|cómo les; como le|cómo le;
+            como sabes|cómo sabes; como que|cómo que; como estamos|cómo estamos; como andas|cómo andas;
             donde estas|dónde estás; donde esta|dónde está; donde estan|dónde están; donde vives|dónde vives;
             donde queda|dónde queda; donde vas|dónde vas; de donde|de dónde; a donde|a dónde; por donde|por dónde;
+            donde andas|dónde andas; donde nos|dónde nos; donde fuiste|dónde fuiste; donde compraste|dónde compraste;
             cuando vienes|cuándo vienes; cuando llegas|cuándo llegas; cuando sales|cuándo sales;
-            cuando vas|cuándo vas; desde cuando|desde cuándo; hasta cuando|hasta cuándo;
-            quien es|quién es; quien eres|quién eres; quien sabe|quién sabe; quien fue|quién fue;
-            cual es|cuál es; cuanto es|cuánto es; cuanto cuesta|cuánto cuesta; cuanto vale|cuánto vale;
-            cuanto falta|cuánto falta; cuantos años|cuántos años; cuantos anos|cuántos años;
+            cuando vas|cuándo vas; desde cuando|desde cuándo; hasta cuando|hasta cuándo; para cuando|para cuándo;
+            cuando nos|cuándo nos; cuando regresas|cuándo regresas; cuando vuelves|cuándo vuelves; cuando es|cuándo es;
+            quien es|quién es; quien eres|quién eres; quien sabe|quién sabe; quien fue|quién fue; quien te|quién te;
+            con quien|con quién; de quien|de quién; para quien|para quién; quien dijo|quién dijo; quien era|quién era;
+            cual es|cuál es; cual era|cuál era; cuales son|cuáles son; cuanto es|cuánto es; cuanto cuesta|cuánto cuesta;
+            cuanto vale|cuánto vale; cuanto falta|cuánto falta; cuantos años|cuántos años; cuantos anos|cuántos años;
+            cuanto tiempo|cuánto tiempo; cuanto te|cuánto te; cuanto me|cuánto me; cuantas veces|cuántas veces;
             esta bien|está bien; esta mal|está mal; esta aqui|está aquí; esta ahi|está ahí; esta lloviendo|está lloviendo;
-            ya esta|ya está; no esta|no está; todo esta|todo está;
+            ya esta|ya está; no esta|no está; todo esta|todo está; esta bonito|está bonito; esta bonita|está bonita;
+            esta rico|está rico; esta rica|está rica; esta feo|está feo; esta fea|está fea; esta loco|está loco; esta loca|está loca;
+            esta en|está en; esta con|está con; esta durmiendo|está durmiendo; esta trabajando|está trabajando;
             estas bien|estás bien; estas ahi|estás ahí; estas ocupado|estás ocupado; estas ocupada|estás ocupada;
-            estas loco|estás loco; estas loca|estás loca;
-            el es|él es; el esta|él está; el dijo|él dijo;
-            tu eres|tú eres; tu estas|tú estás; tu sabes|tú sabes;
-            si claro|sí claro; mas o|más o; mas tarde|más tarde; aun no|aún no
+            estas loco|estás loco; estas loca|estás loca; estas en|estás en; estas con|estás con; estas haciendo|estás haciendo;
+            estas despierto|estás despierto; estas despierta|estás despierta; estas molesto|estás molesto; estas molesta|estás molesta;
+            el es|él es; el esta|él está; el dijo|él dijo; el no|él no; el me|él me; el tambien|él también; con el|con él;
+            para el|para él; de el|de él;
+            tu eres|tú eres; tu estas|tú estás; tu sabes|tú sabes; tu tambien|tú también; tu no|tú no; tu que|tú qué;
+            tu tienes|tú tienes; tu dijiste|tú dijiste; y tu|y tú; tu crees|tú crees;
+            si claro|sí claro; si si|sí sí; claro si|claro sí; mas o|más o; mas tarde|más tarde; aun no|aún no; mas que|más que;
+            mi mama|mi mamá; mi papa|mi papá; tu mama|tu mamá; tu papa|tu papá; su mama|su mamá; su papa|su papá;
+            a mi|a mí; para mi|para mí; de mi|de mí; por mi|por mí; sin mi|sin mí;
+            se que|sé que; no se|no sé; yo se|yo sé; ya se|ya sé; solo se|solo sé;
+            tambien te|también te; tambien me|también me; tambien yo|también yo; yo tambien|yo también;
+            despues te|después te; despues de|después de
         """.trim().split(";").mapNotNull { linea ->
             val partes = linea.trim().split("|")
             if (partes.size != 2) null else {
                 val a = partes[0].trim().split(" ")
                 val b = partes[1].trim().split(" ")
-                if (a.size == 2 && b.size == 2) "${a[0]} ${a[1]}" to (b[0] to b[1]) else null
+                if (a.size == 2 && b.size == 2) "${sinTildes(a[0])} ${sinTildes(a[1])}" to (b[0] to b[1]) else null
             }
         }.toMap()
 
-        /** Palabras con tilde o ñ para corregir cuando las escribes sin ella */
+        /** Predicción: después de cada palabra, las que más se escriben (chat peruano) */
+        private val PARES_BASE: Map<String, List<String>> = """
+            que: tal, es, no, te, haces, pasó, me, se, hay, bueno
+            qué: tal, haces, pasó, es, bien, fue, hora, dices, onda, rico
+            de: la, que, los, nada, verdad, mi, tu, las, una, ahí
+            te: quiero, amo, extraño, llamo, aviso, escribo, digo, mando, paso, espero
+            buenos: días
+            buenas: noches, tardes
+            muchas: gracias, veces, cosas
+            muchos: saludos, besos, años
+            por: favor, qué, eso, fin, la, el, mi, aquí, ahí, si
+            estoy: bien, en, yendo, llegando, cansado, cansada, saliendo, trabajando, en casa, aquí
+            hola: cómo, qué, amor, causa, buenos, buenas, bebé, mi
+            como: estás, está, te, así, que, se, vas, va
+            cómo: estás, está, te, así, que, se, vas, va
+            nos: vemos, vamos, hablamos, vemos mañana, avisas
+            a: la, las, qué, ver, mí, el, los, que, tu
+            en: la, el, casa, serio, un, una, mi, la noche, el trabajo
+            no: sé, te, hay, puedo, pasa, me, es, tengo, quiero, importa
+            yo: también, te, no, estoy, sé, tampoco, voy, creo, quiero, igual
+            ya: voy, llegué, está, pe, nos, salgo, estoy, sé, me, fue
+            voy: a, en, para, saliendo, llegando, con
+            vamos: a, al, a la, mañana, pe, juntos
+            gracias: por, amor, causa, a ti, igualmente, de verdad
+            todo: bien, el, lo, está, tranquilo, ok
+            está: bien, en, con, muy, rico, aquí
+            estás: bien, en, haciendo, ahí, con, ocupado, ocupada
+            dónde: estás, está, vives, queda, nos
+            donde: estás, está, vives, queda
+            mi: amor, mamá, papá, casa, vida, hermano, hermana, celular, cielo, bebé
+            tu: casa, mamá, papá, celular, número, hermano, vida
+            tal: vez, cual
+            lo: siento, que, sé, mismo, voy, hago, tengo, vi
+            un: momento, rato, poco, ratito, día, beso, abrazo, toque
+            una: vez, pregunta, cosa, foto, semana, hora
+            me: avisas, gusta, voy, parece, encanta, dices, pasas, llamas, mandas, escribes
+            le: dije, digo, voy, aviso, mando, pregunto
+            se: me, te, fue, va, puede, lo, que, siente
+            es: que, un, una, el, la, muy, mi, verdad
+            muy: bien, bueno, buena, rico, lindo, linda, tarde, temprano, cansado
+            bien: y tú, gracias, y, pe, ahí
+            y: tú, tu, que, yo, el, la, me, ya, no, ahora
+            pero: no, ya, si, que, bueno, igual
+            para: que, ti, mí, el, la, mañana, ir, qué
+            con: mi, el, la, los, mis, quién, tu, todo
+            el: lunes, sábado, domingo, viernes, fin, otro, día, que
+            la: verdad, próxima, otra, casa, noche, misma
+            los: chicos, demás, quiero, amo
+            tengo: que, una, un, sueño, hambre, frío, miedo, clases, que ir
+            tienes: que, razón, algo, tiempo
+            quiero: que, verte, ir, saber, comer, dormir, decirte
+            puedo: ir, llamarte, pasar, hablar
+            puedes: venir, llamarme, pasarme, mandarme, ayudarme
+            hay: que, algo, clases, chamba, tiempo
+            hoy: no, es, día, en la noche, voy, tengo
+            mañana: te, nos, es, voy, temprano, en la mañana, hablamos
+            ahorita: te, voy, no, vuelvo, salgo, llego, regreso
+            después: te, de, hablamos, nos, vemos
+            luego: te, hablamos, nos, vemos, regreso
+            feliz: cumpleaños, día, año, navidad, fin
+            hasta: mañana, luego, pronto, la, el
+            dale: pe, ya, gracias, nos vemos
+            ok: gracias, ya, perfecto, dale, nos vemos
+            okey: gracias, ya, dale
+            sí: claro, pe, ya, te, me, mañana
+            claro: que, pe, ya, sí, no hay problema
+            disculpa: la, por, que
+            perdón: por, la, amor
+            cuídate: mucho, bastante, amor
+            besos: y, abrazos
+            amor: te, mío, cómo, ya, mi
+            causa: qué, ya, vamos, cómo
+            bro: qué, ya, vamos, cómo
+            oe: causa, qué, ya, bro, mano
+            pucha: qué, ya, no, mare
+            jaja: ya, no, sí, qué, pe
+            jajaja: ya, no, sí, qué
+            cuánto: es, cuesta, te, falta, tiempo
+            cuándo: vienes, nos, es, llegas, sales
+            quién: es, eres, te, sabe, fue
+            cuál: es, te, era
+            porque: no, te, me, yo, ya, es, estoy
+            entonces: ya, nos, qué, vamos, mañana
+            igual: te, no, ya, vamos
+            también: te, me, yo, está
+            tampoco: yo, me, te
+            nada: más, que, pe, mal
+            algo: así, más, para, de
+            todos: los, ustedes, están
+            espero: que, estés, verte
+            ojalá: que, puedas, mañana
+            avísame: cuando, si, para
+            llámame: cuando, cuando puedas, mañana
+            escríbeme: cuando, mañana
+            pásame: la, el, tu, la foto, el número
+            mándame: la, el, foto, tu, audio
+            dime: qué, si, cuando, dónde
+            sabes: qué, que, si, dónde
+            sé: que, si, dónde
+            creo: que, no, sí
+            parece: que, bien, bonito
+            ya llegué: a, amor
+            estamos: en, yendo, llegando, bien
+            están: en, bien, todos
+            vas: a, al, a la, mañana
+            va: a, al, a la, bien
+            tenemos: que, clases, examen
+            fue: muy, un, una, a, el
+            era: un, una, el, la, para, que
+            sale: el, la, a, mañana
+            salgo: a, del, de, ahorita
+            llego: a, en, tarde
+            llegué: a, bien, tarde, a casa
+            pasa: algo, que, nada, por
+            pasó: algo, nada, con, que
+            vengo: de, del, a, mañana
+            ven: a, mañana, rápido, pe
+            mira: lo, la, esto, eso
+            oye: causa, amor, qué, una
+            hola amor: cómo, buenos
+            buen: día, provecho, viaje, fin
+            mucho: gusto, trabajo, tiempo, más
+            poco: a, más, tiempo
+            más: tarde, o, rato, que, bien, de
+            otra: vez, cosa
+            otro: día, lado
+            ahí: está, te, nos, vamos, voy
+            aquí: estoy, en, te, está
+            acá: en, estoy, te
+            tan: bonito, linda, lindo, rico, temprano, tarde
+            así: es, que, nomás, como
+            gran: día, idea
+            al: toque, final, menos, fin
+            del: trabajo, colegio, día
+            les: aviso, escribo, mando, digo
+            nunca: más, te, me
+            siempre: te, me, que
+            primero: que, voy
+            vale: la, pe, gracias
+            chévere: pe, causa, gracias
+            bacán: pe, causa
+            listo: ya, pe, nos vemos
+        """.trim().lines().mapNotNull { linea ->
+            val i = linea.indexOf(':')
+            val clave = if (i <= 0) "" else linea.substring(0, i).trim()
+            // Como en iPhone: se predice una sola palabra a la vez
+            if (clave.isEmpty() || clave.contains(' ')) null
+            else clave to linea.substring(i + 1).split(",").map { it.trim() }.filter { it.isNotEmpty() && !it.contains(' ') }
+        }.toMap()
+
+        /** Palabras más usadas al escribir en el chat, de más a menos (manda el puntaje) */
+        private const val FRECUENCIA = """
+            que de no a la el y en lo es un por me una te los se con para mi pero las su al le si ya
+            qué bien sí hola gracias ok jaja jajaja yo tú tu él ella todo como cómo muy más está estoy
+            estás bueno buena buenos buenas días noches tardes amor causa pe pues oe bro ya
+            voy vamos va vas quiero quieres puedo puedes tengo tienes hay hacer hace haces hago hice
+            ser soy eres es son fue era sé sabes sabe saber ver veo vi visto dime dile dijo dije
+            también tampoco nada algo nadie alguien siempre nunca ahora ahorita hoy mañana ayer después luego
+            aquí acá ahí allá así porque entonces aunque cuando donde dónde cuándo quién cuál cuánto
+            casa trabajo chamba colegio clases universidad celular mensaje foto fotos video audio llamada
+            mamá papá hermano hermana amigo amiga amigos amigas familia novio novia hijo hija bebé
+            tiempo día hora horas rato momento semana mes año años vez veces noche tarde temprano
+            mucho mucha muchos muchas poco poca otro otra otros mismo cada todos todas
+            bonito bonita lindo linda rico rica feo fea grande pequeño nuevo nueva mejor peor
+            claro dale listo okey vale chévere bacán genial perfecto tranquilo tranquila igual
+            llegué llego llegas llega salgo sale salir llegar ir venir vengo ven viene vienes
+            nos les sus mis tus del cual cuanto quien
+            avísame llámame escríbeme pásame mándame espérame ayúdame cuéntame
+            te quiero amo extraño extrañas cariño corazón besos beso abrazo abrazos
+            comer comida almuerzo cena desayuno hambre sueño dormir duermo cansado cansada
+            plata soles pagar comprar tienda mercado pasaje carro taxi combi
+            fiesta reunión cumpleaños feliz felicidades saludos suerte bendiciones
+            verdad mentira obvio exacto seguro segura
+            creo crees parece gusta gustó encanta necesito necesitas
+            bueno ya pe pucha mare asu jajajaja xd
+        """
+
+        // Palabras con tilde o ñ para corregir cuando las escribes sin ella
         private const val BASE_TILDES = """
             también después además todavía quizás jamás aquí allá acá ahí así atrás según algún ningún
             común fácil difícil útil árbol cámara música número página rápido rápida teléfono último última
@@ -510,40 +823,6 @@ class Diccionario(context: Context) {
             cumpleaños español española compañero compañera compañía montaña araña enseñar diseño dueño
             dueña cariño piña uña uñas ñaño ñaña engaño extraño extraña
         """
-
-
-        private val PARES_BASE = mapOf(
-            "que" to listOf("tal", "es", "no", "te", "haces"),
-            "qué" to listOf("tal", "haces", "pasó", "es", "bien"),
-            "de" to listOf("la", "que", "los", "nada", "verdad"),
-            "te" to listOf("quiero", "amo", "extraño", "llamo", "aviso"),
-            "buenos" to listOf("días"),
-            "buenas" to listOf("noches", "tardes"),
-            "muchas" to listOf("gracias"),
-            "por" to listOf("favor", "qué", "eso", "fin", "la"),
-            "estoy" to listOf("bien", "en", "yendo", "llegando", "cansado"),
-            "hola" to listOf("cómo", "qué", "amor", "causa", "buenos"),
-            "como" to listOf("estás", "está", "te", "así"),
-            "cómo" to listOf("estás", "está", "te", "así"),
-            "nos" to listOf("vemos", "vamos"),
-            "a" to listOf("la", "las", "qué", "ver", "mí"),
-            "en" to listOf("la", "el", "casa", "serio", "un"),
-            "no" to listOf("sé", "te", "hay", "puedo", "pasa"),
-            "yo" to listOf("también", "te", "no", "estoy", "sé"),
-            "ya" to listOf("voy", "llegué", "está", "pe", "nos"),
-            "voy" to listOf("a", "en", "para"),
-            "gracias" to listOf("por", "amor", "causa"),
-            "todo" to listOf("bien", "el"),
-            "está" to listOf("bien", "en"),
-            "estás" to listOf("bien", "en"),
-            "dónde" to listOf("estás", "está"),
-            "donde" to listOf("estás", "está"),
-            "mi" to listOf("amor", "mamá", "papá", "casa"),
-            "tal" to listOf("vez"),
-            "lo" to listOf("siento", "que", "sé"),
-            "un" to listOf("momento", "rato", "poco"),
-            "me" to listOf("avisas", "gusta", "voy", "parece"),
-        )
 
         // Más palabras frecuentes: verbos conjugados, sustantivos y expresiones del día a día
         private const val BASE_EXTRA = """

@@ -11,6 +11,8 @@ import android.inputmethodservice.InputMethodService
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -70,11 +72,23 @@ class TecladoService : InputMethodService(),
     private var reconocedor: SpeechRecognizer? = null
     private var dictando = false
 
+    /**
+     * La barra y las mayúsculas se actualizan una sola vez por cuadro, aunque lleguen
+     * varias letras juntas (escribir rápido con dos dedos). Así el teclado no se traba.
+     */
+    private val manejador = Handler(Looper.getMainLooper())
+    private val tareaActualizar = Runnable { actualizarAhora() }
+
     override fun onCreate() {
         super.onCreate()
         Fuentes.iniciar(this)
         Ajustes.migrarDiseno(this)
         diccionario = Diccionario(this)
+        // Revisa en segundo plano qué emojis puede dibujar el celular (el panel abre al instante)
+        Thread({ try { CATEGORIAS.forEach { it.emojis } } catch (_: Throwable) { } }, "emojis").apply {
+            isDaemon = true
+            start()
+        }
         vibrador = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             getSystemService(VibratorManager::class.java)?.defaultVibrator
         } else {
@@ -229,6 +243,7 @@ class TecladoService : InputMethodService(),
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        manejador.removeCallbacks(tareaActualizar)
         if (dictando) detenerDictado()
         teclado?.ocultarPreview()
         diccionario.guardar()
@@ -236,6 +251,7 @@ class TecladoService : InputMethodService(),
     }
 
     override fun onDestroy() {
+        manejador.removeCallbacksAndMessages(null)
         reconocedor?.destroy()
         reconocedor = null
         diccionario.guardar()
@@ -297,8 +313,10 @@ class TecladoService : InputMethodService(),
     }
 
     /** (palabra anterior, palabra que se está escribiendo) */
-    private fun ultimasPalabras(): Pair<String, String> {
-        val antes = currentInputConnection?.getTextBeforeCursor(80, 0)?.toString() ?: return "" to ""
+    private fun ultimasPalabras(): Pair<String, String> =
+        palabrasDe(currentInputConnection?.getTextBeforeCursor(80, 0)?.toString() ?: "")
+
+    private fun palabrasDe(antes: String): Pair<String, String> {
         var i = antes.length
         while (i > 0 && antes[i - 1].isLetter()) i--
         val actual = antes.substring(i)
@@ -314,8 +332,10 @@ class TecladoService : InputMethodService(),
         (currentInputConnection?.getCursorCapsMode(TextUtils.CAP_MODE_SENTENCES) ?: 0) != 0
 
     /** Lo escrito desde el último espacio (para atajos con números o símbolos) */
-    private fun tokenActual(): String {
-        val antes = currentInputConnection?.getTextBeforeCursor(40, 0)?.toString() ?: return ""
+    private fun tokenActual(): String =
+        tokenDe(currentInputConnection?.getTextBeforeCursor(40, 0)?.toString() ?: "")
+
+    private fun tokenDe(antes: String): String {
         var i = antes.length
         while (i > 0 && !antes[i - 1].isWhitespace()) i--
         return antes.substring(i)
@@ -328,26 +348,41 @@ class TecladoService : InputMethodService(),
         return if (token[0].isUpperCase()) frase.replaceFirstChar { it.uppercase() } else frase
     }
 
+    /** Pide actualizar (se junta con otros pedidos del mismo cuadro) */
     private fun actualizar() {
-        actualizarMayus()
-        actualizarBarra()
+        manejador.removeCallbacks(tareaActualizar)
+        manejador.post(tareaActualizar)
     }
 
-    private fun actualizarMayus() {
+    private fun actualizarAhora() {
+        // Una sola lectura del texto por actualización (cada lectura le pregunta a la app)
+        val ic = currentInputConnection
+        val antes = ic?.getTextBeforeCursor(80, 0)?.toString() ?: ""
+        val inicio = (ic?.getCursorCapsMode(TextUtils.CAP_MODE_SENTENCES) ?: 0) != 0
+        actualizarMayus(inicio)
+        actualizarBarra(antes, inicio)
+    }
+
+    private fun actualizarMayus(inicio: Boolean) {
         val k = teclado ?: return
         if (k.modo != Modo.LETRAS) return
         if (!mayusPermitida) { k.mayusAuto(false); return }
-        k.mayusAuto(inicioDeOracion())
+        k.mayusAuto(inicio)
     }
 
     private fun actualizarBarra() {
+        manejador.removeCallbacks(tareaActualizar)
+        actualizarAhora()
+    }
+
+    private fun actualizarBarra(antes: String, inicio: Boolean) {
         val b = barra ?: return
         val enEmojis = emojis?.visibility == View.VISIBLE
         if (!sugerenciasActivas) {
             b.mostrar(emptyList()); b.visible(false); return
         }
-        val (previa, p) = ultimasPalabras()
-        val token = tokenActual()
+        val (previa, p) = palabrasDe(antes)
+        val token = tokenDe(antes)
         if ((p.isNotEmpty() || token.isNotEmpty()) && !enEmojis) barraActiva = true
         b.visible(barraActiva && !enEmojis)
         if (enEmojis) { b.mostrar(emptyList()); return }
@@ -365,13 +400,10 @@ class TecladoService : InputMethodService(),
 
         if (p.isEmpty()) {
             // Predicción de la siguiente palabra, como en iPhone
-            val inicio = inicioDeOracion()
             val sig = diccionario.siguientes(if (inicio) "" else previa, 3)
                 .map { if (inicio) it.replaceFirstChar { c -> c.uppercase() } else it }
             val uc = ultimaCorreccion
-            val deshacer = if (uc != null &&
-                currentInputConnection?.getTextBeforeCursor(uc.second.length, 0)?.toString() == uc.second
-            ) Sugerencia(uc.first.trim(), literal = true, revertir = true) else null
+            val deshacer = if (uc != null && antes.endsWith(uc.second)) Sugerencia(uc.first.trim(), literal = true, revertir = true) else null
             b.mostrar(listOf(
                 deshacer ?: sig.getOrNull(1)?.let { Sugerencia(it) },
                 sig.getOrNull(0)?.let { Sugerencia(it) },

@@ -1,6 +1,5 @@
 package com.tecladoios
 
-import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.LinearGradient
@@ -8,7 +7,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Shader
-import android.graphics.Typeface
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.animation.DecelerateInterpolator
@@ -16,217 +15,277 @@ import android.view.animation.OvershootInterpolator
 import android.widget.PopupWindow
 
 /**
- * Vista previa como la del iPhone: un cuadro de vidrio "sobreexpuesto" más ancho
- * que la tecla, con la letra grande, unido a la tecla por un cuello curvo.
- * Nace de la tecla y se infla hacia arriba.
+ * Vista previa de las teclas como la del iPhone, dibujada en UNA sola capa fija
+ * encima del teclado (antes era una ventanita por toque que se movía de tecla en tecla).
+ *
+ * - Cada toque tiene su propia burbuja, que nace, se queda y se recoge en SU tecla.
+ *   Al tocar la "i" y luego la "z", la burbuja de la "i" se recoge en la "i" y la de
+ *   la "z" nace en la "z": ya no se ve un desplazamiento de una tecla a otra.
+ * - La capa nunca se mueve ni cambia de tamaño mientras escribes, así Android no tiene
+ *   que reacomodar ventanas en cada letra: las animaciones van fluidas y el teclado
+ *   responde al instante aunque escribas rápido con dos dedos.
  */
-class KeyPreviewView(context: Context) : View(context) {
+class KeyPreviewOverlay(private val anchor: View) {
 
-    var label: String = ""
-        set(value) { field = value; invalidate() }
-    var keyWidth = 0f
-    var keyHeight = 0f
-    var darkMode = false
-    /** Color de las teclas: la vista previa es del mismo tono, mucho más clara */
-    var colorTecla = 0xFF343437.toInt()
-    /** Redondeo de la tecla, para que el pie de la vista previa calce con ella */
-    var radioTecla = 6f * resources.displayMetrics.density
-
-    /** 0 = del tamaño de la tecla, 1 = vista previa completa */
-    var progreso = 0f
-        set(value) { field = value; invalidate() }
-
-    private val d = resources.displayMetrics.density
-    val pad get() = 14f * d
-    /** Cuánto sobresale el cuadro a cada lado de la tecla */
-    private val extra get() = keyWidth * 0.25f
-    /** Alto del cuadro de arriba (donde va la letra) */
-    private val altoCuadro get() = keyHeight * 1.12f
-
-    fun totalWidth() = (keyWidth + extra * 2 + pad * 2).toInt()
-    fun totalHeight() = (altoCuadro + keyHeight + pad * 2).toInt()
-    fun offsetX() = (extra + pad).toInt()
-    fun offsetY() = (altoCuadro + pad).toInt()
-
-    private val path = Path()
-    private val cuerpo = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val brillo = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 1f * d
-    }
-    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textAlign = Paint.Align.CENTER
-    }.also { Fuentes.aplicar(it, 400) }
-
-    private fun construir(p: Float) {
-        val kw = keyWidth
-        val kh = keyHeight
-        val cx = pad + extra + kw / 2f
-        val fondo = pad + altoCuadro + kh
-        val e = extra * p
-        val bh = altoCuadro * p
-        val top = fondo - kh - bh
-        val bb = top + bh                 // parte de abajo del cuadro
-        val izq = cx - kw / 2f - e
-        val der = cx + kw / 2f + e
-        val kl = cx - kw / 2f
-        val kr = cx + kw / 2f
-        val r = minOf(bh * 0.34f, (der - izq) * 0.28f)
-        val rk = minOf(radioTecla, kw * 0.3f)
-        val n = kh * 0.34f * p            // largo del cuello
-
-        path.reset()
-        path.moveTo(izq + r, top)
-        path.lineTo(der - r, top)
-        path.quadTo(der, top, der, top + r)
-        path.lineTo(der, maxOf(bb - r, top + r))
-        path.cubicTo(der, bb, kr, bb, kr, bb + n)
-        path.lineTo(kr, fondo - rk)
-        path.quadTo(kr, fondo, kr - rk, fondo)
-        path.lineTo(kl + rk, fondo)
-        path.quadTo(kl, fondo, kl, fondo - rk)
-        path.lineTo(kl, bb + n)
-        path.cubicTo(kl, bb, izq, bb, izq, maxOf(bb - r, top + r))
-        path.lineTo(izq, top + r)
-        path.quadTo(izq, top, izq + r, top)
-        path.close()
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        if (keyWidth <= 0f || keyHeight <= 0f) return
-        val p = progreso.coerceIn(0f, 1.12f)
-        construir(p)
-        val top = pad + altoCuadro * (1f - p)
-        val fondo = pad + altoCuadro + keyHeight
-
-        val arriba: Int; val abajo: Int
-        if (darkMode) {
-            // "Sobreexpuesta": mucho más clara que las teclas, como la O del iPhone
-            val base = aclarar(colorTecla, 0.52f)
-            arriba = (aclarar(base, 0.12f) and 0x00FFFFFF) or (0xF7 shl 24)
-            abajo = (base and 0x00FFFFFF) or (0xF2 shl 24)
-        } else {
-            arriba = 0xFFFFFFFF.toInt(); abajo = 0xFAF2F3F6.toInt()
-        }
-
-        // Resplandor alrededor (luz que se escapa del vidrio)
-        cuerpo.shader = null
-        cuerpo.color = abajo
-        cuerpo.setShadowLayer(14f * d, 0f, 0f, if (darkMode) 0x55FFFFFF else 0x40000000)
-        canvas.drawPath(path, cuerpo)
-        cuerpo.clearShadowLayer()
-
-        // Cuerpo de vidrio, más brillante en el cuadro de arriba
-        cuerpo.shader = LinearGradient(0f, top, 0f, fondo, arriba, abajo, Shader.TileMode.CLAMP)
-        canvas.drawPath(path, cuerpo)
-
-        brillo.shader = LinearGradient(0f, top, 0f, top + altoCuadro * 0.5f,
-            0x40FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
-        canvas.drawPath(path, brillo)
-
-        borde.color = if (darkMode) 0xB3FFFFFF.toInt() else 0x33000000
-        canvas.drawPath(path, borde)
-
-        // Letra grande centrada en el cuadro de arriba
-        val alfaLetra = ((p - 0.3f) / 0.55f).coerceIn(0f, 1f)
-        textPaint.color = if (darkMode) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
-        textPaint.alpha = (255 * alfaLetra).toInt()
-        if (darkMode) textPaint.setShadowLayer(4f * d, 0f, 1f * d, 0x59000000) else textPaint.clearShadowLayer()
-        textPaint.textSize = keyHeight * 0.68f
-        val fm = textPaint.fontMetrics
-        val cx = pad + extra + keyWidth / 2f
-        val cy = top + altoCuadro * p * 0.5f
-        canvas.drawText(label, cx, cy - (fm.ascent + fm.descent) / 2f, textPaint)
-    }
-}
-
-private fun aclarar(c: Int, f: Float): Int {
-    fun canal(x: Int) = (x + (255 - x) * f).toInt().coerceIn(0, 255)
-    return (0xFF shl 24) or (canal((c shr 16) and 0xFF) shl 16) or
-            (canal((c shr 8) and 0xFF) shl 8) or canal(c and 0xFF)
-}
-
-/** Muestra y anima una cápsula. Cada dedo usa la suya, así cada toque es independiente. */
-class KeyPreviewManager(private val anchor: View, radioTecla: Float) {
-
-    private val vista = KeyPreviewView(anchor.context).apply { this.radioTecla = radioTecla }
+    private val vista = Capa(anchor.context)
     private val popup = PopupWindow(vista).apply {
         isClippingEnabled = false
         isTouchable = false
         isFocusable = false
+        isOutsideTouchable = false
         setBackgroundDrawable(null)
         animationStyle = 0
+        inputMethodMode = PopupWindow.INPUT_METHOD_NOT_NEEDED
     }
-    private var animacion: ValueAnimator? = null
-    private var visible = false
+    private var x = Int.MIN_VALUE
+    private var y = Int.MIN_VALUE
+    private var w = 0
+    private var h = 0
 
-    private fun animar(hasta: Float, duracion: Long, rebote: Boolean, alTerminar: (() -> Unit)? = null) {
-        animacion?.cancel()
-        animacion = ValueAnimator.ofFloat(vista.progreso, hasta).apply {
-            duration = duracion
-            interpolator = if (rebote) OvershootInterpolator(1.4f) else DecelerateInterpolator()
-            addUpdateListener { vista.progreso = it.animatedValue as Float }
-            if (alTerminar != null) addListener(object : android.animation.AnimatorListenerAdapter() {
-                private var cancelada = false
-                override fun onAnimationCancel(a: android.animation.Animator) { cancelada = true }
-                override fun onAnimationEnd(a: android.animation.Animator) { if (!cancelada) alTerminar() }
-            })
-            start()
-        }
-    }
+    /** Alto de la tecla más alta: decide cuánto sobresale la capa por arriba del teclado */
+    var altoTecla = 0f
+    var radioTecla = 6f
 
-    /** rect: posición de la tecla dentro de [anchor] */
-    fun show(rect: RectF, label: String, tema: Tema) {
-        if (anchor.windowToken == null || rect.width() <= 0f) return
-
-        vista.darkMode = tema.oscuro
-        vista.colorTecla = tema.tecla
-        vista.keyWidth = rect.width()
-        vista.keyHeight = rect.height()
-        vista.label = label
-
+    /** Prepara (o reubica) la capa. Solo hace algo si el teclado cambió de lugar o tamaño. */
+    private fun asegurar(): Boolean {
+        if (anchor.windowToken == null || anchor.width == 0 || anchor.height == 0) return false
+        val d = anchor.resources.displayMetrics.density
+        val extra = (altoTecla * 1.3f + 22f * d).toInt()
         val loc = IntArray(2)
         anchor.getLocationInWindow(loc)
-        val w = vista.totalWidth()
-        val h = vista.totalHeight()
-        val x = loc[0] + rect.left.toInt() - vista.offsetX()
-        val y = loc[1] + rect.top.toInt() - vista.offsetY()
-
+        val nx = loc[0]
+        val ny = loc[1] - extra
+        val nw = anchor.width
+        val nh = anchor.height + extra
+        vista.extraArriba = extra.toFloat()
         if (popup.isShowing) {
-            popup.update(x, y, w, h)
+            if (nx != x || ny != y || nw != w || nh != h) popup.update(nx, ny, nw, nh)
         } else {
-            popup.width = w
-            popup.height = h
-            popup.showAtLocation(anchor, Gravity.NO_GRAVITY, x, y)
+            popup.width = nw
+            popup.height = nh
+            try {
+                popup.showAtLocation(anchor, Gravity.NO_GRAVITY, nx, ny)
+            } catch (_: Exception) {
+                return false
+            }
         }
-        vista.alpha = 1f
-
-        if (!visible) {
-            // Nace de la tecla y se estira hacia arriba con un pequeño rebote
-            vista.progreso = 0f
-            animar(1f, 170, rebote = true)
-        } else {
-            // Al deslizar a otra tecla: un rebote corto
-            vista.progreso = 0.85f
-            animar(1f, 110, rebote = true)
-        }
-        visible = true
+        x = nx; y = ny; w = nw; h = nh
+        return true
     }
 
-    fun hide() {
-        if (!visible) return
-        visible = false
-        // Se recoge hacia la tecla y desaparece
-        animar(0f, 110, rebote = false) {
-            vista.alpha = 0f
+    /**
+     * Muestra la burbuja del dedo [id] sobre la tecla [rect].
+     * [deslizando]: el mismo dedo pasó a otra tecla (aparece casi completa, sin viajar).
+     */
+    fun mostrar(id: Int, rect: RectF, etiqueta: String, tema: Tema, deslizando: Boolean = false) {
+        if (rect.width() <= 0f || !asegurar()) return
+        vista.tema = tema
+        vista.radioTecla = radioTecla
+        vista.mostrar(id, rect, etiqueta, deslizando)
+    }
+
+    /** El dedo [id] se levantó: su burbuja se recoge en su propia tecla */
+    fun soltar(id: Int) = vista.soltar(id)
+
+    /** Quita la burbuja del dedo [id] al instante (por ejemplo, al abrir los acentos) */
+    fun quitar(id: Int) = vista.quitar(id)
+
+    /** Quita todas las burbujas al instante */
+    fun limpiar() = vista.limpiar()
+
+    fun cerrar() {
+        vista.limpiar()
+        if (popup.isShowing) try { popup.dismiss() } catch (_: Exception) { }
+        x = Int.MIN_VALUE
+    }
+
+    // ---------------------------------------------------------------------------------
+
+    private class Burbuja(val tecla: RectF, var etiqueta: String) {
+        var desde = 0f
+        var hasta = 1f
+        var inicio = 0L
+        var duracion = 170L
+        var rebote = true
+
+        fun animar(a: Float, b: Float, ms: Long, conRebote: Boolean, ahora: Long) {
+            desde = a; hasta = b; duracion = ms; rebote = conRebote; inicio = ahora
+        }
+
+        fun valor(ahora: Long): Float {
+            val f = ((ahora - inicio).toFloat() / duracion).coerceIn(0f, 1f)
+            val i = if (rebote) REBOTE.getInterpolation(f) else FRENO.getInterpolation(f)
+            return desde + (hasta - desde) * i
+        }
+
+        fun termino(ahora: Long) = ahora - inicio >= duracion
+    }
+
+    private class Capa(context: Context) : View(context) {
+
+        var tema: Tema? = null
+        var radioTecla = 6f
+        var extraArriba = 0f
+
+        /** Burbujas de los dedos que están tocando */
+        private val activas = HashMap<Int, Burbuja>()
+        /** Burbujas de dedos ya levantados, recogiéndose en su tecla */
+        private val saliendo = ArrayList<Burbuja>()
+
+        private val d = resources.displayMetrics.density
+        private val path = Path()
+        private val cuerpo = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val brillo = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val resplandor = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 1f * d
+        }
+        private val texto = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+        }.also { Fuentes.aplicar(it, 400) }
+
+        private fun ahora() = SystemClock.uptimeMillis()
+
+        fun mostrar(id: Int, rect: RectF, etiqueta: String, deslizando: Boolean) {
+            val t = ahora()
+            activas.remove(id) // si el mismo dedo cambió de tecla, la anterior desaparece en su sitio
+            val b = Burbuja(RectF(rect), etiqueta)
+            if (deslizando) b.animar(0.86f, 1f, 110, true, t) else b.animar(0f, 1f, 170, true, t)
+            activas[id] = b
+            postInvalidateOnAnimation()
+        }
+
+        fun soltar(id: Int) {
+            val b = activas.remove(id) ?: return
+            val t = ahora()
+            b.animar(b.valor(t), 0f, 110, false, t)
+            saliendo.add(b)
+            postInvalidateOnAnimation()
+        }
+
+        fun quitar(id: Int) {
+            if (activas.remove(id) != null) invalidate()
+        }
+
+        fun limpiar() {
+            if (activas.isEmpty() && saliendo.isEmpty()) return
+            activas.clear()
+            saliendo.clear()
+            invalidate()
+        }
+
+        override fun onDraw(c: Canvas) {
+            val tm = tema ?: return
+            val t = ahora()
+            var animando = false
+            c.save()
+            c.translate(0f, extraArriba)
+            val iter = saliendo.iterator()
+            while (iter.hasNext()) {
+                val b = iter.next()
+                if (b.termino(t)) { iter.remove(); continue }
+                dibujar(c, b, b.valor(t), tm)
+                animando = true
+            }
+            for (b in activas.values) {
+                dibujar(c, b, b.valor(t), tm)
+                if (!b.termino(t)) animando = true
+            }
+            c.restore()
+            if (animando) postInvalidateOnAnimation()
+        }
+
+        private fun dibujar(c: Canvas, b: Burbuja, progreso: Float, tm: Tema) {
+            val p = progreso.coerceIn(0f, 1.12f)
+            if (p <= 0.01f) return
+            val r0 = b.tecla
+            val kw = r0.width()
+            val kh = r0.height()
+            val kl = r0.left
+            val kr = r0.right
+            val fondo = r0.bottom
+            val extra = kw * 0.25f            // cuánto sobresale el cuadro a cada lado
+            val altoCuadro = kh * 1.12f       // alto del cuadro donde va la letra
+            val e = extra * p
+            val bh = altoCuadro * p
+            val bb = r0.top                   // parte de abajo del cuadro = arriba de la tecla
+            val top = bb - bh
+            var izq = kl - e
+            var der = kr + e
+            // En los bordes (q, p, a, ñ) el cuadro se corre hacia adentro, como en iPhone
+            val margen = 2f * d
+            var dx = 0f
+            if (izq < margen) dx = margen - izq
+            else if (der > width - margen) dx = (width - margen) - der
+            dx = dx.coerceIn(-e, e)
+            izq += dx
+            der += dx
+            val r = minOf(bh * 0.34f, (der - izq) * 0.28f)
+            val rk = minOf(radioTecla * 1.35f, kw * 0.3f)
+            val n = kh * 0.34f * p            // largo del cuello
+
+            path.reset()
+            path.moveTo(izq + r, top)
+            path.lineTo(der - r, top)
+            path.quadTo(der, top, der, top + r)
+            path.lineTo(der, maxOf(bb - r, top + r))
+            path.cubicTo(der, bb, kr, bb, kr, bb + n)
+            path.lineTo(kr, fondo - rk)
+            path.quadTo(kr, fondo, kr - rk, fondo)
+            path.lineTo(kl + rk, fondo)
+            path.quadTo(kl, fondo, kl, fondo - rk)
+            path.lineTo(kl, bb + n)
+            path.cubicTo(kl, bb, izq, bb, izq, maxOf(bb - r, top + r))
+            path.lineTo(izq, top + r)
+            path.quadTo(izq, top, izq + r, top)
+            path.close()
+
+            val arriba: Int
+            val abajo: Int
+            if (tm.oscuro) {
+                // "Sobreexpuesta": mucho más clara que las teclas, como en el iPhone
+                val base = aclarar(tm.tecla, 0.52f)
+                arriba = (aclarar(base, 0.12f) and 0x00FFFFFF) or (0xF7 shl 24)
+                abajo = (base and 0x00FFFFFF) or (0xF2 shl 24)
+            } else {
+                arriba = 0xFFFFFFFF.toInt(); abajo = 0xFAF2F3F6.toInt()
+            }
+
+            // Resplandor suave alrededor (luz que se escapa del vidrio)
+            resplandor.color = abajo
+            resplandor.setShadowLayer(10f * d, 0f, 0f, if (tm.oscuro) 0x55FFFFFF else 0x40000000)
+            c.drawPath(path, resplandor)
+
+            cuerpo.shader = LinearGradient(0f, top, 0f, fondo, arriba, abajo, Shader.TileMode.CLAMP)
+            c.drawPath(path, cuerpo)
+            brillo.shader = LinearGradient(0f, top, 0f, top + altoCuadro * 0.5f,
+                0x40FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
+            c.drawPath(path, brillo)
+            borde.color = if (tm.oscuro) 0xB3FFFFFF.toInt() else 0x33000000
+            c.drawPath(path, borde)
+
+            // Letra grande en el cuadro de arriba
+            val alfaLetra = ((p - 0.3f) / 0.55f).coerceIn(0f, 1f)
+            if (alfaLetra <= 0f) return
+            texto.color = if (tm.oscuro) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
+            texto.alpha = (255 * alfaLetra).toInt()
+            texto.textSize = kh * 0.68f
+            val fm = texto.fontMetrics
+            val cx = (izq + der) / 2f
+            val cy = top + bh * 0.5f
+            c.drawText(b.etiqueta, cx, cy - (fm.ascent + fm.descent) / 2f, texto)
         }
     }
 
-    fun dismiss() {
-        visible = false
-        animacion?.cancel()
-        vista.progreso = 0f
-        if (popup.isShowing) popup.dismiss()
+    private companion object {
+        val REBOTE = OvershootInterpolator(1.4f)
+        val FRENO = DecelerateInterpolator()
+
+        fun aclarar(c: Int, f: Float): Int {
+            fun canal(x: Int) = (x + (255 - x) * f).toInt().coerceIn(0, 255)
+            return (0xFF shl 24) or (canal((c shr 16) and 0xFF) shl 16) or
+                    (canal((c shr 8) and 0xFF) shl 8) or canal(c and 0xFF)
+        }
     }
 }
