@@ -386,6 +386,19 @@ class SettingsActivity : Activity() {
             setPadding(dp(16), dp(12), dp(16), dp(12))
         }
         grupo("Prueba", listOf(prueba))
+
+        // Número de versión: sirve para comprobar que se instaló la última compilación
+        val version = try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+        } catch (_: Exception) { "?" }
+        contenedor.addView(TextView(this).apply {
+            text = "TecladoiOS versión $version · vista previa con cuadro"
+            Fuentes.aplicar(this, 400)
+            textSize = 13f
+            setTextColor(gris)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(24), 0, 0)
+        })
     }
 
     /** Fila con barra deslizante de 80% a 130% */

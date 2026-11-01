@@ -11,8 +11,10 @@ android {
         applicationId = "com.tecladoios"
         minSdk = 30
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.0"
+        // Cada compilación de GitHub tiene su propio número, para saber cuál está instalada
+        val compilacion = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+        versionCode = 100 + compilacion
+        versionName = "3.$compilacion"
     }
 
     buildTypes {
