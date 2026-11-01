@@ -1,0 +1,49 @@
+name: Compilar APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Si subiste TecladoiOS.zip, lo descomprime y guarda los archivos en el repo
+      - name: Descomprimir proyecto
+        run: |
+          if [ -f TecladoiOS.zip ]; then
+            unzip -o TecladoiOS.zip -d .
+            rm TecladoiOS.zip
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "Descomprimir proyecto TecladoiOS" || true
+            git push || echo "Ya estaba descomprimido"
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: llave-debug-tecladoios-v1
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Compilar
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TecladoiOS-APK
+          path: app/build/outputs/apk/debug/*.apk
