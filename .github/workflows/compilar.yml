@@ -1,18 +1,18 @@
 name: Compilar APK
-
+ 
 on:
   push:
   workflow_dispatch:
-
+ 
 permissions:
   contents: write
-
+ 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
+ 
       # Si subiste TecladoiOS.zip, lo descomprime y guarda los archivos en el repo
       - name: Descomprimir proyecto
         run: |
@@ -26,25 +26,37 @@ jobs:
             git commit -m "Descomprimir proyecto TecladoiOS" || true
             git push || echo "Ya estaba descomprimido"
           fi
-
+ 
+      # Descarga la letra Inter (libre, parecida a la del iPhone) para el teclado
+      - name: Descargar letra
+        run: |
+          mkdir -p app/src/main/assets
+          curl -fsSL -o app/src/main/assets/inter.ttf "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter%5Bopsz,wght%5D.ttf" || \
+          (curl -fsSL -o /tmp/inter.zip "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip" && \
+           unzip -j -o /tmp/inter.zip "*InterVariable.ttf" -d /tmp && mv /tmp/InterVariable.ttf app/src/main/assets/inter.ttf) || \
+          echo "No se pudo descargar la letra, se usará la del sistema"
+          [ -s app/src/main/assets/inter.ttf ] || rm -f app/src/main/assets/inter.ttf
+          ls -la app/src/main/assets || true
+ 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
+ 
       - uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
           key: llave-debug-tecladoios-v1
-
+ 
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-
+ 
       - name: Compilar
         run: gradle assembleDebug --no-daemon
-
+ 
       - uses: actions/upload-artifact@v4
         with:
           name: TecladoiOS-APK
           path: app/build/outputs/apk/debug/*.apk
+ 
