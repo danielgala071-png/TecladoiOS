@@ -24,6 +24,22 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Descargar la fuente estilo iPhone (Inter)
+        run: |
+          DESTINO=app/src/main/assets/inter.ttf
+          mkdir -p app/src/main/assets
+          if [ ! -f "$DESTINO" ]; then
+            if curl -fsSL -o inter.zip https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip; then
+              unzip -q -o inter.zip -d inter
+              cp "$(find inter -name 'InterVariable.ttf' | head -1)" "$DESTINO" || true
+            fi
+            if [ ! -s "$DESTINO" ]; then
+              curl -fsSL -o "$DESTINO" "https://github.com/google/fonts/raw/main/ofl/inter/Inter%5Bopsz,wght%5D.ttf" || true
+            fi
+          fi
+          [ -s "$DESTINO" ] || rm -f "$DESTINO"
+          ls -la app/src/main/assets
+
       - name: Compilar el APK
         run: gradle assembleDebug --stacktrace
 
