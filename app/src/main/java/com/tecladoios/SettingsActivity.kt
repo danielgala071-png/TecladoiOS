@@ -5,6 +5,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
@@ -268,6 +269,25 @@ class SettingsActivity : Activity() {
         return f
     }
 
+    @Suppress("DEPRECATION")
+    private fun filaInterruptorAccion(titulo: String, clave: String, porDefecto: Boolean, alCambiar: (Boolean) -> Unit): View {
+        val f = fila()
+        f.addView(textoFila(titulo), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val estados = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
+        val sw = Switch(this).apply {
+            isChecked = prefs.getBoolean(clave, porDefecto)
+            trackTintList = ColorStateList(estados, intArrayOf(verde, if (oscuro) 0xFF39393D.toInt() else 0xFFE9E9EA.toInt()))
+            thumbTintList = ColorStateList(estados, intArrayOf(Color.WHITE, Color.WHITE))
+            setOnCheckedChangeListener { _, activo ->
+                prefs.edit().putBoolean(clave, activo).apply()
+                try { alCambiar(activo) } catch (_: Exception) { }
+            }
+        }
+        f.addView(sw)
+        f.setOnClickListener { sw.toggle() }
+        return f
+    }
+
     private fun filaAccion(titulo: String, color: Int = colorTexto, derecha: String? = "›", accion: () -> Unit): View {
         val f = fila()
         f.addView(textoFila(titulo, color), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
@@ -342,9 +362,12 @@ class SettingsActivity : Activity() {
         grupo("Liquid Glass", listOf(
             filaCheck("Transparente", vidrio == "transparente") { elegir("vidrio", "transparente") },
             filaCheck("Predeterminado", vidrio == "normal") { elegir("vidrio", "normal") },
-            filaCheck("Tintado", vidrio == "tintado") { elegir("vidrio", "tintado") },
+            filaCheck("Sólido (como iPhone)", vidrio == "tintado") { elegir("vidrio", "tintado") },
             filaInterruptor("Desenfocar el fondo", "desenfoque", true),
-        ), pie = "“Tintado” hace el teclado más opaco y fácil de leer.")
+            filaInterruptor("Combinar con la app", "adaptar", true),
+        ), pie = "“Sólido” es el diseño del teclado del iPhone. “Combinar con la app” toma el color " +
+                "de la app que estás usando (verde en WhatsApp, rosado en Instagram…) para la tecla de " +
+                "acción y un toque sutil del fondo.")
 
         val tema = Ajustes.tema(this)
         grupo("Apariencia", listOf(
@@ -358,6 +381,21 @@ class SettingsActivity : Activity() {
             filaDeslizador("Altura de las teclas", "altura"),
             filaDeslizador("Tamaño de las letras", "letra"),
         ), pie = "Los cambios se ven la próxima vez que abras el teclado.")
+
+        grupo("App", listOf(
+            filaInterruptorAccion("Ocultar ícono de la app", "ocultar_icono", false) { ocultar ->
+                packageManager.setComponentEnabledSetting(
+                    ComponentName(this, "com.tecladoios.Lanzador"),
+                    if (ocultar) PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                    else PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    PackageManager.DONT_KILL_APP,
+                )
+                if (ocultar) Toast.makeText(this,
+                    "Ícono oculto. Para volver aquí: Ajustes del celular → Teclado → TecladoiOS",
+                    Toast.LENGTH_LONG).show()
+            },
+        ), pie = "Para abrir estos ajustes con el ícono oculto: Ajustes del celular → Idioma y entrada " +
+                "(o Teclado) → TecladoiOS. Algunos celulares muestran igual un acceso a la información de la app.")
 
         grupo(null, listOf(
             filaAccion("Restablecer diccionario del teclado", rojo, derecha = null) {

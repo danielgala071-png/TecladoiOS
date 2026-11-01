@@ -19,13 +19,24 @@ object Ajustes {
     fun bloqMayus(c: Context) = prefs(c).getBoolean("bloq_mayus", true)
     fun atajosActivos(c: Context) = prefs(c).getBoolean("atajos_activos", true)
     /** "auto", "claro", "oscuro" o "amoled" (negro puro) */
-    fun tema(c: Context) = prefs(c).getString("tema", "amoled") ?: "amoled"
+    fun tema(c: Context) = prefs(c).getString("tema", "auto") ?: "auto"
+    /** Combinar el color del teclado con la app que estás usando */
+    fun adaptar(c: Context) = prefs(c).getBoolean("adaptar", true)
+    fun iconoOculto(c: Context) = prefs(c).getBoolean("ocultar_icono", false)
+
+    /** Una sola vez: pasar al nuevo diseño igual al del iPhone */
+    fun migrarDiseno(c: Context) {
+        val p = prefs(c)
+        if (!p.getBoolean("diseno_v3", false)) {
+            p.edit().putString("tema", "auto").putString("vidrio", "tintado").putBoolean("diseno_v3", true).apply()
+        }
+    }
     /** Altura de las teclas en % (80 a 130) */
     fun altura(c: Context) = prefs(c).getInt("altura", 100).coerceIn(80, 130)
     /** Tamaño de las letras en % (80 a 130) */
     fun letra(c: Context) = prefs(c).getInt("letra", 100).coerceIn(80, 130)
     /** "transparente", "normal" o "tintado" (como el control de Liquid Glass de iOS 27) */
-    fun vidrio(c: Context) = prefs(c).getString("vidrio", "normal") ?: "normal"
+    fun vidrio(c: Context) = prefs(c).getString("vidrio", "tintado") ?: "tintado"
     fun desenfoque(c: Context) = prefs(c).getBoolean("desenfoque", true)
 
     /** Sustitución de texto: (función rápida, frase) */

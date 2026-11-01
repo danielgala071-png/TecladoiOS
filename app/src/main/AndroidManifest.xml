@@ -20,12 +20,20 @@
         <activity
             android:name=".SettingsActivity"
             android:exported="true"
+            android:label="TecladoiOS" />
+
+        <!-- Ícono de la app en el menú: se puede ocultar desde los ajustes -->
+        <activity-alias
+            android:name=".Lanzador"
+            android:targetActivity=".SettingsActivity"
+            android:exported="true"
+            android:enabled="true"
             android:label="TecladoiOS">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
 
         <service
             android:name=".TecladoService"

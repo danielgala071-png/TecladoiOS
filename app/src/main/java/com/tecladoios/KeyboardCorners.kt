@@ -17,7 +17,7 @@ object KeyboardCorners {
     fun apply(root: View, alLeerRadio: (Float) -> Unit = {}, fallbackDp: Float = 42f) {
         val density = root.resources.displayMetrics.density
         var radio = fallbackDp * density
-        val radioArriba = 26f * Medidas.escala(root.context)
+        val radioArriba = 30f * Medidas.escala(root.context)
 
         root.outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: Outline) {

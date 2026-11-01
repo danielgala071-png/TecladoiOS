@@ -54,7 +54,7 @@ class KeyboardView(
     private val escalaAlto = Ajustes.altura(context) / 100f
     private val escalaLetra = Ajustes.letra(context) / 100f
     private val altoFila = (if (Medidas.horizontal(context)) dp(40f) else dp(54f)) * escalaAlto
-    private val margenArriba = dp(4f)
+    private val margenArriba = dp(9f)
     private val margenAbajo = dp(8f)
     private val sepH = dp(3f)
     private val sepV = dp(5.5f)
@@ -279,12 +279,15 @@ class KeyboardView(
     private fun dibujarTira(c: Canvas) {
         for (t in tira) {
             val pres = presionadas.containsValue(t)
-            pinturaIcono.color = if (t.tipo == Tipo.MIC && dictando) tema.azul else tema.texto
+            // Íconos rellenos en gris claro, como en el iPhone
+            val gris = if (tema.oscuro) 0xFFBDBDC2.toInt() else 0xFF5B5B60.toInt()
+            pinturaIcono.color = if (t.tipo == Tipo.MIC && dictando) tema.azul else gris
             pinturaIcono.alpha = if (pres) 110 else 255
             val cx = t.rect.centerX()
             val cy = t.rect.centerY() - dp(3f)
-            if (t.tipo == Tipo.EMOJI) Iconos.emoji(c, cx, cy, dp(27f), pinturaIcono)
-            else Iconos.microfono(c, cx, cy, dp(25f), pinturaIcono)
+            val fondoOpaco = (tema.fondo and 0x00FFFFFF) or (0xFF shl 24)
+            if (t.tipo == Tipo.EMOJI) Iconos.emojiLleno(c, cx, cy, dp(27f), pinturaIcono, fondoOpaco)
+            else Iconos.microfonoLleno(c, cx, cy, dp(26f), pinturaIcono)
         }
         pinturaIcono.alpha = 255
     }
@@ -370,15 +373,19 @@ class KeyboardView(
 
         val cx = t.rect.centerX()
         val cy = t.rect.centerY()
-        val colorContenido = if (t.tipo == Tipo.ENTER && enterAzul && !presionada) Color.WHITE else tema.texto
+        val colorContenido = if (t.tipo == Tipo.ENTER && enterAzul && !presionada) tema.textoAcento else tema.texto
         pinturaIcono.color = colorContenido
 
         when (t.tipo) {
             Tipo.SHIFT -> Iconos.shift(c, cx, cy, dp(20f), pinturaIcono, shift > 0, shift == 2)
             Tipo.BORRAR -> Iconos.borrar(c, cx, cy, dp(22f), pinturaIcono)
             Tipo.EMOJI -> Iconos.emoji(c, cx, cy, dp(22f), pinturaIcono)
-            Tipo.ENTER -> if (etiquetaEnter == "intro") Iconos.enter(c, cx, cy, dp(22f), pinturaIcono)
-                          else texto(c, etiquetaEnter, cx, cy, dp(16f) * escalaLetra, colorContenido)
+            Tipo.ENTER -> when (etiquetaEnter) {
+                "intro" -> Iconos.enter(c, cx, cy, dp(22f), pinturaIcono)
+                "ir", "buscar", "enviar" -> Iconos.flecha(c, cx, cy, dp(24f), pinturaIcono)
+                "OK" -> Iconos.visto(c, cx, cy, dp(22f), pinturaIcono)
+                else -> texto(c, etiquetaEnter, cx, cy, dp(16f) * escalaLetra, colorContenido)
+            }
             Tipo.ESPACIO -> {
                 if (t.texto.isNotEmpty()) texto(c, t.texto, cx, cy, dp(16f) * escalaLetra, colorContenido)
                 else {

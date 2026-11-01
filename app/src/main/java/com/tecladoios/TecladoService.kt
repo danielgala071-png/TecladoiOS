@@ -3,6 +3,8 @@ package com.tecladoios
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
@@ -35,6 +37,10 @@ class TecladoService : InputMethodService(),
     private var emojis: EmojiPanel? = null
     private var tema: Tema? = null
     private var firmaTamano = ""
+
+    // Color de acento de cada app (sale de su ícono), para combinar el teclado con la app
+    private val coloresApps = HashMap<String, Int?>()
+    private var appActual: String? = null
     private lateinit var diccionario: Diccionario
     private var vibrador: Vibrator? = null
     private var audio: AudioManager? = null
@@ -65,6 +71,7 @@ class TecladoService : InputMethodService(),
     override fun onCreate() {
         super.onCreate()
         Fuentes.iniciar(this)
+        Ajustes.migrarDiseno(this)
         diccionario = Diccionario(this)
         vibrador = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             getSystemService(VibratorManager::class.java)?.defaultVibrator
@@ -89,7 +96,7 @@ class TecladoService : InputMethodService(),
     private fun firma() = "${Ajustes.altura(this)}-${Ajustes.letra(this)}-${Medidas.horizontal(this)}"
 
     private fun construir(): View {
-        val t = Tema.desde(this, puedeDesenfocar())
+        val t = Tema.desde(this, puedeDesenfocar(), colorDeApp(appActual))
         tema = t
         firmaTamano = firma()
 
@@ -104,7 +111,14 @@ class TecladoService : InputMethodService(),
 
         val raiz = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(t.fondo)
+            // Panel con un filo de luz arriba, como el teclado del iPhone
+            background = GradientDrawable().apply {
+                setColor(t.fondo)
+                val r = 30f * Medidas.escala(this@TecladoService)
+                cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
+                setStroke(maxOf(1, (resources.displayMetrics.density * 0.6f).toInt()),
+                    if (t.oscuro) 0x26FFFFFF else 0x14000000)
+            }
             addView(b, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44f)))
             addView(zona, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
@@ -141,7 +155,10 @@ class TecladoService : InputMethodService(),
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        if (Tema.desde(this, puedeDesenfocar()) != tema || firma() != firmaTamano) setInputView(construir())
+        appActual = info.packageName
+        if (Tema.desde(this, puedeDesenfocar(), colorDeApp(appActual)) != tema || firma() != firmaTamano) {
+            setInputView(construir())
+        }
         configurarVentana()
 
         vibrar = Ajustes.vibrar(this)
@@ -228,6 +245,50 @@ class TecladoService : InputMethodService(),
     }
 
     // ---------- Estado ----------
+
+    /** Color principal del ícono de la app (verde en WhatsApp, rosado en Instagram, etc.) */
+    private fun colorDeApp(paquete: String?): Int? {
+        if (paquete == null || paquete == packageName || !Ajustes.adaptar(this)) return null
+        if (coloresApps.containsKey(paquete)) return coloresApps[paquete]
+        val color = try { calcularColor(paquete) } catch (_: Exception) { null }
+        coloresApps[paquete] = color
+        return color
+    }
+
+    private fun calcularColor(paquete: String): Int? {
+        val icono = packageManager.getApplicationIcon(paquete)
+        val lado = 48
+        val bmp = Bitmap.createBitmap(lado, lado, Bitmap.Config.ARGB_8888)
+        icono.setBounds(0, 0, lado, lado)
+        icono.draw(Canvas(bmp))
+        val pesos = FloatArray(12)
+        val rojos = FloatArray(12)
+        val verdes = FloatArray(12)
+        val azules = FloatArray(12)
+        val hsv = FloatArray(3)
+        for (x in 0 until lado) for (y in 0 until lado) {
+            val p = bmp.getPixel(x, y)
+            if (Color.alpha(p) < 200) continue
+            Color.colorToHSV(p, hsv)
+            if (hsv[1] < 0.35f || hsv[2] < 0.35f) continue
+            val i = (hsv[0] / 30f).toInt().coerceIn(0, 11)
+            val w = hsv[1] * hsv[2]
+            pesos[i] += w
+            rojos[i] += Color.red(p) * w
+            verdes[i] += Color.green(p) * w
+            azules[i] += Color.blue(p) * w
+        }
+        bmp.recycle()
+        val mejor = pesos.indices.maxByOrNull { pesos[it] } ?: return null
+        val w = pesos[mejor]
+        if (w < 25f) return null // ícono casi sin color: se queda el azul de iOS
+        val color = Color.rgb((rojos[mejor] / w).toInt(), (verdes[mejor] / w).toInt(), (azules[mejor] / w).toInt())
+        // Ajustar para que se vea bien como tecla (ni muy apagado ni chillón)
+        Color.colorToHSV(color, hsv)
+        hsv[1] = hsv[1].coerceIn(0.45f, 0.85f)
+        hsv[2] = hsv[2].coerceIn(0.6f, 0.92f)
+        return Color.HSVToColor(hsv)
+    }
 
     /** (palabra anterior, palabra que se está escribiendo) */
     private fun ultimasPalabras(): Pair<String, String> {

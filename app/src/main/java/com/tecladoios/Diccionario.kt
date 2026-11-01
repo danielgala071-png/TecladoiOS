@@ -21,7 +21,14 @@ class Diccionario(context: Context) {
     private var totalBase = 0
 
     init {
-        val palabras = (BASE + " " + BASE_EXTRA + " " + BASE_TILDES).trim().split(Regex("\\s+"))
+        val fijas = (BASE + " " + BASE_EXTRA + " " + BASE_TILDES).trim().split(Regex("\\s+"))
+        // Diccionario grande (español, Latinoamérica y Perú) desde assets/diccionario.txt
+        val archivo = try {
+            context.assets.open("diccionario.txt").bufferedReader().useLines { lineas ->
+                lineas.map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.toList()
+            }
+        } catch (_: Exception) { emptyList() }
+        val palabras = fijas + archivo
         totalBase = palabras.size
         palabras.forEachIndexed { i, p ->
             if (!base.containsKey(p)) {

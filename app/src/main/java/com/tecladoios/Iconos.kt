@@ -56,6 +56,45 @@ object Iconos {
         c.drawLine(izq, base, izq + s * 0.2f, base + s * 0.2f, p)
     }
 
+    /** Carita rellena como la de la franja inferior del iPhone */
+    fun emojiLleno(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint, fondo: Int) {
+        val color = p.color
+        p.style = Paint.Style.FILL
+        c.drawCircle(cx, cy, s * 0.46f, p)
+        p.color = fondo
+        c.drawOval(cx - s * 0.2f, cy - s * 0.2f, cx - s * 0.09f, cy - s * 0.02f, p)
+        c.drawOval(cx + s * 0.09f, cy - s * 0.2f, cx + s * 0.2f, cy - s * 0.02f, p)
+        c.drawArc(cx - s * 0.27f, cy - s * 0.12f, cx + s * 0.27f, cy + s * 0.3f, 0f, 180f, true, p)
+        p.color = color
+    }
+
+    /** Micrófono relleno como el del iPhone */
+    fun microfonoLleno(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
+        val w = s * 0.34f
+        val arriba = cy - s * 0.52f
+        p.style = Paint.Style.FILL
+        c.drawRoundRect(cx - w / 2f, arriba, cx + w / 2f, arriba + s * 0.6f, w / 2f, w / 2f, p)
+        p.style = Paint.Style.STROKE
+        c.drawArc(cx - s * 0.33f, cy - s * 0.32f, cx + s * 0.33f, cy + s * 0.26f, 0f, 180f, false, p)
+        c.drawLine(cx, cy + s * 0.26f, cx, cy + s * 0.44f, p)
+        c.drawLine(cx - s * 0.16f, cy + s * 0.44f, cx + s * 0.16f, cy + s * 0.44f, p)
+    }
+
+    /** Flecha → para "ir", "buscar" y "enviar" (como en iOS) */
+    fun flecha(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
+        p.style = Paint.Style.STROKE
+        c.drawLine(cx - s * 0.4f, cy, cx + s * 0.4f, cy, p)
+        c.drawLine(cx + s * 0.4f, cy, cx + s * 0.12f, cy - s * 0.28f, p)
+        c.drawLine(cx + s * 0.4f, cy, cx + s * 0.12f, cy + s * 0.28f, p)
+    }
+
+    /** Visto ✓ para "listo" */
+    fun visto(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
+        p.style = Paint.Style.STROKE
+        c.drawLine(cx - s * 0.36f, cy + s * 0.02f, cx - s * 0.1f, cy + s * 0.28f, p)
+        c.drawLine(cx - s * 0.1f, cy + s * 0.28f, cx + s * 0.4f, cy - s * 0.26f, p)
+    }
+
     fun microfono(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
         p.style = Paint.Style.STROKE
         val w = s * 0.32f
