@@ -17,6 +17,7 @@ jobs:
       - name: Descomprimir proyecto
         run: |
           if [ -f TecladoiOS.zip ]; then
+            rm -rf app/src
             unzip -o TecladoiOS.zip -d .
             rm TecladoiOS.zip
             git config user.name "github-actions[bot]"
