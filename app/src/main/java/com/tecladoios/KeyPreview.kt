@@ -69,7 +69,7 @@ class KeyPreviewView(context: Context) : View(context) {
         // Vidrio gris azulado translúcido, como en la imagen
         val arriba: Int; val abajo: Int
         if (darkMode) {
-            arriba = 0xDDB9C2D0.toInt(); abajo = 0xD99BA5B5.toInt()
+            arriba = 0xCCA9B2C0.toInt(); abajo = 0xC28E98A8.toInt()
         } else {
             arriba = 0xE8F1F3F7.toInt(); abajo = 0xE0D8DCE4.toInt()
         }
@@ -87,7 +87,8 @@ class KeyPreviewView(context: Context) : View(context) {
 
         // La letra aparece y sube junto con la cápsula
         val alfaLetra = ((p - 0.25f) / 0.6f).coerceIn(0f, 1f)
-        textPaint.color = 0xFF1C1C1E.toInt()
+        textPaint.color = if (darkMode) 0xFFFFFFFF.toInt() else 0xFF1C1C1E.toInt()
+        textPaint.setShadowLayer(if (darkMode) 3f * d else 0f, 0f, 1f * d, 0x40000000)
         textPaint.alpha = (255 * alfaLetra).toInt()
         textPaint.textSize = keyHeight * 0.6f
         val fm = textPaint.fontMetrics

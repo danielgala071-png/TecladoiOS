@@ -14,7 +14,7 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.LinearLayout
-import android.widget.ScrollView
+import android.widget.HorizontalScrollView
 import android.widget.TextView
 
 class Categoria(val icono: String, val nombre: String, val emojis: List<String>)
@@ -66,7 +66,7 @@ val CATEGORIAS = listOf(
     """)),
 )
 
-/** Panel de emojis: solo la cuadrícula, con ABC y borrar abajo (sin categorías). */
+/** Panel de emojis como iOS: se desliza en horizontal, 5 filas, con títulos de sección. */
 @SuppressLint("ViewConstructor")
 class EmojiPanel(
     context: Context,
@@ -87,14 +87,15 @@ class EmojiPanel(
         acciones.retro(Tipo.LETRA)
         acciones.emoji(it)
     }
-    private val scroll = ScrollView(context)
+    private val scroll = HorizontalScrollView(context)
 
     init {
         orientation = VERTICAL
 
-        scroll.isVerticalScrollBarEnabled = false
+        scroll.isHorizontalScrollBarEnabled = false
         scroll.overScrollMode = View.OVER_SCROLL_NEVER
-        scroll.addView(grilla, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        scroll.addView(grilla, ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        scroll.setOnScrollChangeListener { _, x, _, _, _ -> grilla.desplazamiento = x }
         addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
 
         val abajo = LinearLayout(context).apply {
@@ -143,11 +144,18 @@ class EmojiGrid(
             invalidate()
         }
 
+    /** Cuánto se ha deslizado (para que el título se quede fijo como en iOS) */
+    var desplazamiento = 0
+        set(v) { field = v; invalidate() }
+
     private val d = Medidas.escala(context)
-    private val columnas = 8
-    private val altoTitulo = 30f * d
+    private val filas = 5
+    private val altoTitulo = 26f * d
+    private val margen = 8f * d
+    private val separacion = 14f * d
     private var celda = 0f
-    private val tops = ArrayList<Float>()
+    private val inicios = ArrayList<Float>()
+    private val finales = ArrayList<Float>()
     private val pintura = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         color = Color.BLACK
@@ -162,41 +170,42 @@ class EmojiGrid(
     private var y0 = 0f
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
 
-    private fun filasDe(n: Int) = (n + columnas - 1) / columnas
+    private fun columnasDe(n: Int) = (n + filas - 1) / filas
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val ancho = MeasureSpec.getSize(widthMeasureSpec)
-        celda = ancho / columnas.toFloat()
-        tops.clear()
-        var y = 0f
+        val alto = MeasureSpec.getSize(heightMeasureSpec)
+        celda = ((alto - altoTitulo - 4f * d) / filas).coerceAtLeast(1f)
+        inicios.clear()
+        finales.clear()
+        var x = margen
         for (s in secciones) {
-            tops.add(y)
-            y += altoTitulo + filasDe(s.emojis.size) * celda
+            inicios.add(x)
+            x += columnasDe(s.emojis.size) * celda
+            finales.add(x)
+            x += separacion
         }
-        setMeasuredDimension(ancho, (y + 8f * d).toInt())
-    }
-
-    fun topDe(i: Int): Int = tops.getOrNull(i)?.toInt() ?: 0
-
-    fun seccionEn(y: Int): Int {
-        var r = 0
-        for (i in tops.indices) if (tops[i] <= y + altoTitulo) r = i
-        return r
+        setMeasuredDimension((x + margen).toInt(), alto)
     }
 
     override fun onDraw(c: Canvas) {
         val clip = c.clipBounds
-        pintura.textSize = celda * 0.64f
+        pintura.textSize = celda * 0.7f
         val fm = pintura.fontMetrics
         pinturaTitulo.color = tema.textoSecundario
         secciones.forEachIndexed { i, s ->
-            val top = tops.getOrElse(i) { 0f }
-            c.drawText(s.titulo, 12f * d, top + altoTitulo * 0.68f, pinturaTitulo)
-            val inicio = top + altoTitulo
+            val ini = inicios.getOrElse(i) { 0f }
+            val fin = finales.getOrElse(i) { 0f }
+            if (fin < clip.left || ini > clip.right) return@forEachIndexed
+
+            // Título fijo a la izquierda mientras se ve su sección
+            val anchoTitulo = pinturaTitulo.measureText(s.titulo)
+            val xt = maxOf(ini + 4f * d, minOf(desplazamiento + margen + 4f * d, fin - anchoTitulo))
+            c.drawText(s.titulo, xt, altoTitulo * 0.7f, pinturaTitulo)
+
             s.emojis.forEachIndexed { j, e ->
-                val y = inicio + (j / columnas) * celda
-                if (y + celda < clip.top || y > clip.bottom) return@forEachIndexed
-                val x = (j % columnas) * celda
+                val x = ini + (j / filas) * celda
+                if (x + celda < clip.left || x > clip.right) return@forEachIndexed
+                val y = altoTitulo + (j % filas) * celda
                 if (presionado == Pair(i, j)) {
                     fondo.color = tema.teclaPresionada
                     c.drawRoundRect(x + 2 * d, y + 2 * d, x + celda - 2 * d, y + celda - 2 * d, 10 * d, 10 * d, fondo)
@@ -207,11 +216,14 @@ class EmojiGrid(
     }
 
     private fun buscar(x: Float, y: Float): Pair<Int, Int>? {
+        if (celda <= 0f || y < altoTitulo) return null
         for (i in secciones.indices) {
-            val inicio = tops.getOrElse(i) { 0f } + altoTitulo
-            val fin = inicio + filasDe(secciones[i].emojis.size) * celda
-            if (y in inicio..fin && celda > 0f) {
-                val j = ((y - inicio) / celda).toInt() * columnas + (x / celda).toInt().coerceIn(0, columnas - 1)
+            val ini = inicios.getOrElse(i) { 0f }
+            val fin = finales.getOrElse(i) { 0f }
+            if (x in ini..fin) {
+                val col = ((x - ini) / celda).toInt()
+                val fila = ((y - altoTitulo) / celda).toInt().coerceIn(0, filas - 1)
+                val j = col * filas + fila
                 return if (j < secciones[i].emojis.size) Pair(i, j) else null
             }
         }

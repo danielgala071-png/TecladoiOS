@@ -6,8 +6,8 @@ import android.view.View
 import android.view.ViewOutlineProvider
 
 /**
- * Panel con las 4 esquinas curvas (como el teclado de iOS 27), usando el
- * mismo radio que las esquinas de la pantalla del celular.
+ * Arriba recto y solo las esquinas inferiores curvas, con el mismo radio
+ * que las esquinas de la pantalla del celular.
  */
 object KeyboardCorners {
 
@@ -17,7 +17,9 @@ object KeyboardCorners {
 
         root.outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: Outline) {
-                outline.setRoundRect(0, 0, view.width, view.height, radio)
+                // El rectángulo empieza más arriba: solo se redondean las de abajo
+                val r = radio.toInt()
+                outline.setRoundRect(0, -r, view.width, view.height, radio)
             }
         }
         root.clipToOutline = true

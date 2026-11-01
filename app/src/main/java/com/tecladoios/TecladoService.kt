@@ -104,10 +104,8 @@ class TecladoService : InputMethodService(),
         val w = window?.window ?: return
         val blur = tema?.desenfoque ?: 0
         if (blur > 0) {
-            w.setBackgroundDrawable(GradientDrawable().apply {
-                cornerRadius = radio
-                setColor(Color.TRANSPARENT)
-            })
+            // Desenfoque rectangular: abajo lo recortan las propias esquinas de la pantalla
+            w.setBackgroundDrawable(GradientDrawable().apply { setColor(Color.TRANSPARENT) })
             w.setBackgroundBlurRadius(blur)
         } else {
             w.setBackgroundBlurRadius(0)
