@@ -71,7 +71,7 @@ class KeyboardView(
     private var animPulso: ValueAnimator? = null
 
     // Letra fina como la de iPhone, sin importar el grosor de letra del sistema
-    private val fuente: Typeface = Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), 400, false)
+    private val fuente: Typeface = Fuentes.tipo(400)
 
     private var filas: List<List<Tecla>> = crearFilas(Modo.LETRAS)
 
@@ -117,7 +117,7 @@ class KeyboardView(
     private val pinturaTexto = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         typeface = fuente
-    }
+    }.also { Fuentes.aplicar(it, 400) }
     private val pinturaIcono = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         strokeWidth = dp(1.6f)
         strokeCap = Paint.Cap.ROUND
@@ -511,7 +511,7 @@ class KeyboardView(
                     if (t !== actual && t.tipo == Tipo.LETRA) {
                         presionadas[id] = t
                         programarVariantes(t, id)
-                        if (vistaPrevia) preview.show(t.rect, etiqueta(t), tema.oscuro)
+                        if (vistaPrevia) preview.show(t.rect, etiqueta(t), tema)
                         invalidate()
                     }
                 }
@@ -559,7 +559,7 @@ class KeyboardView(
         if (t.tipo != Tipo.LETRA && t !in tira) animarPulso(t, 1f)
         when (t.tipo) {
             Tipo.LETRA -> {
-                if (vistaPrevia) preview.show(t.rect, etiqueta(t), tema.oscuro)
+                if (vistaPrevia) preview.show(t.rect, etiqueta(t), tema)
                 programarVariantes(t, id)
             }
             Tipo.BORRAR -> {

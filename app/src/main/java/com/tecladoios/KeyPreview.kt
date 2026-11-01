@@ -25,6 +25,8 @@ class KeyPreviewView(context: Context) : View(context) {
     var keyWidth = 0f
     var keyHeight = 0f
     var darkMode = false
+    /** Color de las teclas: la cápsula es del mismo tono, un poco más clara */
+    var colorTecla = 0xFF343437.toInt()
 
     /** 0 = del tamaño de la tecla, 1 = cápsula completa */
     var progreso = 0f
@@ -49,8 +51,7 @@ class KeyPreviewView(context: Context) : View(context) {
     }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        typeface = Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), 400, false)
-    }
+    }.also { Fuentes.aplicar(it, 400) }
 
 
     override fun onDraw(canvas: Canvas) {
@@ -68,9 +69,12 @@ class KeyPreviewView(context: Context) : View(context) {
         // Vidrio gris azulado translúcido, como en la imagen
         val arriba: Int; val abajo: Int
         if (darkMode) {
-            arriba = 0xFAA7B0BE.toInt(); abajo = 0xF78C96A6.toInt()
+            // Mismo tono que las teclas, más claro y con vidrio, como en iOS
+            val base = aclarar(colorTecla, 0.30f)
+            arriba = (aclarar(base, 0.06f) and 0x00FFFFFF) or (0xF5 shl 24)
+            abajo = (base and 0x00FFFFFF) or (0xF0 shl 24)
         } else {
-            arriba = 0xFCF6F7FA.toInt(); abajo = 0xF8DFE2E8.toInt()
+            arriba = 0xFCFFFFFF.toInt(); abajo = 0xF8F1F2F5.toInt()
         }
         cuerpo.shader = LinearGradient(0f, rect.top, 0f, rect.bottom, arriba, abajo, Shader.TileMode.CLAMP)
         cuerpo.setShadowLayer(10f * d, 0f, 3f * d, 0x30000000)
@@ -86,14 +90,20 @@ class KeyPreviewView(context: Context) : View(context) {
 
         // La letra aparece y sube junto con la cápsula
         val alfaLetra = ((p - 0.25f) / 0.6f).coerceIn(0f, 1f)
-        textPaint.color = if (darkMode) 0xFFFFFFFF.toInt() else 0xFF1C1C1E.toInt()
-        textPaint.setShadowLayer(if (darkMode) 3f * d else 0f, 0f, 1f * d, 0x40000000)
+        textPaint.color = if (darkMode) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
         textPaint.alpha = (255 * alfaLetra).toInt()
         textPaint.textSize = keyHeight * 0.6f
         val fm = textPaint.fontMetrics
-        val cy = rect.top + (alto - keyHeight) * 0.55f + keyHeight * 0.1f
+        // Letra en la parte de arriba de la cápsula, como la "O" del iPhone
+        val cy = rect.top + (alto - keyHeight) * 0.5f
         canvas.drawText(label, cx, cy - (fm.ascent + fm.descent) / 2f, textPaint)
     }
+}
+
+private fun aclarar(c: Int, f: Float): Int {
+    fun canal(x: Int) = (x + (255 - x) * f).toInt().coerceIn(0, 255)
+    return (0xFF shl 24) or (canal((c shr 16) and 0xFF) shl 16) or
+            (canal((c shr 8) and 0xFF) shl 8) or canal(c and 0xFF)
 }
 
 /** Muestra y anima la cápsula. Se reutiliza para que no parpadee. */
@@ -126,10 +136,11 @@ class KeyPreviewManager(private val anchor: View) {
     }
 
     /** rect: posición de la tecla dentro de [anchor] */
-    fun show(rect: RectF, label: String, oscuro: Boolean) {
+    fun show(rect: RectF, label: String, tema: Tema) {
         if (anchor.windowToken == null || rect.width() <= 0f) return
 
-        vista.darkMode = oscuro
+        vista.darkMode = tema.oscuro
+        vista.colorTecla = tema.tecla
         vista.keyWidth = rect.width()
         vista.keyHeight = rect.height()
         vista.label = label

@@ -39,8 +39,7 @@ class VariantesView(context: Context) : View(context) {
     private val marca = Paint(Paint.ANTI_ALIAS_FLAG)
     private val texto = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        typeface = Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), 400, false)
-    }
+    }.also { Fuentes.aplicar(it, 400) }
 
 
     override fun onDraw(c: Canvas) {

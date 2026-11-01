@@ -38,7 +38,7 @@ class SuggestionBar(
     private val pinturaTexto = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         textSize = 17f * d
-    }
+    }.also { Fuentes.aplicar(it, 400) }
     private val pintura = Paint(Paint.ANTI_ALIAS_FLAG)
 
     fun mostrar(nuevos: List<Sugerencia?>) {
@@ -61,7 +61,7 @@ class SuggestionBar(
                 pintura.color = tema.teclaPresionada
                 c.drawRoundRect(x0 + 4 * d, 6 * d, x0 + ancho - 4 * d, height - 6 * d, 10 * d, 10 * d, pintura)
             }
-            pinturaTexto.typeface = if (s.destacada) media else normal
+            Fuentes.aplicar(pinturaTexto, if (s.destacada) 500 else 400)
             pinturaTexto.color = tema.texto
             val crudo = when {
                 s.literal -> "\u201C${s.texto}\u201D"

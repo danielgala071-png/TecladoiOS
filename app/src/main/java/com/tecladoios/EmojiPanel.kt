@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.Handler
@@ -21,7 +23,9 @@ class Categoria(val icono: String, val nombre: String, val emojis: List<String>)
 
 private fun lista(s: String) = s.trim().split(Regex("\\s+"))
 
+/** Mismas categorías y en el mismo orden que el teclado del iPhone */
 val CATEGORIAS = listOf(
+    Categoria("🕘", "USADOS FRECUENTEMENTE", emptyList()),
     Categoria("😀", "EMOTICONOS Y PERSONAS", lista("""
         😀 😃 😄 😁 😆 😅 😂 🤣 🥲 ☺️ 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🥸 🤩 🥳
         😏 😒 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🫣 🤗 🫡 🤔 🫢 🤭
@@ -30,7 +34,7 @@ val CATEGORIAS = listOf(
         ☝️ 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 🫶 👐 🤲 🤝 🙏 ✍️ 💅 🤳 💪 🦵 🦶 👂 👃 🧠 👀 👁️ 👅 👄 💋 👶 🧒 👦 👧 🧑 👱
         👨 🧔 👩 🧓 👴 👵 🙋 🤷 🤦 💁 🙆 🙅 🙇 🧑‍💻 👮 👷 💂 🕵️ 👩‍⚕️ 👨‍🍳 🧑‍🎓 🏃 🚶 💃 🕺 👫 👭 👬 💑 👪
     """)),
-    Categoria("🐶", "ANIMALES Y NATURALEZA", lista("""
+    Categoria("🐻", "ANIMALES Y NATURALEZA", lista("""
         🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🙈 🙉 🙊 🐔 🐧 🐦 🐤 🦆 🦅 🦉 🦇 🐺 🐗 🐴 🦄 🐝 🐛 🦋 🐌
         🐞 🐜 🕷️ 🐢 🐍 🦎 🐙 🦑 🦐 🦀 🐡 🐠 🐟 🐬 🐳 🐋 🦈 🐊 🐅 🐆 🦓 🦍 🐘 🦛 🦏 🐪 🦒 🦘 🦙 🐄 🐎 🐖 🐑 🐐
         🦌 🐕 🐈 🐓 🦃 🦚 🦜 🦢 🕊️ 🐇 🦝 🦦 🐁 🐿️ 🦔 🌵 🎄 🌲 🌳 🌴 🌱 🌿 ☘️ 🍀 🍃 🍂 🍁 🍄 🌾 💐 🌷 🌹 🥀 🌺
@@ -55,7 +59,7 @@ val CATEGORIAS = listOf(
         🔨 🛠️ 🔩 ⚙️ 🧱 💣 🔪 🛡️ 🔮 🔭 🔬 💊 💉 🩹 🧬 🧹 🧺 🧻 🚽 🚿 🛁 🧼 🔑 🗝️ 🚪 🛋️ 🛏️ 🧸 🎁 🎈 🎀 🎊 🎉 ✉️
         📩 📦 📝 📁 📅 📌 📎 ✂️ 🔒 🔓 📚 📖 🔖 🖊️ ✏️ 🔍
     """)),
-    Categoria("❤️", "SÍMBOLOS", lista("""
+    Categoria("&%", "SÍMBOLOS", lista("""
         ❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ☮️ ✝️ ☯️ ♈ ♉ ♊ ♋ ♌ ♍ ♎ ♏ ♐ ♑ ♒ ♓ 🆗 🆒
         🆕 🆓 🆙 ✅ ☑️ ✔️ ❌ ❎ ➕ ➖ ➗ ✖️ ♾️ ‼️ ⁉️ ❓ ❗ 💯 🔞 📵 🚫 ⛔ 🔴 🟠 🟡 🟢 🔵 🟣 ⚫ ⚪ 🟤 🔺 🔻 🔸 🔹
         ▶️ ⏸️ ⏹️ ⏭️ ⏮️ ⏩ ⏪ 🔀 🔁 🔂 ⬆️ ⬇️ ⬅️ ➡️ ↩️ ↪️ 🔄 🎵 🎶 💲 ©️ ®️ ™️ 🔔 🔕 💬 💭 ♠️ ♣️ ♥️ ♦️ 🃏
@@ -66,7 +70,10 @@ val CATEGORIAS = listOf(
     """)),
 )
 
-/** Panel de emojis como iOS: se desliza en horizontal, 5 filas, con títulos de sección. */
+/**
+ * Panel de emojis como iOS: se desliza en horizontal (5 filas), títulos de sección,
+ * y abajo ABC, los íconos de categorías en gris y borrar.
+ */
 @SuppressLint("ViewConstructor")
 class EmojiPanel(
     context: Context,
@@ -83,11 +90,13 @@ class EmojiPanel(
 
     private val d = Medidas.escala(context)
     private fun dp(v: Float) = (v * d).toInt()
-    private val grilla = EmojiGrid(context, tema) {
-        acciones.retro(Tipo.LETRA)
-        acciones.emoji(it)
-    }
+    private val prefs = Ajustes.prefs(context)
+    private val grilla = EmojiGrid(context, tema) { elegido(it) }
     private val scroll = HorizontalScrollView(context)
+    private val categorias = BarraCategorias(context, tema) { i ->
+        acciones.retro(Tipo.A_LETRAS)
+        scroll.smoothScrollTo(grilla.inicioDe(i), 0)
+    }
 
     init {
         orientation = VERTICAL
@@ -95,7 +104,10 @@ class EmojiPanel(
         scroll.isHorizontalScrollBarEnabled = false
         scroll.overScrollMode = View.OVER_SCROLL_NEVER
         scroll.addView(grilla, ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        scroll.setOnScrollChangeListener { _, x, _, _, _ -> grilla.desplazamiento = x }
+        scroll.setOnScrollChangeListener { _, x, _, _, _ ->
+            grilla.desplazamiento = x
+            categorias.marcado = grilla.seccionEn(x)
+        }
         addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
 
         val abajo = LinearLayout(context).apply {
@@ -107,24 +119,98 @@ class EmojiPanel(
             textSize = 15f
             setTextColor(tema.texto)
             gravity = Gravity.CENTER
+            Fuentes.aplicar(this, 500)
             setOnClickListener {
                 acciones.retro(Tipo.A_LETRAS)
                 acciones.volverABC()
             }
         }
-        abajo.addView(abc, LayoutParams(dp(60f), LayoutParams.MATCH_PARENT))
-        abajo.addView(View(context), LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+        abajo.addView(abc, LayoutParams(dp(52f), LayoutParams.MATCH_PARENT))
+        abajo.addView(categorias, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
         val borrar = BotonBorrar(context, tema, { acciones.retro(Tipo.BORRAR) }, { acciones.borrar() })
-        abajo.addView(borrar, LayoutParams(dp(60f), LayoutParams.MATCH_PARENT))
-        addView(abajo, LayoutParams(LayoutParams.MATCH_PARENT, dp(40f)))
+        abajo.addView(borrar, LayoutParams(dp(52f), LayoutParams.MATCH_PARENT))
+        addView(abajo, LayoutParams(LayoutParams.MATCH_PARENT, dp(42f)))
 
         refrescar()
     }
 
+    private fun recientes(): List<String> {
+        val guardados = prefs.getString("recientes", null)
+        return if (guardados.isNullOrBlank()) lista("😂 ❤️ 😍 🙏 😭 👍 😊 🔥 🥰 😅 🤣 💀 😘 🥺 😁 ✨ 😎 🤔 😢 👀")
+        else guardados.split(" ").filter { it.isNotBlank() }
+    }
+
+    /** Se llama al abrir el panel: actualiza "Usados frecuentemente" */
     fun refrescar() {
-        if (grilla.secciones.isEmpty()) {
-            grilla.secciones = CATEGORIAS.map { EmojiGrid.Seccion(it.nombre, it.emojis) }
+        grilla.secciones = listOf(EmojiGrid.Seccion(CATEGORIAS[0].nombre, recientes())) +
+                CATEGORIAS.drop(1).map { EmojiGrid.Seccion(it.nombre, it.emojis) }
+    }
+
+    private fun elegido(e: String) {
+        acciones.retro(Tipo.LETRA)
+        acciones.emoji(e)
+        val nuevos = recientes().toMutableList()
+        nuevos.remove(e)
+        nuevos.add(0, e)
+        prefs.edit().putString("recientes", nuevos.take(30).joinToString(" ")).apply()
+    }
+}
+
+/** Íconos de categorías en gris, como en iOS; la categoría actual con un círculo. */
+@SuppressLint("ViewConstructor")
+class BarraCategorias(
+    context: Context,
+    private val tema: Tema,
+    private val alElegir: (Int) -> Unit,
+) : View(context) {
+
+    var marcado = 0
+        set(v) { if (v != field) { field = v; invalidate() } }
+
+    private val d = Medidas.escala(context)
+    private val gris = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        // Quita el color a los emojis para que se vean como íconos grises
+        colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+    }
+    private val textoSimbolos = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+    }.also { Fuentes.aplicar(it, 600) }
+    private val circulo = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    override fun onDraw(c: Canvas) {
+        val n = CATEGORIAS.size
+        if (n == 0 || width == 0) return
+        val ancho = width / n.toFloat()
+        val cy = height / 2f
+        gris.textSize = 15f * d
+        textoSimbolos.textSize = 13f * d
+        textoSimbolos.color = tema.textoSecundario
+        val fm = gris.fontMetrics
+        val fm2 = textoSimbolos.fontMetrics
+        CATEGORIAS.forEachIndexed { i, cat ->
+            val cx = ancho * i + ancho / 2f
+            if (i == marcado) {
+                circulo.color = (tema.teclaPresionada and 0x00FFFFFF) or 0x66000000
+                c.drawCircle(cx, cy, minOf(ancho, height.toFloat()) * 0.42f, circulo)
+            }
+            gris.alpha = if (i == marcado) 255 else 150
+            if (cat.icono == "&%") {
+                c.drawText(cat.icono, cx, cy - (fm2.ascent + fm2.descent) / 2f, textoSimbolos)
+            } else {
+                c.drawText(cat.icono, cx, cy - (fm.ascent + fm.descent) / 2f, gris)
+            }
         }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (e.actionMasked == MotionEvent.ACTION_UP && width > 0) {
+            val i = (e.x / (width / CATEGORIAS.size.toFloat())).toInt().coerceIn(0, CATEGORIAS.size - 1)
+            marcado = i
+            alElegir(i)
+        }
+        return true
     }
 }
 
@@ -162,8 +248,7 @@ class EmojiGrid(
     }
     private val pinturaTitulo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 12f * d
-        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-    }
+    }.also { Fuentes.aplicar(it, 600) }
     private val fondo = Paint(Paint.ANTI_ALIAS_FLAG)
     private var presionado: Pair<Int, Int>? = null
     private var x0 = 0f
@@ -171,6 +256,14 @@ class EmojiGrid(
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
 
     private fun columnasDe(n: Int) = (n + filas - 1) / filas
+
+    fun inicioDe(i: Int): Int = ((inicios.getOrNull(i) ?: 0f) - margen).toInt().coerceAtLeast(0)
+
+    fun seccionEn(x: Int): Int {
+        var r = 0
+        for (i in inicios.indices) if (inicios[i] <= x + margen + 20f * d) r = i
+        return r
+    }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val alto = MeasureSpec.getSize(heightMeasureSpec)
