@@ -1,5 +1,6 @@
 package com.tecladoios
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
@@ -14,8 +15,9 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 
-enum class Tipo { LETRA, SHIFT, BORRAR, A_NUMEROS, A_SIMBOLOS, A_LETRAS, EMOJI, ESPACIO, ENTER }
+enum class Tipo { LETRA, SHIFT, BORRAR, A_NUMEROS, A_SIMBOLOS, A_LETRAS, EMOJI, ESPACIO, ENTER, MIC }
 enum class Modo { LETRAS, NUMEROS, SIMBOLOS }
 
 class Tecla(val tipo: Tipo, val texto: String = "", val ancho: Float = 1f) {
@@ -39,6 +41,7 @@ class KeyboardView(
         fun abrirEmojis()
         fun retro(tipo: Tipo)
         fun moverCursor(pasos: Int)
+        fun dictar()
     }
 
     private val d = Medidas.escala(context)
@@ -50,6 +53,22 @@ class KeyboardView(
     private val sepH = dp(3f)
     private val sepV = dp(5.5f)
     private val radio = dp(10.5f)
+
+    // Franja inferior como en iPhone: emoji a la izquierda y micrófono a la derecha
+    private val altoInferior = if (Medidas.horizontal(context)) 0f else dp(42f)
+    private val conTira = altoInferior > 0f
+    private val tira = listOf(Tecla(Tipo.EMOJI), Tecla(Tipo.MIC))
+
+    var dictando = false
+        set(value) { field = value; invalidate() }
+
+    // Efecto líquido al presionar teclas de función (iOS 27)
+    private var teclaPulso: Tecla? = null
+    private var pulso = 0f
+    private var animPulso: ValueAnimator? = null
+
+    // Letra fina como la de iPhone, sin importar el grosor de letra del sistema
+    private val fuente: Typeface = Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), 400, false)
 
     private var filas: List<List<Tecla>> = crearFilas(Modo.LETRAS)
 
@@ -94,7 +113,7 @@ class KeyboardView(
     private val pinturaBrillo = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pinturaTexto = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+        typeface = fuente
     }
     private val pinturaIcono = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         strokeWidth = dp(1.6f)
@@ -126,14 +145,18 @@ class KeyboardView(
         }
     }
 
-    fun alto(): Int = (margenArriba + altoFila * 4 + margenAbajo).toInt()
+    fun alto(): Int = (margenArriba + altoFila * 4 + margenAbajo + altoInferior).toInt()
 
     // ---------- Distribución ----------
 
     private fun letras(s: String) = s.map { Tecla(Tipo.LETRA, it.toString()) }
     private fun simbolos(s: String, ancho: Float = 1f) = s.split(" ").map { Tecla(Tipo.LETRA, it, ancho) }
 
-    private fun filaInferior(cambio: Tecla) = listOf(
+    private fun filaInferior(cambio: Tecla) = if (conTira) listOf(
+        Tecla(cambio.tipo, cambio.texto, 2.5f),
+        Tecla(Tipo.ESPACIO, "espacio", 5f),
+        Tecla(Tipo.ENTER, ancho = 2.5f),
+    ) else listOf(
         cambio,
         Tecla(Tipo.EMOJI, ancho = 1.25f),
         Tecla(Tipo.ESPACIO, "espacio", 5f),
@@ -174,6 +197,11 @@ class KeyboardView(
                 x += w
             }
         }
+        if (conTira) {
+            val top = margenArriba + 4 * altoFila
+            tira[0].rect.set(0f, top, unidad * 2f, top + altoInferior)
+            tira[1].rect.set(width - unidad * 2f, top, width.toFloat(), top + altoInferior)
+        }
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -203,6 +231,9 @@ class KeyboardView(
     }
 
     private fun reiniciar() {
+        animPulso?.cancel()
+        teclaPulso = null
+        pulso = 0f
         presionadas.clear()
         manejador.removeCallbacks(repetirBorrar)
         manejador.removeCallbacks(abrirVariantes)
@@ -234,11 +265,55 @@ class KeyboardView(
 
     override fun onDraw(canvas: Canvas) {
         for (fila in filas) for (t in fila) dibujar(canvas, t)
+        if (conTira && !modoCursor) dibujarTira(canvas)
+    }
+
+    private fun dibujarTira(c: Canvas) {
+        for (t in tira) {
+            val pres = presionadas.containsValue(t)
+            pinturaIcono.color = if (t.tipo == Tipo.MIC && dictando) tema.azul else tema.texto
+            pinturaIcono.alpha = if (pres) 110 else 255
+            val cx = t.rect.centerX()
+            val cy = t.rect.centerY() - dp(3f)
+            if (t.tipo == Tipo.EMOJI) Iconos.emoji(c, cx, cy, dp(27f), pinturaIcono)
+            else Iconos.microfono(c, cx, cy, dp(25f), pinturaIcono)
+        }
+        pinturaIcono.alpha = 255
+    }
+
+    private fun mezclar(a: Int, b: Int, f: Float): Int {
+        fun canal(x: Int, y: Int) = (x + (y - x) * f).toInt().coerceIn(0, 255)
+        return Color.argb(
+            canal(Color.alpha(a), Color.alpha(b)), canal(Color.red(a), Color.red(b)),
+            canal(Color.green(a), Color.green(b)), canal(Color.blue(a), Color.blue(b)),
+        )
+    }
+
+    private fun animarPulso(t: Tecla?, hasta: Float) {
+        if (t != null) teclaPulso = t
+        animPulso?.cancel()
+        animPulso = ValueAnimator.ofFloat(pulso, hasta).apply {
+            duration = if (hasta > 0f) 110 else 240
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                pulso = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
     }
 
     private fun dibujar(c: Canvas, t: Tecla) {
         val presionada = presionadas.containsValue(t) && !modoCursor
-        val colorFondo = when {
+        val f = if (t === teclaPulso && !modoCursor) pulso else 0f
+        val colorNormal = when {
+            modoCursor -> tema.teclaFuncion
+            t.tipo == Tipo.ENTER -> if (enterAzul) tema.azul else tema.teclaFuncion
+            t.tipo == Tipo.LETRA || t.tipo == Tipo.ESPACIO -> tema.tecla
+            t.tipo == Tipo.SHIFT -> if (shift > 0) tema.tecla else tema.teclaFuncion
+            else -> tema.teclaFuncion
+        }
+        val colorPrevio = when {
             modoCursor -> tema.teclaFuncion
             t.tipo == Tipo.ENTER -> when {
                 presionada -> tema.teclaPresionada
@@ -250,24 +325,29 @@ class KeyboardView(
             t.tipo == Tipo.SHIFT -> if (shift > 0) tema.tecla else tema.teclaFuncion
             else -> if (presionada) tema.tecla else tema.teclaFuncion
         }
+        // Teclas de función: se iluminan y crecen un poquito, como gota de vidrio
+        val colorFondo = if (f > 0f) mezclar(colorNormal, tema.teclaPresionada, f) else colorPrevio
+        val r = if (f > 0f) RectF(t.rect).apply { inset(-dp(2.5f) * f, -dp(2.5f) * f) } else t.rect
 
         if (Color.alpha(tema.sombra) > 0) {
             pintura.color = tema.sombra
-            c.drawRoundRect(t.rect.left, t.rect.top + dp(1f), t.rect.right, t.rect.bottom + dp(1f), radio, radio, pintura)
+            c.drawRoundRect(r.left, r.top + dp(1f), r.right, r.bottom + dp(1f), radio, radio, pintura)
         }
         pintura.color = colorFondo
-        c.drawRoundRect(t.rect, radio, radio, pintura)
+        c.drawRoundRect(r, radio, radio, pintura)
 
         // Liquid Glass: reflejo arriba y borde brillante
-        pinturaBrillo.shader = LinearGradient(0f, t.rect.top, 0f, t.rect.top + t.rect.height() * 0.5f,
+        pinturaBrillo.shader = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.5f,
             tema.brillo, tema.brillo and 0x00FFFFFF, Shader.TileMode.CLAMP)
-        c.drawRoundRect(t.rect, radio, radio, pinturaBrillo)
-        pinturaBorde.shader = LinearGradient(0f, t.rect.top, 0f, t.rect.bottom,
+        c.drawRoundRect(r, radio, radio, pinturaBrillo)
+        pinturaBorde.shader = LinearGradient(0f, r.top, 0f, r.bottom,
             tema.borde, tema.borde and 0x22FFFFFF, Shader.TileMode.CLAMP)
-        c.drawRoundRect(t.rect, radio, radio, pinturaBorde)
+        c.drawRoundRect(r, radio, radio, pinturaBorde)
 
         // Moviendo el cursor: las teclas quedan en blanco, como en iPhone
         if (modoCursor) return
+        // La letra presionada la muestra la cápsula de arriba, no la tecla
+        if (t.tipo == Tipo.LETRA && presionada && vistaPrevia) return
 
         val cx = t.rect.centerX()
         val cy = t.rect.centerY()
@@ -281,7 +361,7 @@ class KeyboardView(
             Tipo.ENTER -> texto(c, etiquetaEnter, cx, cy, dp(16f), colorContenido)
             Tipo.LETRA -> {
                 val minuscula = modo == Modo.LETRAS && shift == 0
-                texto(c, etiqueta(t), cx, if (minuscula) cy - dp(1.5f) else cy, dp(24f), colorContenido)
+                texto(c, etiqueta(t), cx, if (minuscula) cy - dp(1.5f) else cy, dp(23f), colorContenido)
             }
             else -> texto(c, t.texto, cx, cy, dp(16f), colorContenido)
         }
@@ -324,6 +404,9 @@ class KeyboardView(
 
     private fun teclaEn(x: Float, y: Float): Tecla? {
         if (filas.isEmpty()) return null
+        if (conTira && y >= margenArriba + 4 * altoFila) {
+            return tira.firstOrNull { x >= it.rect.left && x <= it.rect.right }
+        }
         val i = ((y - margenArriba) / altoFila).toInt().coerceIn(0, filas.size - 1)
         var mejor: Tecla? = null
         var distancia = Float.MAX_VALUE
@@ -399,6 +482,7 @@ class KeyboardView(
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 val id = e.getPointerId(e.actionIndex)
                 val t = presionadas.remove(id)
+                if (t != null && t === teclaPulso) animarPulso(null, 0f)
                 when (id) {
                     punteroVariantes -> {
                         val elegido = variantes.elegido()
@@ -435,6 +519,7 @@ class KeyboardView(
 
     private fun presionar(t: Tecla, id: Int, x: Float) {
         acciones.retro(t.tipo)
+        if (t.tipo != Tipo.LETRA && t !in tira) animarPulso(t, 1f)
         when (t.tipo) {
             Tipo.LETRA -> {
                 if (vistaPrevia) preview.show(t.rect, etiqueta(t), tema.oscuro)
@@ -483,6 +568,7 @@ class KeyboardView(
             Tipo.A_SIMBOLOS -> modo = Modo.SIMBOLOS
             Tipo.A_LETRAS -> modo = Modo.LETRAS
             Tipo.EMOJI -> acciones.abrirEmojis()
+            Tipo.MIC -> acciones.dictar()
             Tipo.SHIFT -> {}
         }
         invalidate()

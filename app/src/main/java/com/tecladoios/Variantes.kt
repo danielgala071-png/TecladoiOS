@@ -39,7 +39,7 @@ class VariantesView(context: Context) : View(context) {
     private val marca = Paint(Paint.ANTI_ALIAS_FLAG)
     private val texto = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+        typeface = Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), 400, false)
     }
 
     init { setLayerType(LAYER_TYPE_SOFTWARE, null) }

@@ -1,14 +1,21 @@
 package com.tecladoios
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
 import android.media.AudioManager
 import android.os.Build
+import android.os.Bundle
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.text.InputType
 import android.text.TextUtils
 import android.view.KeyEvent
@@ -18,6 +25,7 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.Toast
 
 class TecladoService : InputMethodService(),
     KeyboardView.Acciones, EmojiPanel.Acciones, SuggestionBar.Acciones {
@@ -47,6 +55,10 @@ class TecladoService : InputMethodService(),
     // La barra aparece al empezar a escribir y se queda hasta cerrar el teclado o cambiar de app
     private var barraActiva = false
     private var ultimaApp: String? = null
+
+    // Dictado por voz (botón de micrófono)
+    private var reconocedor: SpeechRecognizer? = null
+    private var dictando = false
 
     override fun onCreate() {
         super.onCreate()
@@ -188,12 +200,15 @@ class TecladoService : InputMethodService(),
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        if (dictando) detenerDictado()
         teclado?.ocultarPreview()
         diccionario.guardar()
         super.onFinishInputView(finishingInput)
     }
 
     override fun onDestroy() {
+        reconocedor?.destroy()
+        reconocedor = null
         diccionario.guardar()
         super.onDestroy()
     }
@@ -422,6 +437,7 @@ class TecladoService : InputMethodService(),
     }
 
     override fun elegir(s: Sugerencia) {
+        if (dictando) return
         val ic = currentInputConnection ?: return
         val (previa, palabra) = ultimasPalabras()
         ic.beginBatchEdit()
@@ -433,6 +449,81 @@ class TecladoService : InputMethodService(),
         ultimaCorreccion = null
         espacioAutomatico = true
         retro(Tipo.LETRA)
+    }
+
+    // ---------- Dictado ----------
+
+    override fun dictar() {
+        if (dictando) { detenerDictado(); return }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            // Abre la app para pedir permiso del micrófono
+            startActivity(Intent(this, SettingsActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra("pedir_microfono", true))
+            return
+        }
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            Toast.makeText(this, "Este celular no tiene reconocimiento de voz", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val r = reconocedor ?: SpeechRecognizer.createSpeechRecognizer(this).also { reconocedor = it }
+        r.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) {
+                barra?.visible(true)
+                barra?.mostrar(listOf(null, Sugerencia("Escuchando…", destacada = true), null))
+            }
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
+            override fun onEndOfSpeech() {}
+            override fun onError(error: Int) { terminarDictado() }
+            override fun onPartialResults(partialResults: Bundle?) {
+                val t = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                if (!t.isNullOrBlank()) {
+                    barra?.visible(true)
+                    barra?.mostrar(listOf(null, Sugerencia(t, destacada = true), null))
+                }
+            }
+            override fun onResults(results: Bundle?) {
+                val t = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                if (!t.isNullOrBlank()) escribirDictado(t)
+                terminarDictado()
+            }
+            override fun onEvent(eventType: Int, params: Bundle?) {}
+        })
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-PE")
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+        }
+        try {
+            r.startListening(intent)
+            dictando = true
+            teclado?.dictando = true
+        } catch (_: Exception) {
+            terminarDictado()
+        }
+    }
+
+    private fun escribirDictado(texto: String) {
+        val ic = currentInputConnection ?: return
+        val antes = ic.getTextBeforeCursor(1, 0)?.toString() ?: ""
+        val t = if (inicioDeOracion()) texto.replaceFirstChar { it.uppercase() } else texto
+        val prefijo = if (antes.isNotEmpty() && !antes.last().isWhitespace()) " " else ""
+        ic.commitText("$prefijo$t ", 1)
+        ultimaCorreccion = null
+        espacioAutomatico = false
+    }
+
+    private fun detenerDictado() {
+        try { reconocedor?.stopListening() } catch (_: Exception) { }
+        terminarDictado()
+    }
+
+    private fun terminarDictado() {
+        dictando = false
+        teclado?.dictando = false
+        actualizarBarra()
     }
 
     override fun retro(tipo: Tipo) {

@@ -1,10 +1,12 @@
 package com.tecladoios
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
@@ -116,6 +118,24 @@ class SettingsActivity : Activity() {
         }
         setContentView(scroll)
         dibujar()
+        if (intent?.getBooleanExtra("pedir_microfono", false) == true) pedirMicrofono()
+    }
+
+    private fun microfonoPermitido() =
+        checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+    private fun pedirMicrofono() {
+        if (!microfonoPermitido()) requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 7)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 7) {
+            if (microfonoPermitido()) {
+                Toast.makeText(this, "Listo, ya puedes dictar con el micrófono del teclado", Toast.LENGTH_SHORT).show()
+            }
+            if (::contenedor.isInitialized) dibujar()
+        }
     }
 
     private fun dibujar() {
@@ -303,6 +323,11 @@ class SettingsActivity : Activity() {
             filaInterruptor("Atajo con “.”", "punto_doble", true),
         ), pie = "Pulsar dos veces la barra espaciadora inserta un punto seguido de un espacio. " +
                 "Mantén pulsada la barra espaciadora para mover el cursor.")
+
+        grupo("Dictado", listOf(
+            if (microfonoPermitido()) filaAccion("Micrófono permitido", derecha = "✓") {}
+            else filaAccion("Permitir micrófono", azul) { pedirMicrofono() },
+        ), pie = "Toca el micrófono abajo a la derecha del teclado para dictar.")
 
         grupo("Respuesta del teclado", listOf(
             filaInterruptor("Sonido", "sonido", false),

@@ -26,8 +26,8 @@ class SuggestionBar(
     private var items: List<Sugerencia?> = listOf(null, null, null)
     private var presionado = -1
 
-    private val normal = Typeface.create("sans-serif", Typeface.NORMAL)
-    private val media = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    private val normal = Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), 400, false)
+    private val media = Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), 500, false)
     private val pinturaTexto = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         textSize = 17f * d

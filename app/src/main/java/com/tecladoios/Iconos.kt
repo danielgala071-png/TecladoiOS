@@ -44,6 +44,15 @@ object Iconos {
         c.drawLine(xc - k, cy + k, xc + k, cy - k, p)
     }
 
+    fun microfono(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
+        p.style = Paint.Style.STROKE
+        val w = s * 0.32f
+        val arriba = cy - s * 0.5f
+        c.drawRoundRect(cx - w / 2f, arriba, cx + w / 2f, arriba + s * 0.58f, w / 2f, w / 2f, p)
+        c.drawArc(cx - s * 0.33f, cy - s * 0.32f, cx + s * 0.33f, cy + s * 0.26f, 0f, 180f, false, p)
+        c.drawLine(cx, cy + s * 0.26f, cx, cy + s * 0.46f, p)
+    }
+
     fun emoji(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
         p.style = Paint.Style.STROKE
         c.drawCircle(cx, cy, s * 0.45f, p)

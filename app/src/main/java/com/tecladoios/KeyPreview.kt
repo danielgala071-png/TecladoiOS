@@ -49,7 +49,7 @@ class KeyPreviewView(context: Context) : View(context) {
     }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+        typeface = Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), 400, false)
     }
 
     init { setLayerType(LAYER_TYPE_SOFTWARE, null) }
@@ -69,9 +69,9 @@ class KeyPreviewView(context: Context) : View(context) {
         // Vidrio gris azulado translúcido, como en la imagen
         val arriba: Int; val abajo: Int
         if (darkMode) {
-            arriba = 0xCCA9B2C0.toInt(); abajo = 0xC28E98A8.toInt()
+            arriba = 0xFAA7B0BE.toInt(); abajo = 0xF78C96A6.toInt()
         } else {
-            arriba = 0xE8F1F3F7.toInt(); abajo = 0xE0D8DCE4.toInt()
+            arriba = 0xFCF6F7FA.toInt(); abajo = 0xF8DFE2E8.toInt()
         }
         cuerpo.shader = LinearGradient(0f, rect.top, 0f, rect.bottom, arriba, abajo, Shader.TileMode.CLAMP)
         cuerpo.setShadowLayer(10f * d, 0f, 3f * d, 0x30000000)
