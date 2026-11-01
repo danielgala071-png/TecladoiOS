@@ -56,5 +56,7 @@ object Ajustes {
         "dnd" to "de nada", "xfa" to "por favor", "cdt" to "cuídate", "bn" to "bien",
         "msj" to "mensaje", "salu2" to "saludos", "nd" to "nada", "dsp" to "después",
         "aki" to "aquí", "vdd" to "verdad", "grax" to "gracias",
-    )
+        "q" to "que", "k" to "que", "xk" to "por qué", "bno" to "bueno", "tons" to "entonces",
+        "ps" to "pues", "tbn" to "también", "dnd" to "de nada", "kiero" to "quiero", "ke" to "que",
+    ).distinctBy { it.first.lowercase() }
 }

@@ -6,6 +6,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
+import android.graphics.Path
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Shader
@@ -22,6 +23,8 @@ enum class Modo { LETRAS, NUMEROS, SIMBOLOS }
 
 class Tecla(val tipo: Tipo, val texto: String = "", val ancho: Float = 1f) {
     val rect = RectF()
+    /** Forma con esquinas suaves (se calcula una vez) */
+    val forma = Path()
 }
 
 /** Las teclas dibujadas directamente en pantalla, estilo iPhone. */
@@ -55,7 +58,8 @@ class KeyboardView(
     private val margenAbajo = dp(8f)
     private val sepH = dp(3f)
     private val sepV = dp(5.5f)
-    private val radio = dp(10.5f)
+    private val radio = dp(12.5f)
+    private val formaPulso = Path()
 
     // Franja inferior como en iPhone: emoji a la izquierda y micrófono a la derecha
     private val altoInferior = if (Medidas.horizontal(context)) 0f else dp(42f)
@@ -119,7 +123,7 @@ class KeyboardView(
         typeface = fuente
     }.also { Fuentes.aplicar(it, 400) }
     private val pinturaIcono = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        strokeWidth = dp(1.6f)
+        strokeWidth = dp(1.45f)
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
@@ -197,6 +201,7 @@ class KeyboardView(
             for (t in fila) {
                 val w = t.ancho * unidad
                 t.rect.set(x + sepH, top + sepV, x + w - sepH, top + altoFila - sepV)
+                Formas.suave(t.forma, t.rect.left, t.rect.top, t.rect.right, t.rect.bottom, radio)
                 x += w
             }
         }
@@ -332,20 +337,31 @@ class KeyboardView(
         val colorFondo = if (f > 0f) mezclar(colorNormal, tema.teclaPresionada, f) else colorPrevio
         val r = if (f > 0f) RectF(t.rect).apply { inset(-dp(2.5f) * f, -dp(2.5f) * f) } else t.rect
 
+        val forma = if (f > 0f) {
+            Formas.suave(formaPulso, r.left, r.top, r.right, r.bottom, radio + dp(1f) * f)
+            formaPulso
+        } else t.forma
+
         if (Color.alpha(tema.sombra) > 0) {
             pintura.color = tema.sombra
-            c.drawRoundRect(r.left, r.top + dp(1f), r.right, r.bottom + dp(1f), radio, radio, pintura)
+            c.save()
+            c.translate(0f, dp(1f))
+            c.drawPath(forma, pintura)
+            c.restore()
         }
-        pintura.color = colorFondo
-        c.drawRoundRect(r, radio, radio, pintura)
+        // Relleno con un degradado muy sutil: arriba apenas más claro (se ve más fino)
+        pintura.shader = LinearGradient(0f, r.top, 0f, r.bottom,
+            mezclar(colorFondo, 0xFFFFFFFF.toInt(), 0.035f), colorFondo, Shader.TileMode.CLAMP)
+        c.drawPath(forma, pintura)
+        pintura.shader = null
 
-        // Liquid Glass: reflejo arriba y borde brillante
-        pinturaBrillo.shader = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.5f,
+        // Liquid Glass: reflejo suave arriba y un filo de luz solo en el borde superior
+        pinturaBrillo.shader = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.45f,
             tema.brillo, tema.brillo and 0x00FFFFFF, Shader.TileMode.CLAMP)
-        c.drawRoundRect(r, radio, radio, pinturaBrillo)
-        pinturaBorde.shader = LinearGradient(0f, r.top, 0f, r.bottom,
-            tema.borde, tema.borde and 0x22FFFFFF, Shader.TileMode.CLAMP)
-        c.drawRoundRect(r, radio, radio, pinturaBorde)
+        c.drawPath(forma, pinturaBrillo)
+        pinturaBorde.shader = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.5f,
+            tema.borde, tema.borde and 0x00FFFFFF, Shader.TileMode.CLAMP)
+        c.drawPath(forma, pinturaBorde)
 
         // Moviendo el cursor: las teclas quedan en blanco, como en iPhone
         if (modoCursor) return

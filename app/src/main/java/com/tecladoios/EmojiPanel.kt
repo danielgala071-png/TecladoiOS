@@ -183,7 +183,7 @@ class BarraCategorias(
         if (n == 0 || width == 0) return
         val ancho = width / n.toFloat()
         val cy = height / 2f
-        gris.textSize = 15f * d
+        gris.textSize = 16f * d
         textoSimbolos.textSize = 13f * d
         textoSimbolos.color = tema.textoSecundario
         val fm = gris.fontMetrics
@@ -192,7 +192,7 @@ class BarraCategorias(
             val cx = ancho * i + ancho / 2f
             if (i == marcado) {
                 circulo.color = (tema.teclaPresionada and 0x00FFFFFF) or 0x66000000
-                c.drawCircle(cx, cy, minOf(ancho, height.toFloat()) * 0.42f, circulo)
+                c.drawCircle(cx, cy, minOf(ancho, height.toFloat()) * 0.40f, circulo)
             }
             gris.alpha = if (i == marcado) 255 else 150
             if (cat.icono == "&%") {
@@ -236,9 +236,9 @@ class EmojiGrid(
 
     private val d = Medidas.escala(context)
     private val filas = 5
-    private val altoTitulo = 26f * d
-    private val margen = 8f * d
-    private val separacion = 14f * d
+    private val altoTitulo = 28f * d
+    private val margen = 10f * d
+    private val separacion = 20f * d
     private var celda = 0f
     private val inicios = ArrayList<Float>()
     private val finales = ArrayList<Float>()
@@ -247,7 +247,8 @@ class EmojiGrid(
         color = Color.BLACK
     }
     private val pinturaTitulo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 12f * d
+        textSize = 11.5f * d
+        letterSpacing = 0.03f
     }.also { Fuentes.aplicar(it, 600) }
     private val fondo = Paint(Paint.ANTI_ALIAS_FLAG)
     private var presionado: Pair<Int, Int>? = null
@@ -267,7 +268,7 @@ class EmojiGrid(
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val alto = MeasureSpec.getSize(heightMeasureSpec)
-        celda = ((alto - altoTitulo - 4f * d) / filas).coerceAtLeast(1f)
+        celda = ((alto - altoTitulo - 6f * d) / filas).coerceAtLeast(1f)
         inicios.clear()
         finales.clear()
         var x = margen
@@ -283,7 +284,7 @@ class EmojiGrid(
 
     override fun onDraw(c: Canvas) {
         val clip = c.clipBounds
-        pintura.textSize = celda * 0.7f
+        pintura.textSize = celda * 0.74f
         val fm = pintura.fontMetrics
         pinturaTitulo.color = tema.textoSecundario
         secciones.forEachIndexed { i, s ->
@@ -294,15 +295,15 @@ class EmojiGrid(
             // Título fijo a la izquierda mientras se ve su sección
             val anchoTitulo = pinturaTitulo.measureText(s.titulo)
             val xt = maxOf(ini + 4f * d, minOf(desplazamiento + margen + 4f * d, fin - anchoTitulo))
-            c.drawText(s.titulo, xt, altoTitulo * 0.7f, pinturaTitulo)
+            c.drawText(s.titulo, xt, altoTitulo * 0.66f, pinturaTitulo)
 
             s.emojis.forEachIndexed { j, e ->
                 val x = ini + (j / filas) * celda
                 if (x + celda < clip.left || x > clip.right) return@forEachIndexed
                 val y = altoTitulo + (j % filas) * celda
                 if (presionado == Pair(i, j)) {
-                    fondo.color = tema.teclaPresionada
-                    c.drawRoundRect(x + 2 * d, y + 2 * d, x + celda - 2 * d, y + celda - 2 * d, 10 * d, 10 * d, fondo)
+                    fondo.color = (tema.teclaPresionada and 0x00FFFFFF) or 0x99000000.toInt()
+                    c.drawRoundRect(x + 3 * d, y + 3 * d, x + celda - 3 * d, y + celda - 3 * d, 12 * d, 12 * d, fondo)
                 }
                 c.drawText(e, x + celda / 2f, y + celda / 2f - (fm.ascent + fm.descent) / 2f, pintura)
             }

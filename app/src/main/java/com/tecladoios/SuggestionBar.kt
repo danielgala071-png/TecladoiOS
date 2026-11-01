@@ -17,6 +17,8 @@ data class Sugerencia(
     val ia: Boolean = false,
     /** Cuántas letras borrar al elegirla (-1 = la palabra actual) */
     val reemplaza: Int = -1,
+    /** Deshace la última autocorrección (vuelve a lo que escribiste) */
+    val revertir: Boolean = false,
 )
 
 /** Barra de sugerencias de 3 casillas, como en iOS. */
@@ -72,11 +74,11 @@ class SuggestionBar(
             val fm = pinturaTexto.fontMetrics
             c.drawText(txt, x0 + ancho / 2f, height / 2f - (fm.ascent + fm.descent) / 2f, pinturaTexto)
         }
-        pintura.color = (tema.textoSecundario and 0x00FFFFFF) or 0x55000000
-        pintura.strokeWidth = d
+        pintura.color = (tema.textoSecundario and 0x00FFFFFF) or 0x40000000
+        pintura.strokeWidth = maxOf(1f, d * 0.6f)
         for (i in 1 until 3) {
             if (items[i - 1] != null && items[i] != null) {
-                c.drawLine(ancho * i, height * 0.3f, ancho * i, height * 0.7f, pintura)
+                c.drawLine(ancho * i, height * 0.34f, ancho * i, height * 0.66f, pintura)
             }
         }
     }

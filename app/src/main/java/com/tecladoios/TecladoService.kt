@@ -48,6 +48,7 @@ class TecladoService : InputMethodService(),
     private var atajosActivos = true
     private var atajos: Map<String, String> = emptyMap()
 
+    private var toqueFino: Boolean? = null
     private var ultimaCorreccion: Pair<String, String>? = null
     private var ultimoEspacio = 0L
     /** true justo después de elegir una sugerencia (el espacio lo puso el teclado) */
@@ -300,25 +301,31 @@ class TecladoService : InputMethodService(),
             val inicio = inicioDeOracion()
             val sig = diccionario.siguientes(if (inicio) "" else previa, 3)
                 .map { if (inicio) it.replaceFirstChar { c -> c.uppercase() } else it }
+            val uc = ultimaCorreccion
+            val deshacer = if (uc != null &&
+                currentInputConnection?.getTextBeforeCursor(uc.second.length, 0)?.toString() == uc.second
+            ) Sugerencia(uc.first.trim(), literal = true, revertir = true) else null
             b.mostrar(listOf(
-                sig.getOrNull(1)?.let { Sugerencia(it) },
+                deshacer ?: sig.getOrNull(1)?.let { Sugerencia(it) },
                 sig.getOrNull(0)?.let { Sugerencia(it) },
-                sig.getOrNull(2)?.let { Sugerencia(it) },
+                (if (deshacer != null) sig.getOrNull(1) else sig.getOrNull(2))?.let { Sugerencia(it) },
             ))
             return
         }
 
         val corr = if (autocorreccionActiva) diccionario.corregir(p) else null
-        val otras = diccionario.sugerir(p, 3).filter { it != corr && it != p }
+        val otras = diccionario.sugerir(p, 4, previa).filter { it != corr && it != p }
         val centro = corr?.let { Sugerencia(it, destacada = true) } ?: otras.getOrNull(0)?.let { Sugerencia(it) }
         val derecha = (if (corr != null) otras.getOrNull(0) else otras.getOrNull(1))?.let { Sugerencia(it) }
         b.mostrar(listOf(Sugerencia(p, literal = true), centro, derecha))
     }
 
-    /** Cierra la palabra actual (corrigiéndola o reemplazando el atajo) y agrega el sufijo. */
+    /**
+     * Cierra la palabra actual y agrega el sufijo (espacio, signo o salto de línea):
+     * 1) sustitución de texto, 2) autocorrección, 3) tildes según la palabra anterior.
+     */
     private fun cerrarPalabra(sufijo: String) {
         val ic = currentInputConnection ?: return
-        val (previa, palabra) = ultimasPalabras()
         espacioAutomatico = false
 
         // 1) Sustitución de texto
@@ -333,35 +340,97 @@ class TecladoService : InputMethodService(),
             return
         }
 
-        // 2) Autocorrección
-        if (palabra.isNotEmpty()) {
-            val atajo: String? = null
-            val corr = if (autocorreccionActiva) diccionario.corregir(palabra) else null
-            if (corr != null) {
-                ic.beginBatchEdit()
-                ic.deleteSurroundingText(palabra.length, 0)
-                ic.commitText(corr + sufijo, 1)
-                ic.endBatchEdit()
-                ultimaCorreccion = Pair(palabra, corr + sufijo)
-                if (atajo == null) {
-                    diccionario.aprender(corr)
-                    diccionario.aprenderPar(previa, corr)
-                }
-                return
-            }
-            if (sugerenciasActivas) {
-                diccionario.aprender(palabra)
-                diccionario.aprenderPar(previa, palabra)
+        val antes = ic.getTextBeforeCursor(80, 0)?.toString() ?: ""
+        var i = antes.length
+        while (i > 0 && antes[i - 1].isLetter()) i--
+        val palabra = antes.substring(i)
+        var j = i
+        while (j > 0 && antes[j - 1] == ' ') j--
+        var k = j
+        while (k > 0 && antes[k - 1].isLetter()) k--
+        val previa = if (j < i && k < j) antes.substring(k, j) else ""
+        val espacios = antes.substring(j, i)
+
+        if (palabra.isEmpty()) {
+            ic.commitText(sufijo, 1)
+            ultimaCorreccion = null
+            return
+        }
+
+        // 2) Autocorrección de la palabra (tildes que faltan y errores de tipeo)
+        var nuevaPalabra = palabra
+        if (autocorreccionActiva) diccionario.corregir(palabra)?.let { nuevaPalabra = it }
+
+        // 3) Tildes que dependen de la palabra anterior ("que tal" → "qué tal")
+        var nuevaPrevia = previa
+        if (autocorreccionActiva && previa.isNotEmpty()) {
+            diccionario.corregirPar(previa, nuevaPalabra)?.let { (a, b) ->
+                nuevaPrevia = a
+                nuevaPalabra = b
             }
         }
-        ic.commitText(sufijo, 1)
-        ultimaCorreccion = null
+
+        if (sugerenciasActivas) {
+            diccionario.aprender(nuevaPalabra)
+            diccionario.aprenderPar(nuevaPrevia, nuevaPalabra)
+        }
+
+        if (nuevaPrevia == previa && nuevaPalabra == palabra) {
+            ic.commitText(sufijo, 1)
+            ultimaCorreccion = null
+            return
+        }
+        val cambiaPrevia = nuevaPrevia != previa
+        val original = if (cambiaPrevia) previa + espacios + palabra else palabra
+        val nuevo = (if (cambiaPrevia) nuevaPrevia + espacios else "") + nuevaPalabra
+        ic.beginBatchEdit()
+        ic.deleteSurroundingText(original.length, 0)
+        ic.commitText(nuevo + sufijo, 1)
+        ic.endBatchEdit()
+        ultimaCorreccion = Pair(original, nuevo + sufijo)
+    }
+
+    /** Al poner "?", la palabra de pregunta del inicio lleva tilde: "que hora es?" → "qué hora es?" */
+    private fun acentuarPregunta() {
+        if (!autocorreccionActiva) return
+        val ic = currentInputConnection ?: return
+        val antes = ic.getTextBeforeCursor(200, 0)?.toString() ?: return
+        var i = antes.length
+        while (i > 0 && antes[i - 1] !in ".!?¿¡\n") i--
+        val oracion = antes.substring(i)
+        var a = 0
+        while (a < oracion.length && oracion[a].isWhitespace()) a++
+        var b = a
+        while (b < oracion.length && oracion[b].isLetter()) b++
+        if (b == a) return
+        val primera = oracion.substring(a, b)
+        // "por que ...?" → "por qué ...?"
+        var inicio = a
+        var objetivo = primera
+        if (primera.equals("por", ignoreCase = true)) {
+            var c = b
+            while (c < oracion.length && oracion[c] == ' ') c++
+            var e = c
+            while (e < oracion.length && oracion[e].isLetter()) e++
+            if (e > c && oracion.substring(c, e).equals("que", ignoreCase = true)) {
+                inicio = c
+                objetivo = oracion.substring(c, e)
+            } else return
+        }
+        val conTilde = diccionario.interrogativa(objetivo) ?: return
+        val desde = i + inicio
+        val resto = antes.substring(desde + objetivo.length)
+        ic.beginBatchEdit()
+        ic.deleteSurroundingText(antes.length - desde, 0)
+        ic.commitText(conTilde + resto, 1)
+        ic.endBatchEdit()
     }
 
     // ---------- Acciones de las teclas ----------
 
     override fun texto(s: String) {
         val ic = currentInputConnection ?: return
+        if (s == "?") acentuarPregunta()
         if (s.length == 1 && s[0] in ".,;:!?") {
             // Después de elegir una sugerencia, la puntuación se pega a la palabra: "hola, "
             if (espacioAutomatico && ic.getTextBeforeCursor(1, 0)?.toString() == " ") {
@@ -482,6 +551,19 @@ class TecladoService : InputMethodService(),
     override fun elegir(s: Sugerencia) {
         if (dictando) return
         val ic = currentInputConnection ?: return
+        if (s.revertir) {
+            // Volver a lo que escribiste y aprenderlo para no corregirlo otra vez
+            val uc = ultimaCorreccion ?: return
+            val sufijo = uc.second.takeLastWhile { !it.isLetterOrDigit() }
+            ic.beginBatchEdit()
+            ic.deleteSurroundingText(uc.second.length, 0)
+            ic.commitText(uc.first + sufijo, 1)
+            ic.endBatchEdit()
+            uc.first.split(" ").forEach { diccionario.aprender(it, 2) }
+            ultimaCorreccion = null
+            retro(Tipo.LETRA)
+            return
+        }
         val (previa, palabra) = ultimasPalabras()
         val borrarN = if (s.reemplaza >= 0) s.reemplaza else palabra.length
         ic.beginBatchEdit()
@@ -573,7 +655,18 @@ class TecladoService : InputMethodService(),
     override fun retro(tipo: Tipo) {
         if (vibrar) {
             try {
-                vibrador?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK))
+                val v = vibrador
+                // Toque corto y seco, como el Taptic Engine del iPhone (si el celular lo soporta)
+                if (v != null && toqueFino == null) {
+                    toqueFino = v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_TICK)
+                }
+                if (toqueFino == true) {
+                    v?.vibrate(VibrationEffect.startComposition()
+                        .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 0.55f)
+                        .compose())
+                } else {
+                    v?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK))
+                }
             } catch (_: Exception) { }
         }
         if (sonido) {

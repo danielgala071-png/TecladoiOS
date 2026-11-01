@@ -18,9 +18,11 @@ class Diccionario(context: Context) {
     private var revision = -1
     private var cambios = false
     private var sinGuardar = 0
+    private var totalBase = 0
 
     init {
-        val palabras = (BASE + " " + BASE_EXTRA).trim().split(Regex("\\s+"))
+        val palabras = (BASE + " " + BASE_EXTRA + " " + BASE_TILDES).trim().split(Regex("\\s+"))
+        totalBase = palabras.size
         palabras.forEachIndexed { i, p ->
             if (!base.containsKey(p)) {
                 base[p] = palabras.size - i
@@ -46,13 +48,23 @@ class Diccionario(context: Context) {
         else -> c
     }
 
-    fun sugerir(prefijo: String, max: Int): List<String> {
+    fun sugerir(prefijo: String, max: Int, previa: String = ""): List<String> {
         if (prefijo.isEmpty()) return emptyList()
         val np = normal(prefijo)
         val lp = prefijo.lowercase()
         val res = HashMap<String, Int>()
         for ((p, s) in base) {
             if (p.lowercase() != lp && normalDe(p).startsWith(np)) res[p] = s
+        }
+        // Contexto: lo que sueles escribir después de la palabra anterior pesa muchísimo
+        if (previa.isNotEmpty()) {
+            val lprev = previa.lowercase()
+            pares[lprev]?.forEach { (w, c) ->
+                if (w != lp && normalDe(w).startsWith(np)) res[w] = (res[w] ?: 0) + 400 + c * 120
+            }
+            PARES_BASE[lprev]?.forEachIndexed { i, w ->
+                if (w != lp && normalDe(w).startsWith(np)) res[w] = (res[w] ?: 0) + 300 - i * 30
+            }
         }
         for ((p, c) in aprendidas) {
             if (p != lp && normalDe(p).startsWith(np)) {
@@ -117,10 +129,13 @@ class Diccionario(context: Context) {
         for ((c, n) in aprendidas) {
             if (n >= 2 && n * 40 > puntaje && normalDe(c) == np) { mejor = c; puntaje = n * 40 }
         }
-        if (mejor == null && np.length >= 3) {
+        val yaLaUsaste = (aprendidas[p.lowercase()] ?: 0) >= 1
+        if (mejor == null && np.length >= 3 && !yaLaUsaste) {
             // Errores de tipeo: "qeu" → "que", "hloa" → "hola"
+            // Sutil: solo corrige hacia palabras muy comunes
+            val minimo = totalBase - 700
             for ((c, s) in base) {
-                if (s > puntaje && casi(normalDe(c), np)) { mejor = c; puntaje = s }
+                if (s > puntaje && s >= minimo && casi(normalDe(c), np)) { mejor = c; puntaje = s }
             }
             for ((c, n) in aprendidas) {
                 if (n >= 3 && n * 60 > puntaje && casi(normalDe(c), np)) { mejor = c; puntaje = n * 60 }
@@ -130,6 +145,23 @@ class Diccionario(context: Context) {
         val resultado = igualarMayus(r, p)
         return if (resultado == p) null else resultado
     }
+
+    /**
+     * Tildes que dependen de la palabra anterior: "que tal" → "qué tal",
+     * "como estas" → "cómo estás", "todo esta bien" → "todo está".
+     * Devuelve (anterior, actual) corregidas, o null si no hay nada que cambiar.
+     */
+    fun corregirPar(previa: String, palabra: String): Pair<String, String>? {
+        if (previa.isEmpty() || palabra.isEmpty()) return null
+        val par = PARES_TILDE[normal(previa) + " " + normal(palabra)] ?: return null
+        val a = igualarMayus(par.first, previa)
+        val b = igualarMayus(par.second, palabra)
+        return if (a == previa && b == palabra) null else a to b
+    }
+
+    /** Palabra de pregunta con tilde: "que" → "qué", "como" → "cómo" */
+    fun interrogativa(w: String): String? =
+        INTERROGATIVAS[normal(w)]?.let { igualarMayus(it, w) }?.takeIf { it != w }
 
     private fun valida(p: String) = p.length >= 1 && p.all { it.isLetter() }
 
@@ -202,6 +234,76 @@ class Diccionario(context: Context) {
         private const val SEP2 = "\u0002"
 
         private val INICIO = listOf("hola", "yo", "gracias", "ya", "ok")
+
+        private val INTERROGATIVAS = mapOf(
+            "que" to "qué", "como" to "cómo", "donde" to "dónde", "adonde" to "adónde",
+            "cuando" to "cuándo", "quien" to "quién", "quienes" to "quiénes", "cual" to "cuál",
+            "cuales" to "cuáles", "cuanto" to "cuánto", "cuanta" to "cuánta",
+            "cuantos" to "cuántos", "cuantas" to "cuántas",
+        )
+
+        /** "anterior actual" sin tildes → con tildes correctas */
+        private val PARES_TILDE: Map<String, Pair<String, String>> = """
+            que tal|qué tal; que haces|qué haces; que hacen|qué hacen; que paso|qué pasó; que pasa|qué pasa;
+            que fue|qué fue; que onda|qué onda; que hora|qué hora; que dices|qué dices; que hiciste|qué hiciste;
+            que miedo|qué miedo; que bueno|qué bueno; que rico|qué rico; que lindo|qué lindo; que linda|qué linda;
+            que asco|qué asco; que pena|qué pena; que roche|qué roche; que palta|qué palta; que bien|qué bien;
+            que bonito|qué bonito; que feo|qué feo; que raro|qué raro; por que|por qué;
+            como estas|cómo estás; como esta|cómo está; como estan|cómo están; como fue|cómo fue;
+            como asi|cómo así; como vas|cómo vas; como va|cómo va; como sigues|cómo sigues;
+            como haces|cómo haces; como amaneciste|cómo amaneciste;
+            donde estas|dónde estás; donde esta|dónde está; donde estan|dónde están; donde vives|dónde vives;
+            donde queda|dónde queda; donde vas|dónde vas; de donde|de dónde; a donde|a dónde; por donde|por dónde;
+            cuando vienes|cuándo vienes; cuando llegas|cuándo llegas; cuando sales|cuándo sales;
+            cuando vas|cuándo vas; desde cuando|desde cuándo; hasta cuando|hasta cuándo;
+            quien es|quién es; quien eres|quién eres; quien sabe|quién sabe; quien fue|quién fue;
+            cual es|cuál es; cuanto es|cuánto es; cuanto cuesta|cuánto cuesta; cuanto vale|cuánto vale;
+            cuanto falta|cuánto falta; cuantos años|cuántos años; cuantos anos|cuántos años;
+            esta bien|está bien; esta mal|está mal; esta aqui|está aquí; esta ahi|está ahí; esta lloviendo|está lloviendo;
+            ya esta|ya está; no esta|no está; todo esta|todo está;
+            estas bien|estás bien; estas ahi|estás ahí; estas ocupado|estás ocupado; estas ocupada|estás ocupada;
+            estas loco|estás loco; estas loca|estás loca;
+            el es|él es; el esta|él está; el dijo|él dijo;
+            tu eres|tú eres; tu estas|tú estás; tu sabes|tú sabes;
+            si claro|sí claro; mas o|más o; mas tarde|más tarde; aun no|aún no
+        """.trim().split(";").mapNotNull { linea ->
+            val partes = linea.trim().split("|")
+            if (partes.size != 2) null else {
+                val a = partes[0].trim().split(" ")
+                val b = partes[1].trim().split(" ")
+                if (a.size == 2 && b.size == 2) "${a[0]} ${a[1]}" to (b[0] to b[1]) else null
+            }
+        }.toMap()
+
+        /** Palabras con tilde o ñ para corregir cuando las escribes sin ella */
+        private const val BASE_TILDES = """
+            también después además todavía quizás jamás aquí allá acá ahí así atrás según algún ningún
+            común fácil difícil útil árbol cámara música número página rápido rápida teléfono último última
+            público pública práctica práctico lápiz inglés francés japonés alemán canción camión avión razón
+            corazón opción acción atención información relación situación educación dirección estación
+            habitación televisión pasión emoción ilusión decisión reunión región millón jabón botón ratón
+            limón melón salón sillón balón montón café bebé sofá menú papá mamá tío tía río frío día días
+            mía tía película políticos política médico médica clínica química física matemática gráfico
+            pasó llegó salió comió terminó empezó habló llamó quedó dejó mandó compró pagó ganó perdió
+            vivió murió subió bajó entró pidió escribió recibió sintió durmió pensó esperó trabajó estudió
+            viajó regresó volvió jugó cambió encontró llevó tomó sacó dio
+            llegué pagué jugué busqué toqué saqué empecé terminé compré hablé llamé mandé dejé quedé pensé
+            esperé entré trabajé estudié viajé regresé volví comí salí escribí viví perdí subí recibí sentí
+            pedí dormí leí oí reí vi
+            será estará tendrá hará irá podrá vendrá saldrá llegará haré iré podré tendré estaré seré
+            pasaré llamaré escribiré avisaré veré diré sabré querrá
+            sería podría tendría haría iría debería querría gustaría estaría
+            tenía había quería sabía podía decía hacía vivía creía sentía salía venía
+            estábamos íbamos éramos teníamos hacíamos
+            dímelo avísame llámame escríbeme mándame pásame dámelo cuéntame explícame ayúdame espérame
+            búscame díselo mírala míralo enséñame acompáñame tráeme cómpralo
+            lógico básico económico eléctrico único típico clásico fantástico romántico simpático
+            sábado miércoles jóvenes exámenes imágenes órdenes
+            año años niño niña niños niñas señor señora baño mañana pequeño pequeña sueño otoño
+            cumpleaños español española compañero compañera compañía montaña araña enseñar diseño dueño
+            dueña cariño piña uña uñas ñaño ñaña engaño extraño extraña
+        """
+
 
         private val PARES_BASE = mapOf(
             "que" to listOf("tal", "es", "no", "te", "haces"),

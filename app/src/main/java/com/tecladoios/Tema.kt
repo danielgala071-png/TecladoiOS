@@ -38,15 +38,15 @@ data class Tema(
                 return Tema(
                     oscuro = true,
                     fondo = 0xFF000000.toInt(),
-                    tecla = 0xFF343437.toInt(),
-                    teclaFuncion = 0xFF232326.toInt(),
+                    tecla = 0xFF38383B.toInt(),
+                    teclaFuncion = 0xFF26262A.toInt(),
                     teclaPresionada = 0xFF55555A.toInt(),
                     sombra = 0,
                     texto = 0xFFFFFFFF.toInt(),
                     textoSecundario = 0xFF8E8E93.toInt(),
                     azul = 0xFF0A84FF.toInt(),
-                    borde = a(0x1F, 0xFFFFFF),
-                    brillo = a(0x12, 0xFFFFFF),
+                    borde = a(0x2E, 0xFFFFFF),
+                    brillo = a(0x0F, 0xFFFFFF),
                     desenfoque = 0,
                 )
             }
