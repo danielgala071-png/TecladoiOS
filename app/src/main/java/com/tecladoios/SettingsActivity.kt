@@ -345,8 +345,10 @@ class SettingsActivity : Activity() {
             filaInterruptor("Predictivo", "sugerencias", true),
             filaInterruptor("Previsualización de caracteres", "vista_previa", true),
             filaInterruptor("Atajo con “.”", "punto_doble", true),
+            filaInterruptor("Pegar lo copiado desde la barra", "portapapeles", true),
         ), pie = "Pulsar dos veces la barra espaciadora inserta un punto seguido de un espacio. " +
-                "Mantén pulsada la barra espaciadora para mover el cursor.")
+                "Mantén pulsada la barra espaciadora para mover el cursor. Lo que copias aparece unos " +
+                "minutos en la barra: si tiene números, puedes pegarlo completo, solo el texto o solo los números.")
 
         grupo("Dictado", listOf(
             if (microfonoPermitido()) filaAccion("Micrófono permitido", derecha = "✓") {}
@@ -366,9 +368,11 @@ class SettingsActivity : Activity() {
             filaCheck("De color (según la app)", vidrio == "color") { elegir("vidrio", "color") },
             filaInterruptor("Desenfocar el fondo", "desenfoque", true),
             filaInterruptor("Combinar con la app", "adaptar", true),
+            filaInterruptor("Teclas de función con color", "teclas_color", true),
         ), pie = "“Sólido” es el diseño del teclado del iPhone. “Combinar con la app” toma el color " +
                 "de la app que estás usando (verde en WhatsApp, rosado en Instagram…) para la tecla de " +
-                "acción y un toque sutil del fondo. “De color” tiñe todo el vidrio con el color de la app, " +
+                "acción y un toque sutil del fondo. “Teclas de función con color” tiñe mayúsculas, borrar, " +
+                "123 y enter con un vidrio translúcido de ese color. “De color” tiñe todo el vidrio con el color de la app, " +
                 "difuminado de arriba hacia abajo; si la app no tiene color, usa el de tu fondo de pantalla.")
 
         val tema = Ajustes.tema(this)
@@ -407,6 +411,8 @@ class SettingsActivity : Activity() {
                         prefs.edit()
                             .remove("aprendidas")
                             .remove("pares")
+                            .remove("trios")
+                            .remove("rechazos")
                             .remove("bloqueadas")
                             .remove("nombres")
                             .putInt("aprendidas_rev", prefs.getInt("aprendidas_rev", 0) + 1)

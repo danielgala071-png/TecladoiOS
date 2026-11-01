@@ -30,6 +30,10 @@ data class Tema(
     val textoAcento: Int = 0xFFFFFFFF.toInt(),
     /** Color de la parte de arriba del fondo (0 = fondo de un solo color) */
     val fondoArriba: Int = 0,
+    /** Mayúsculas, borrar y 123 teñidas (translúcidas) con el color de la app (0 = sin teñir) */
+    val teclaApp: Int = 0,
+    /** Enter de acción (enviar, buscar…) translúcido con el color de la app (0 = el azul normal) */
+    val enterApp: Int = 0,
 ) {
     companion object {
         private fun a(alfa: Int, rgb: Int) = (alfa shl 24) or (rgb and 0xFFFFFF)
@@ -88,8 +92,27 @@ data class Tema(
             if (oscuro) 0xFF0A84FF.toInt() else 0xFF007AFF.toInt()
         }
 
+        /**
+         * Teclas de función (mayúsculas, borrar, 123 y enter) con un vidrio translúcido del color
+         * de la app: verde en WhatsApp, rosado en Instagram, rojo en YouTube…
+         */
+        private fun conTeclasApp(t: Tema, acento: Int): Tema {
+            val blanco = 0xFFFFFFFF.toInt()
+            val negro = 0xFF000000.toInt()
+            // En oscuro se aclara un poco el color para que no se pierda; en claro se oscurece apenas
+            val base = if (t.oscuro) mezclar(acento, blanco, 0.12f) else mezclar(acento, negro, 0.04f)
+            val tecla = a(if (t.oscuro) 0x5C else 0x63, base)
+            val enter = a(if (t.oscuro) 0xB8 else 0xC4, acento)
+            return t.copy(teclaApp = tecla, enterApp = enter, textoAcento = textoSobre(acento))
+        }
+
         /** conDesenfoque: si el sistema puede desenfocar lo que hay detrás. acento: color de la app */
         fun desde(context: Context, conDesenfoque: Boolean, acento: Int? = null): Tema {
+            val t = base(context, conDesenfoque, acento)
+            return if (acento != null && Ajustes.teclasColor(context)) conTeclasApp(t, acento) else t
+        }
+
+        private fun base(context: Context, conDesenfoque: Boolean, acento: Int?): Tema {
             val sistemaOscuro = (context.resources.configuration.uiMode and
                     Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
             val oscuro = when (Ajustes.tema(context)) {

@@ -1,6 +1,8 @@
 package com.tecladoios
 
 import android.Manifest
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -34,6 +36,13 @@ import android.widget.Toast
 class TecladoService : InputMethodService(),
     KeyboardView.Acciones, EmojiPanel.Acciones, SuggestionBar.Acciones {
 
+    companion object {
+        /** Cuánto tiempo se queda en la barra lo que copiaste */
+        private const val DURACION_COPIADO = 3 * 60 * 1000L
+        /** Números dentro de un texto: "987 654 321", "S/ 25.50", "12/05", "+51 987…" */
+        private val NUMEROS = Regex("""\+?\d(?:[\d .,/\-]*\d)?""")
+    }
+
     private var barra: SuggestionBar? = null
     private var teclado: KeyboardView? = null
     private var emojis: EmojiPanel? = null
@@ -59,14 +68,29 @@ class TecladoService : InputMethodService(),
     private var toqueFino: Boolean? = null
     private var ultimaCorreccion: Pair<String, String>? = null
     private var ultimoEspacio = 0L
-    /** (palabra anterior, palabra, texto que quedó escrito) de lo último que se aprendió */
-    private var ultimaAprendida: Triple<String, String, String>? = null
+    /** Lo último que se aprendió (para deshacerlo si borras enseguida) */
+    private data class Aprendida(val previa2: String, val previa: String, val palabra: String, val texto: String)
+    private var ultimaAprendida: Aprendida? = null
     /** true justo después de elegir una sugerencia (el espacio lo puso el teclado) */
     private var espacioAutomatico = false
 
     // La barra aparece al empezar a escribir y se queda hasta cerrar el teclado o cambiar de app
     private var barraActiva = false
     private var ultimaApp: String? = null
+
+    // Portapapeles: lo que copias aparece en la barra para pegarlo con un toque
+    private var portapapeles: ClipboardManager? = null
+    private var copiado: String? = null
+    /** Momento en que se copió (System.currentTimeMillis) */
+    private var copiadoEn = 0L
+    /** Lo que ya pegaste (o que no se debe mostrar) no vuelve a aparecer */
+    private var copiadoUsado = 0L
+    private var copiadoUsadoTexto: String? = null
+    private var portapapelesPermitido = true
+    private val alCopiar = ClipboardManager.OnPrimaryClipChangedListener {
+        leerPortapapeles(true)
+        if (isInputViewShown) actualizar()
+    }
 
     // Dictado por voz (botón de micrófono)
     private var reconocedor: SpeechRecognizer? = null
@@ -95,6 +119,8 @@ class TecladoService : InputMethodService(),
             getSystemService(Vibrator::class.java)
         }
         audio = getSystemService(AudioManager::class.java)
+        portapapeles = getSystemService(ClipboardManager::class.java)
+        try { portapapeles?.addPrimaryClipChangedListener(alCopiar) } catch (_: Exception) { }
     }
 
     override fun onCreateInputView(): View = construir()
@@ -204,6 +230,12 @@ class TecladoService : InputMethodService(),
         val sinSugerencias = (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0
 
         sugerenciasActivas = Ajustes.sugerencias(this) && esTexto && !esClave && !esCorreoOWeb && !sinSugerencias
+        // Modo incógnito (Chrome, etc.): no se aprende nada de lo que escribes
+        val incognito = (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
+        diccionario.pausado = incognito
+        // En contraseñas no se muestra lo copiado (podría ser otra contraseña a la vista)
+        portapapelesPermitido = Ajustes.portapapeles(this) && !esClave
+        if (portapapelesPermitido) leerPortapapeles(false) else copiado = null
         autocorreccionActiva = Ajustes.autocorregir(this) && sugerenciasActivas
         mayusPermitida = Ajustes.mayusculas(this) && esTexto && !esClave && !esCorreoOWeb
 
@@ -252,6 +284,7 @@ class TecladoService : InputMethodService(),
 
     override fun onDestroy() {
         manejador.removeCallbacksAndMessages(null)
+        try { portapapeles?.removePrimaryClipChangedListener(alCopiar) } catch (_: Exception) { }
         reconocedor?.destroy()
         reconocedor = null
         diccionario.guardar()
@@ -312,9 +345,87 @@ class TecladoService : InputMethodService(),
         return Color.HSVToColor(hsv)
     }
 
-    /** (palabra anterior, palabra que se está escribiendo) */
-    private fun ultimasPalabras(): Pair<String, String> =
-        palabrasDe(currentInputConnection?.getTextBeforeCursor(80, 0)?.toString() ?: "")
+    // ---------- Portapapeles ----------
+
+    /** Lee lo copiado. [recien]: llegó por el aviso de "se copió algo" en este momento */
+    private fun leerPortapapeles(recien: Boolean) {
+        if (!Ajustes.portapapeles(this)) { copiado = null; return }
+        val clip = try { portapapeles?.primaryClip } catch (_: Exception) { null } ?: return
+        if (clip.itemCount == 0) return
+        val desc = clip.description
+        // Android 13+: las apps marcan como "sensible" lo que no se debe mostrar (contraseñas, claves)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            desc?.extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE, false) == true) {
+            copiado = null
+            return
+        }
+        val texto = try { clip.getItemAt(0).coerceToText(this)?.toString() } catch (_: Exception) { null }
+            ?.trim()
+        if (texto.isNullOrEmpty() || texto.length > 3000) { copiado = null; return }
+        var cuando = desc?.timestamp ?: 0L
+        if (cuando <= 0L || recien) cuando = maxOf(cuando, System.currentTimeMillis() - 1000)
+        // Ya lo pegaste: no vuelve a salir (salvo que lo copies de nuevo)
+        val sinFecha = (desc?.timestamp ?: 0L) <= 0L && !recien
+        if (texto == copiadoUsadoTexto && (cuando <= copiadoUsado + 1500 || sinFecha)) { copiado = null; return }
+        copiado = texto
+        copiadoEn = cuando
+    }
+
+    /** Lo copiado, separado: (completo, solo texto, solo números) */
+    private fun partesCopiado(t: String): Triple<String, String?, String?> {
+        val grupos = NUMEROS.findAll(t).map { it.value.trim() }.filter { it.isNotEmpty() }.toList()
+        if (grupos.isEmpty()) return Triple(t, null, null)
+        // Teléfonos, DNI y cuentas: sin espacios ni guiones ("987 654 321" → "987654321")
+        val numeros = grupos.joinToString(" ") { g ->
+            if (g.all { it.isDigit() || it == ' ' || it == '-' || it == '+' }) g.replace(" ", "").replace("-", "") else g
+        }
+        val soloTexto = t.replace(NUMEROS, " ")
+            .replace(Regex("[ \\t]+"), " ")
+            .replace(Regex(" +([,.;:!?])"), "\$1")
+            .lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+            .trim { it.isWhitespace() || it in ":;,.-–—/#|*+=(" }
+        val texto = soloTexto.takeIf { it.count { c -> c.isLetter() } >= 2 }
+        return Triple(t, texto, numeros.takeIf { it != t })
+    }
+
+    /** Sugerencias del portapapeles, o null si no hay nada reciente para pegar */
+    private fun sugerenciasCopiado(token: String): List<Sugerencia?>? {
+        val t = copiado ?: return null
+        if (!portapapelesPermitido || token.isNotEmpty() || dictando) return null
+        if (System.currentTimeMillis() - copiadoEn > DURACION_COPIADO) { copiado = null; return null }
+        val (completo, texto, numeros) = partesCopiado(t)
+        val varios = (numeros?.count { it == ' ' } ?: 0) > 0
+        val etiquetaNum = if (varios) "Solo números" else "Solo número"
+        return when {
+            // Texto con números: completo | solo texto | solo número(s)
+            texto != null && numeros != null -> listOf(
+                Sugerencia(completo, portapapeles = true, etiqueta = "Copiado"),
+                Sugerencia(texto, portapapeles = true, etiqueta = "Solo texto"),
+                Sugerencia(numeros, portapapeles = true, etiqueta = etiquetaNum),
+            )
+            // Solo números pero con espacios o guiones: el original y los números juntos
+            numeros != null -> listOf(
+                null,
+                Sugerencia(completo, portapapeles = true, etiqueta = "Copiado"),
+                Sugerencia(numeros, portapapeles = true, etiqueta = etiquetaNum),
+            )
+            else -> listOf(null, Sugerencia(completo, portapapeles = true, etiqueta = "Copiado"), null)
+        }
+    }
+
+    /** Pegar lo copiado; después desaparece de la barra */
+    private fun pegarCopiado(s: Sugerencia) {
+        val ic = currentInputConnection ?: return
+        ic.commitText(s.texto, 1)
+        copiadoUsado = copiadoEn
+        copiadoUsadoTexto = copiado
+        copiado = null
+        ultimaCorreccion = null
+        ultimaAprendida = null
+        espacioAutomatico = false
+        retro(Tipo.LETRA)
+        actualizarBarra()
+    }
 
     private fun palabrasDe(antes: String): Pair<String, String> {
         var i = antes.length
@@ -326,6 +437,21 @@ class TecladoService : InputMethodService(),
         while (k > 0 && antes[k - 1].isLetter()) k--
         val previa = if (j < i && k < j) antes.substring(k, j) else ""
         return previa to actual
+    }
+
+    /** La palabra antes de la anterior: "nos vemos " → "nos" (para predecir con dos palabras) */
+    private fun previa2De(antes: String): String {
+        fun palabraAntes(fin: Int): Pair<String, Int> {
+            var j = fin
+            while (j > 0 && antes[j - 1] == ' ') j--
+            var k = j
+            while (k > 0 && antes[k - 1].isLetter()) k--
+            return if (j < fin && k < j) antes.substring(k, j) to k else "" to fin
+        }
+        var i = antes.length
+        while (i > 0 && antes[i - 1].isLetter()) i--
+        val (previa, k) = palabraAntes(i)
+        return if (previa.isEmpty()) "" else palabraAntes(k).first
     }
 
     private fun inicioDeOracion(): Boolean =
@@ -378,6 +504,16 @@ class TecladoService : InputMethodService(),
     private fun actualizarBarra(antes: String, inicio: Boolean) {
         val b = barra ?: return
         val enEmojis = emojis?.visibility == View.VISIBLE
+        // Lo que acabas de copiar va primero (aunque las sugerencias estén apagadas)
+        if (!enEmojis) {
+            val copia = sugerenciasCopiado(tokenDe(antes))
+            if (copia != null) {
+                barraActiva = true
+                b.visible(true)
+                b.mostrar(copia)
+                return
+            }
+        }
         if (!sugerenciasActivas) {
             b.mostrar(emptyList()); b.visible(false); return
         }
@@ -400,7 +536,7 @@ class TecladoService : InputMethodService(),
 
         if (p.isEmpty()) {
             // Predicción de la siguiente palabra, como en iPhone
-            val sig = diccionario.siguientes(if (inicio) "" else previa, 3)
+            val sig = diccionario.siguientes(if (inicio) "" else previa, 3, if (inicio) "" else previa2De(antes))
                 .map { if (inicio) it.replaceFirstChar { c -> c.uppercase() } else it }
             val uc = ultimaCorreccion
             val deshacer = if (uc != null && antes.endsWith(uc.second)) Sugerencia(uc.first.trim(), literal = true, revertir = true) else null
@@ -412,8 +548,9 @@ class TecladoService : InputMethodService(),
             return
         }
 
-        val corr = if (autocorreccionActiva) diccionario.corregir(p, previa) else null
-        val otras = diccionario.sugerir(p, 4, previa).filter { it != corr && it != p }
+        val previa2 = previa2De(antes)
+        val corr = if (autocorreccionActiva) diccionario.corregir(p, previa, previa2) else null
+        val otras = diccionario.sugerir(p, 4, previa, previa2).filter { it != corr && it != p }
         val centro = corr?.let { Sugerencia(it, destacada = true) } ?: otras.getOrNull(0)?.let { Sugerencia(it) }
         val derecha = (if (corr != null) otras.getOrNull(0) else otras.getOrNull(1))?.let { Sugerencia(it) }
         b.mostrar(listOf(Sugerencia(p, literal = true), centro, derecha))
@@ -450,6 +587,7 @@ class TecladoService : InputMethodService(),
         while (k > 0 && antes[k - 1].isLetter()) k--
         val previa = if (j < i && k < j) antes.substring(k, j) else ""
         val espacios = antes.substring(j, i)
+        val previa2 = previa2De(antes)
 
         if (palabra.isEmpty()) {
             ic.commitText(sufijo, 1)
@@ -459,7 +597,7 @@ class TecladoService : InputMethodService(),
 
         // 2) Autocorrección de la palabra (tildes que faltan y errores de tipeo)
         var nuevaPalabra = palabra
-        if (autocorreccionActiva) diccionario.corregir(palabra, previa)?.let { nuevaPalabra = it }
+        if (autocorreccionActiva) diccionario.corregir(palabra, previa, previa2)?.let { nuevaPalabra = it }
 
         // 3) Tildes que dependen de la palabra anterior ("que tal" → "qué tal")
         var nuevaPrevia = previa
@@ -472,11 +610,11 @@ class TecladoService : InputMethodService(),
 
         if (sugerenciasActivas) {
             diccionario.aprender(nuevaPalabra)
-            diccionario.aprenderPar(nuevaPrevia, nuevaPalabra)
+            diccionario.aprenderPar(nuevaPrevia, nuevaPalabra, previa2)
             // Si hay palabra anterior pegada, estás a mitad de oración (sirve para recordar nombres)
             diccionario.notarMayuscula(nuevaPalabra, previa.isNotEmpty())
             // Si borras el espacio enseguida, se deshace lo aprendido (era un error)
-            ultimaAprendida = if (sufijo == " ") Triple(nuevaPrevia, nuevaPalabra, nuevaPalabra + sufijo) else null
+            ultimaAprendida = if (sufijo == " ") Aprendida(previa2, nuevaPrevia, nuevaPalabra, nuevaPalabra + sufijo) else null
         }
 
         if (nuevaPrevia == previa && nuevaPalabra == palabra) {
@@ -591,7 +729,8 @@ class TecladoService : InputMethodService(),
                 ic.commitText(uc.first, 1)
                 ic.endBatchEdit()
                 // La corrección no era lo que querías: se olvida y se aprende lo tuyo
-                if (ua != null) diccionario.desaprender(ua.second, ua.first)
+                if (ua != null) diccionario.desaprender(ua.palabra, ua.previa, ua.previa2)
+                diccionario.rechazarCorreccion(uc.first.trim(), uc.second.trim())
                 uc.first.split(" ").filter { it.isNotBlank() }.forEach {
                     diccionario.aprender(it, 2)
                     if (it.all { c -> c.isLowerCase() }) diccionario.notarMayuscula(it, true)
@@ -600,8 +739,8 @@ class TecladoService : InputMethodService(),
             }
         }
         // Borraste el espacio justo después de una palabra: no se cuenta como aprendida
-        if (ua != null && ic.getTextBeforeCursor(ua.third.length, 0)?.toString() == ua.third) {
-            diccionario.desaprender(ua.second, ua.first)
+        if (ua != null && ic.getTextBeforeCursor(ua.texto.length, 0)?.toString() == ua.texto) {
+            diccionario.desaprender(ua.palabra, ua.previa, ua.previa2)
         }
         val seleccion = ic.getSelectedText(0)
         if (!seleccion.isNullOrEmpty()) ic.commitText("", 1)
@@ -668,6 +807,7 @@ class TecladoService : InputMethodService(),
 
     override fun elegir(s: Sugerencia) {
         if (dictando) return
+        if (s.portapapeles) { pegarCopiado(s); return }
         val ic = currentInputConnection ?: return
         if (s.revertir) {
             // Volver a lo que escribiste y aprenderlo para no corregirlo otra vez
@@ -677,7 +817,8 @@ class TecladoService : InputMethodService(),
             ic.deleteSurroundingText(uc.second.length, 0)
             ic.commitText(uc.first + sufijo, 1)
             ic.endBatchEdit()
-            ultimaAprendida?.let { diccionario.desaprender(it.second, it.first) }
+            ultimaAprendida?.let { diccionario.desaprender(it.palabra, it.previa, it.previa2) }
+            diccionario.rechazarCorreccion(uc.first.trim(), uc.second.trim())
             ultimaAprendida = null
             uc.first.split(" ").filter { it.isNotBlank() }.forEach {
                 diccionario.aprender(it, 2)
@@ -687,15 +828,18 @@ class TecladoService : InputMethodService(),
             retro(Tipo.LETRA)
             return
         }
-        val (previa, palabra) = ultimasPalabras()
+        val antesTexto = ic.getTextBeforeCursor(80, 0)?.toString() ?: ""
+        val (previa, palabra) = palabrasDe(antesTexto)
+        val previa2 = previa2De(antesTexto)
         val borrarN = if (s.reemplaza >= 0) s.reemplaza else palabra.length
         ic.beginBatchEdit()
         if (borrarN > 0) ic.deleteSurroundingText(borrarN, 0)
         ic.commitText(s.texto + " ", 1)
         ic.endBatchEdit()
-        diccionario.aprender(s.texto, if (s.literal) 2 else 1)
-        diccionario.aprenderPar(previa, s.texto)
-        ultimaAprendida = Triple(previa, s.texto, s.texto + " ")
+        // Elegir una sugerencia a propósito enseña más que escribirla (sobre todo la que está "entre comillas")
+        diccionario.aprender(s.texto, if (s.literal) 3 else 2)
+        diccionario.aprenderPar(previa, s.texto, previa2)
+        ultimaAprendida = Aprendida(previa2, previa, s.texto, s.texto + " ")
         ultimaCorreccion = null
         espacioAutomatico = true
         retro(Tipo.LETRA)

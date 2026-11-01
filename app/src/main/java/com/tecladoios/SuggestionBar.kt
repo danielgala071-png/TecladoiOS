@@ -21,6 +21,10 @@ data class Sugerencia(
     val reemplaza: Int = -1,
     /** Deshace la última autocorrección (vuelve a lo que escribiste) */
     val revertir: Boolean = false,
+    /** Texto que copiaste: al tocarlo se pega tal cual */
+    val portapapeles: Boolean = false,
+    /** Etiqueta chiquita arriba del texto copiado (Copiado, Solo texto, Solo número) */
+    val etiqueta: String? = null,
 )
 
 /**
@@ -61,13 +65,17 @@ class SuggestionBar(
     }
 
     private fun sePuedeOlvidar(s: Sugerencia) =
-        !s.revertir && s.reemplaza < 0 && !s.texto.contains(' ') && s.texto.length >= 2 &&
+        !s.portapapeles && !s.revertir && s.reemplaza < 0 && !s.texto.contains(' ') && s.texto.length >= 2 &&
                 s.texto.all { it.isLetter() }
     private val pinturaTexto = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         textSize = 17f * d
     }.also { Fuentes.aplicar(it, 400) }
     private val pintura = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val pinturaEtiqueta = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        textSize = 10f * d
+    }.also { Fuentes.aplicar(it, 500) }
 
     fun mostrar(nuevos: List<Sugerencia?>) {
         items = List(3) { nuevos.getOrNull(it) }
@@ -91,6 +99,7 @@ class SuggestionBar(
 
     private fun dibujarConfirmar(c: Canvas, s: Sugerencia) {
         val tercio = width / 3f
+        pinturaTexto.textSize = 17f * d
         val fm = pinturaTexto.fontMetrics
         val cy = height / 2f - (fm.ascent + fm.descent) / 2f
         // Cancelar a la izquierda
@@ -112,6 +121,29 @@ class SuggestionBar(
         c.drawText(txt, tercio * 2f, cy, pinturaTexto)
     }
 
+    /** Texto copiado: cápsula teñida con el color de la app, etiqueta arriba y el texto abajo */
+    private fun dibujarCopiado(c: Canvas, s: Sugerencia, x0: Float, ancho: Float, presionada: Boolean) {
+        val alfa = if (presionada) 0x55 else if (tema.oscuro) 0x33 else 0x26
+        pintura.color = (tema.azul and 0x00FFFFFF) or (alfa shl 24)
+        c.drawRoundRect(x0 + 4 * d, 4 * d, x0 + ancho - 4 * d, height - 4 * d, 11 * d, 11 * d, pintura)
+        val etiqueta = s.etiqueta
+        val centroTexto: Float
+        if (etiqueta != null) {
+            pinturaEtiqueta.color = tema.textoSecundario
+            val fe = pinturaEtiqueta.fontMetrics
+            c.drawText(etiqueta, x0 + ancho / 2f, height * 0.33f - (fe.ascent + fe.descent) / 2f, pinturaEtiqueta)
+            centroTexto = height * 0.66f
+        } else centroTexto = height / 2f
+        pinturaTexto.textSize = (if (etiqueta != null) 14.5f else 16f) * d
+        Fuentes.aplicar(pinturaTexto, 500)
+        pinturaTexto.color = tema.texto
+        // Una sola línea: los saltos de línea se ven como espacios (al pegar se respetan)
+        val plano = s.texto.replace(Regex("\\s+"), " ")
+        val txt = TextUtils.ellipsize(plano, pinturaTexto, ancho - 22 * d, TextUtils.TruncateAt.END).toString()
+        val fm = pinturaTexto.fontMetrics
+        c.drawText(txt, x0 + ancho / 2f, centroTexto - (fm.ascent + fm.descent) / 2f, pinturaTexto)
+    }
+
     override fun onDraw(c: Canvas) {
         confirmar?.let { dibujarConfirmar(c, it); return }
         val ancho = width / 3f
@@ -122,6 +154,8 @@ class SuggestionBar(
                 pintura.color = tema.teclaPresionada
                 c.drawRoundRect(x0 + 4 * d, 6 * d, x0 + ancho - 4 * d, height - 6 * d, 10 * d, 10 * d, pintura)
             }
+            if (s.portapapeles) { dibujarCopiado(c, s, x0, ancho, i == presionado); continue }
+            pinturaTexto.textSize = 17f * d
             Fuentes.aplicar(pinturaTexto, if (s.destacada) 500 else 400)
             pinturaTexto.color = tema.texto
             val crudo = when {
@@ -136,7 +170,9 @@ class SuggestionBar(
         pintura.color = (tema.textoSecundario and 0x00FFFFFF) or 0x40000000
         pintura.strokeWidth = maxOf(1f, d * 0.6f)
         for (i in 1 until 3) {
-            if (items[i - 1] != null && items[i] != null) {
+            val a = items[i - 1]
+            val b = items[i]
+            if (a != null && b != null && !a.portapapeles && !b.portapapeles) {
                 c.drawLine(ancho * i, height * 0.34f, ancho * i, height * 0.66f, pintura)
             }
         }

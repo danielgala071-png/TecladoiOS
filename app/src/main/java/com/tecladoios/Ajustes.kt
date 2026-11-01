@@ -22,6 +22,10 @@ object Ajustes {
     fun tema(c: Context) = prefs(c).getString("tema", "auto") ?: "auto"
     /** Combinar el color del teclado con la app que estás usando */
     fun adaptar(c: Context) = prefs(c).getBoolean("adaptar", true)
+    /** Mayúsculas, borrar, 123 y enter con el color translúcido de la app */
+    fun teclasColor(c: Context) = prefs(c).getBoolean("teclas_color", true)
+    /** Mostrar lo que copias en la barra de sugerencias para pegarlo */
+    fun portapapeles(c: Context) = prefs(c).getBoolean("portapapeles", true)
     fun iconoOculto(c: Context) = prefs(c).getBoolean("ocultar_icono", false)
 
     /** Una sola vez: pasar al nuevo diseño igual al del iPhone */
@@ -53,11 +57,11 @@ object Ajustes {
             }
         } catch (_: Exception) { }
         // Una sola vez: sumar las sustituciones nuevas sin tocar las tuyas
-        if (!p.getBoolean("atajos_v4", false)) {
+        if (!p.getBoolean("atajos_v5", false)) {
             val claves = lista.map { it.first.lowercase() }.toSet()
             lista += ATAJOS_SUGERIDOS.filter { it.first.lowercase() !in claves }
             guardarAtajos(c, lista)
-            p.edit().putBoolean("atajos_v4", true).apply()
+            p.edit().putBoolean("atajos_v5", true).apply()
         }
         return lista
     }
@@ -95,5 +99,20 @@ object Ajustes {
         "cmo" to "cómo", "xfis" to "por favor", "xfavor" to "por favor",
         "sldos" to "saludos", "fds" to "fin de semana", "bday" to "cumpleaños",
         "felicidds" to "felicidades",
+        // Chat peruano: más abreviaturas y formas rápidas
+        "tqmm" to "te quiero mucho", "tmo" to "te amo", "lqm" to "lo quiero mucho", "porfa" to "por favor",
+        "porfis" to "por favor", "xfas" to "por favor", "pf" to "por favor", "dnde" to "dónde",
+        "dond" to "dónde", "cnd" to "cuando", "cdo" to "cuando", "kndo" to "cuando", "tdv" to "todavía",
+        "tdvia" to "todavía", "xa" to "para", "pra" to "para", "kn" to "con", "cn" to "con", "sn" to "sin",
+        "dsd" to "desde", "hta" to "hasta", "hst" to "hasta", "msm" to "mismo", "mjr" to "mejor",
+        "vrdd" to "verdad", "vdad" to "verdad", "toy" to "estoy", "tas" to "estás", "sta" to "está",
+        "stas" to "estás", "stamos" to "estamos", "ksi" to "casi", "kpo" to "capo", "gnial" to "genial",
+        "dle" to "dale", "chvr" to "chévere", "chvre" to "chévere", "bkn" to "bacán", "slds" to "saludos",
+        "atte" to "atentamente", "nro" to "número", "wsp" to "WhatsApp", "wasa" to "WhatsApp",
+        "ig" to "Instagram", "fb" to "Facebook", "yt" to "YouTube", "nsc" to "no sé",
+        "ntp" to "no te preocupes", "mñ" to "mañana", "hy" to "hoy", "ayr" to "ayer", "ahi" to "ahí",
+        "aorita" to "ahorita", "orita" to "ahorita", "fds" to "fin de semana",
+        "hbd" to "¡Feliz cumpleaños!", "qepd" to "que en paz descanse", "bnd" to "bendiciones",
+        "dtb" to "Dios te bendiga",
     ).distinctBy { it.first.lowercase() }
 }

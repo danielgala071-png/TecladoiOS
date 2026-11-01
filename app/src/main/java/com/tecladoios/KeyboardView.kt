@@ -354,24 +354,26 @@ class KeyboardView(
     private fun dibujar(c: Canvas, t: Tecla) {
         val presionada = presionadas.containsValue(t) && !modoCursor
         val f = if (!modoCursor) pulsos[t] ?: 0f else 0f
+        val funcion = colorFuncion(t)
+        val azulEnter = if (tema.enterApp != 0) tema.enterApp else tema.azul
         val colorNormal = when {
             modoCursor -> tema.teclaFuncion
-            t.tipo == Tipo.ENTER -> if (enterAzul) tema.azul else tema.teclaFuncion
+            t.tipo == Tipo.ENTER -> if (enterAzul) azulEnter else funcion
             t.tipo == Tipo.LETRA || t.tipo == Tipo.ESPACIO -> tema.tecla
-            t.tipo == Tipo.SHIFT -> if (shift > 0) tema.tecla else tema.teclaFuncion
-            else -> tema.teclaFuncion
+            t.tipo == Tipo.SHIFT -> if (shift > 0) tema.tecla else funcion
+            else -> funcion
         }
         val colorPrevio = when {
             modoCursor -> tema.teclaFuncion
             t.tipo == Tipo.ENTER -> when {
                 presionada -> tema.teclaPresionada
-                enterAzul -> tema.azul
-                else -> tema.teclaFuncion
+                enterAzul -> azulEnter
+                else -> funcion
             }
             t.tipo == Tipo.LETRA -> if (presionada && !vistaPrevia) tema.teclaPresionada else tema.tecla
             t.tipo == Tipo.ESPACIO -> if (presionada) tema.teclaPresionada else tema.tecla
-            t.tipo == Tipo.SHIFT -> if (shift > 0) tema.tecla else tema.teclaFuncion
-            else -> if (presionada) tema.tecla else tema.teclaFuncion
+            t.tipo == Tipo.SHIFT -> if (shift > 0) tema.tecla else funcion
+            else -> if (presionada) tema.tecla else funcion
         }
         // Teclas de función: se iluminan y crecen un poquito, como gota de vidrio
         val colorFondo = if (f > 0f) mezclar(colorNormal, tema.teclaPresionada, f) else colorPrevio
@@ -440,6 +442,13 @@ class KeyboardView(
             }
             else -> texto(c, t.texto, cx, cy, dp(16f) * escalaLetra, colorContenido)
         }
+    }
+
+    /** Mayúsculas, borrar, 123/ABC/#+= y enter van teñidas con el color de la app (si está activado) */
+    private fun colorFuncion(t: Tecla): Int = when (t.tipo) {
+        Tipo.SHIFT, Tipo.BORRAR, Tipo.A_NUMEROS, Tipo.A_SIMBOLOS, Tipo.A_LETRAS, Tipo.ENTER ->
+            if (tema.teclaApp != 0) tema.teclaApp else tema.teclaFuncion
+        else -> tema.teclaFuncion
     }
 
     private fun texto(c: Canvas, s: String, cx: Float, cy: Float, tam: Float, color: Int) {
