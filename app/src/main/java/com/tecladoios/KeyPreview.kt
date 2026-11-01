@@ -32,7 +32,7 @@ class KeyPreviewView(context: Context) : View(context) {
 
     private val d = resources.displayMetrics.density
     val pad get() = 12f * d
-    private val anchoPrev get() = keyWidth * 1.04f
+    private val anchoPrev get() = keyWidth * 1.14f
     private val altoPrev get() = keyHeight * 2.3f
 
     fun totalWidth() = (anchoPrev + pad * 2).toInt()
@@ -52,7 +52,6 @@ class KeyPreviewView(context: Context) : View(context) {
         typeface = Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), 400, false)
     }
 
-    init { setLayerType(LAYER_TYPE_SOFTWARE, null) }
 
     override fun onDraw(canvas: Canvas) {
         if (keyWidth <= 0f || keyHeight <= 0f) return

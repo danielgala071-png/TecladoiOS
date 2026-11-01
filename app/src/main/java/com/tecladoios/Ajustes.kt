@@ -18,7 +18,12 @@ object Ajustes {
     fun puntoDoble(c: Context) = prefs(c).getBoolean("punto_doble", true)
     fun bloqMayus(c: Context) = prefs(c).getBoolean("bloq_mayus", true)
     fun atajosActivos(c: Context) = prefs(c).getBoolean("atajos_activos", true)
-    fun tema(c: Context) = prefs(c).getString("tema", "auto") ?: "auto"
+    /** "auto", "claro", "oscuro" o "amoled" (negro puro) */
+    fun tema(c: Context) = prefs(c).getString("tema", "amoled") ?: "amoled"
+    /** Altura de las teclas en % (80 a 130) */
+    fun altura(c: Context) = prefs(c).getInt("altura", 100).coerceIn(80, 130)
+    /** Tamaño de las letras en % (80 a 130) */
+    fun letra(c: Context) = prefs(c).getInt("letra", 100).coerceIn(80, 130)
     /** "transparente", "normal" o "tintado" (como el control de Liquid Glass de iOS 27) */
     fun vidrio(c: Context) = prefs(c).getString("vidrio", "normal") ?: "normal"
     fun desenfoque(c: Context) = prefs(c).getBoolean("desenfoque", true)
@@ -26,7 +31,7 @@ object Ajustes {
     /** Sustitución de texto: (función rápida, frase) */
     fun atajos(c: Context): MutableList<Pair<String, String>> {
         val guardado = prefs(c).getString("atajos", null)
-            ?: return mutableListOf("pq" to "porque", "tmb" to "también")
+            ?: return ATAJOS_SUGERIDOS.toMutableList()
         val lista = mutableListOf<Pair<String, String>>()
         try {
             val arr = JSONArray(guardado)
@@ -40,7 +45,16 @@ object Ajustes {
 
     fun guardarAtajos(c: Context, lista: List<Pair<String, String>>) {
         val arr = JSONArray()
-        for ((atajo, frase) in lista) arr.put(JSONArray().put(atajo).put(frase))
+        for ((atajo, frase) in lista.sortedBy { it.first.lowercase() }) arr.put(JSONArray().put(atajo).put(frase))
         prefs(c).edit().putString("atajos", arr.toString()).apply()
     }
+
+    /** Sustituciones comunes del chat peruano */
+    val ATAJOS_SUGERIDOS = listOf(
+        "pq" to "porque", "xq" to "porque", "tmb" to "también", "tb" to "también",
+        "tqm" to "te quiero mucho", "tkm" to "te quiero mucho", "ntp" to "no te preocupes",
+        "dnd" to "de nada", "xfa" to "por favor", "cdt" to "cuídate", "bn" to "bien",
+        "msj" to "mensaje", "salu2" to "saludos", "nd" to "nada", "dsp" to "después",
+        "aki" to "aquí", "vdd" to "verdad", "grax" to "gracias",
+    )
 }

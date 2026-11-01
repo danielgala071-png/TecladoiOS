@@ -42,7 +42,6 @@ class VariantesView(context: Context) : View(context) {
         typeface = Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), 400, false)
     }
 
-    init { setLayerType(LAYER_TYPE_SOFTWARE, null) }
 
     override fun onDraw(c: Canvas) {
         if (opciones.isEmpty()) return

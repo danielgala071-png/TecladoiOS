@@ -17,9 +17,10 @@ class Diccionario(context: Context) {
     private val pares = HashMap<String, HashMap<String, Int>>()
     private var revision = -1
     private var cambios = false
+    private var sinGuardar = 0
 
     init {
-        val palabras = BASE.trim().split(Regex("\\s+"))
+        val palabras = (BASE + " " + BASE_EXTRA).trim().split(Regex("\\s+"))
         palabras.forEachIndexed { i, p ->
             if (!base.containsKey(p)) {
                 base[p] = palabras.size - i
@@ -54,11 +55,44 @@ class Diccionario(context: Context) {
             if (p.lowercase() != lp && normalDe(p).startsWith(np)) res[p] = s
         }
         for ((p, c) in aprendidas) {
-            if (c >= 2 && p != lp && normalDe(p).startsWith(np)) res[p] = (res[p] ?: 0) + c * 40
+            if (p != lp && normalDe(p).startsWith(np)) {
+                // Tus palabras pesan más; desde la segunda vez que las usas, mucho más
+                res[p] = (res[p] ?: 0) + if (c >= 2) c * 60 else 15
+            }
+        }
+        // Si hay pocas, agregar palabras parecidas por si te equivocaste de tecla
+        if (res.size < max && np.length >= 3) {
+            for ((p, s) in base) {
+                if (!res.containsKey(p) && p.lowercase() != lp && casi(normalDe(p), np)) res[p] = s / 4
+            }
+            for ((p, c) in aprendidas) {
+                if (c >= 2 && !res.containsKey(p) && p != lp && casi(normalDe(p), np)) res[p] = c * 20
+            }
         }
         return res.entries.sortedByDescending { it.value }
             .take(max)
             .map { igualarMayus(it.key, prefijo) }
+    }
+
+    /** true si a y b se diferencian en una sola letra (cambiada, sobrante, faltante o invertida) */
+    private fun casi(a: String, b: String): Boolean {
+        if (a == b) return false
+        val la = a.length
+        val lb = b.length
+        if (Math.abs(la - lb) > 1) return false
+        if (la == lb) {
+            var i = 0
+            while (i < la && a[i] == b[i]) i++
+            if (i >= la) return false
+            if (a.regionMatches(i + 1, b, i + 1, la - i - 1)) return true
+            return i + 1 < la && a[i] == b[i + 1] && a[i + 1] == b[i] &&
+                    a.regionMatches(i + 2, b, i + 2, la - i - 2)
+        }
+        val corta = if (la < lb) a else b
+        val larga = if (la < lb) b else a
+        var i = 0
+        while (i < corta.length && corta[i] == larga[i]) i++
+        return corta.regionMatches(i, larga, i + 1, corta.length - i)
     }
 
     /** Predicción de la siguiente palabra (barra después de un espacio) */
@@ -83,6 +117,15 @@ class Diccionario(context: Context) {
         for ((c, n) in aprendidas) {
             if (n >= 2 && n * 40 > puntaje && normalDe(c) == np) { mejor = c; puntaje = n * 40 }
         }
+        if (mejor == null && np.length >= 3) {
+            // Errores de tipeo: "qeu" → "que", "hloa" → "hola"
+            for ((c, s) in base) {
+                if (s > puntaje && casi(normalDe(c), np)) { mejor = c; puntaje = s }
+            }
+            for ((c, n) in aprendidas) {
+                if (n >= 3 && n * 60 > puntaje && casi(normalDe(c), np)) { mejor = c; puntaje = n * 60 }
+            }
+        }
         val r = mejor ?: return null
         val resultado = igualarMayus(r, p)
         return if (resultado == p) null else resultado
@@ -95,6 +138,8 @@ class Diccionario(context: Context) {
         val l = p.lowercase()
         aprendidas[l] = (aprendidas[l] ?: 0) + peso
         cambios = true
+        // Guardar seguido para no perder lo aprendido si Android cierra el teclado
+        if (++sinGuardar >= 20) guardar()
     }
 
     fun aprenderPar(previa: String, palabra: String) {
@@ -121,6 +166,7 @@ class Diccionario(context: Context) {
         }
         prefs.edit().putString("aprendidas", texto).putString("pares", sb.toString()).apply()
         cambios = false
+        sinGuardar = 0
     }
 
     fun recargarSiCambio() {
@@ -189,6 +235,88 @@ class Diccionario(context: Context) {
             "un" to listOf("momento", "rato", "poco"),
             "me" to listOf("avisas", "gusta", "voy", "parece"),
         )
+
+        // Más palabras frecuentes: verbos conjugados, sustantivos y expresiones del día a día
+        private const val BASE_EXTRA = """
+            ser soy eres somos son sido siendo estar estaba estaban estuve estuvo estado estando
+            tener tenía tenías tuve tuvo tienen tenido teniendo hacer haces hacemos hacen hice hiciste
+            hecho haciendo ir vas va van fui fuiste fuimos ido yendo iba ibas íbamos poder puede pueden
+            pude pudo podía podría podrías querer quiere queremos quieren quise quería querías decir dices
+            dice decimos dicen dije dijo dicho diciendo saber sabe sabemos saben supe sabía sabías veo ves
+            vemos ven vi vio visto viendo dar doy das da damos dan di dio dado venir vienes vienen vine
+            vino viniste venido llegar llegas llega llegamos llegan llegó llegaste pasar pasas pasamos
+            pasan pasé pasado poner pongo pones pone ponemos ponen puse puso puesto quedar quedo quedas
+            queda quedamos quedan quedé quedó creer creo crees cree creemos creen creí hablar hablo hablas
+            habla hablamos hablan hablé habló hablando llevar llevo llevas lleva llevamos llevé dejar dejo
+            dejas deja dejé dejó seguir sigo sigues sigue seguimos siguen encontrar encuentro encontré
+            llamo llamas llama llamamos llamé llamó pensar pienso piensas piensa pensé pensando conocer
+            conozco conoces conoce conocí vivir vivo vives vive vivimos sentir siento sientes siente
+            sentí mirar miro miras miré contar cuento cuentas cuenta conté empezar empiezo empieza empezó
+            esperar espero esperas espera esperé esperando buscar busco buscas busca busqué buscando
+            entrar entro entras entra entré trabajar trabajo trabajas trabaja trabajé trabajando escribo
+            escribes escribí escribiendo perder pierdo pierdes pierde perdiste entender entiendo entiendes
+            entiende entendí pedir pido pides pide pedí recibir recibo recibí recordar recuerdo recuerdas
+            terminar termino terminé terminó terminamos conseguir consigo conseguí leer leo lees leí caer
+            caí cayó cambiar cambio cambié crear abrir abro abres abre abrí abierto cerrar cierro cierra
+            cerré cerrado acabar acabo acabé acabó ganar gano ganas gana traer traigo traes trae traje
+            morir muero aceptar acepto lograr logré explicar explico explícame preguntar pregunto pregunté
+            pregúntale tocar toco tocó estudias estudia estudiamos estudiando correr corro corrí utilizar
+            pago pagas paga pagué ayudar ayudo ayudas ayuda ayúdame ayudé gustan gustaba escuchar escucho
+            escuchas escucha escuché cumplir ofrecer descubrir levantar levanto intentar intento intenté
+            usar uso usas usa usé decidir decidí olvidar olvido olvidé olvidaste comer como comes come
+            comemos comí comiste comiendo mostrar muestra mover muevo continuar suceder sucede preparar
+            preparo enviar envío envías envía envié enviaste mandar mando mandas manda mandé mándame
+            dormir duermo duermes duerme dormí durmiendo despertar despierto desperté bañar baño bañé
+            cocinar cocino limpiar limpio manejar manejo viajar viajo regresar regreso regresé volver
+            vuelvo vuelves vuelve volví subir subo subí bajar bajo bajé caminar camino caminé bailar
+            bailo cantar canto reír río llorar lloro extrañar extraño extrañas extrañé amar amo amas
+            odio molestar molesta preocupar preocupa preocupes importar importa importó faltar falta
+            faltan doler duele avisar aviso avisas avisa avisé confirmar confirmo responder respondo
+            respondes respondí contestas contesté grabar descargar instalar actualizar cargar prender
+            apagar conectar recoger recojo paso pasas pasa pásame dime díselo cuéntame mírame espera
+            oye escúchame tranquilo dale vale chévere genial bacán increíble horrible feo bonito bonita
+            lindo linda hermoso hermosa rico rica bueno malo mala grande gran pequeña nuevo viejo vieja
+            joven mayor menor primero primera segundo segunda tercero último siguiente anterior mismo
+            igual diferente posible imposible importante necesario seguro segura listo lista libre
+            ocupado ocupada cansada enfermo enferma contento contenta triste alegre aburrido aburrida
+            molesto molesta preocupado preocupada emocionado emocionada nervioso nerviosa bravo brava
+            gente persona personas hombre mujer chico chica chicos chicas niños hijo hija hijos padre
+            madre papás tío tía primo prima abuelo abuela familia novio novia esposo esposa vecino
+            vecina jefe compañeros grupo mundo país ciudad pueblo barrio lugar sitio parte lado centro
+            casa departamento cuarto sala puerta ventana cama mesa silla ropa zapatillas polo casaca
+            mochila llaves billetera tarjeta cuenta pasaje carro bus moto tren avión aeropuerto terminal
+            calle avenida esquina parque playa mar río cerro campo chacra plaza iglesia hospital clínica
+            farmacia banco tienda bodega mercado restaurante pollería chifa cevichería cine fiesta
+            reunión cumple matrimonio bautizo velorio partido concierto evento cita trabajo oficina
+            colegio cole universidad instituto academia curso clase tarea examen práctica nota notas
+            libro cuaderno lapicero celular cel teléfono laptop computadora compu tablet audífonos
+            cargador internet wifi señal batería saldo recarga datos megas mensaje audio llamada
+            videollamada foto fotos video videos estado historia historias publicación comentario like
+            grupo chat contacto número correo cuenta clave contraseña aplicación app juego juegos
+            partida nivel equipo cosa cosas algo nada todo todos todas mucho muchos poco pocos varios
+            varias alguno alguna ningún ninguno ninguna cualquier otro otra mismo tanto tanta cuánto
+            cuánta cuántos cuántas cuál cuáles quién quiénes dónde adónde cuándo cómo qué porque pues
+            entonces luego después antes ahora ahorita hoy mañana ayer anoche tarde temprano siempre
+            nunca jamás casi solo sólo también tampoco además aunque sino mientras hasta desde durante
+            según contra sin sobre bajo entre hacia mediante dentro fuera cerca lejos arriba abajo
+            adelante atrás encima debajo delante detrás aquí acá ahí allí allá sí no quizá quizás
+            claro obvio exacto cierto verdad mentira bueno bien mal mejor peor rápido lento despacio
+            fuerte suave mucho demasiado bastante apenas recién justo tal cual hora horas minuto minutos
+            segundo segundos día días semana semanas mes meses año años momento rato vez veces tiempo
+            mañanita tardecita nochecita fin finde feriado vacaciones navidad año nuevo cumpleaños
+            hambre sed sueño frío calor miedo ganas suerte prisa razón culpa problema problemas
+            solución pregunta respuesta idea plan opinión verdad noticia noticias historia caso forma
+            manera modo tipo clase número cantidad precio plata sencillo vuelto soles dólares cuenta
+            deuda pago regalo sorpresa comida almuerzo desayuno cena lonche menú pan leche café té
+            jugo agua gaseosa cerveza chela vino pollo carne pescado arroz frijoles lentejas papa
+            camote yuca choclo huevo queso fruta manzana plátano naranja mango palta tomate cebolla
+            ají limón azúcar sal salchipapa hamburguesa pizza tallarines anticucho causa rocoto
+            jaja jajaja jajajaja jeje jsjs xd ok okey okay oki ya yap yaa sip nop nel simón uff ufff
+            wow guau ay ayy ah oh eh mmm bueno chau chao adiós hola holi holis buenas saludos gracias
+            graciass porfavor perdón disculpa lo siento felicidades feliz suerte bendiciones besos
+            abrazos cuídate descansa duerme bien que te vaya bien nos vemos hablamos luego te llamo
+            te escribo avísame cuando llegues ya llegué estoy llegando voy saliendo en camino
+        """
 
         // Ordenadas de más a menos usadas
         private const val BASE = """

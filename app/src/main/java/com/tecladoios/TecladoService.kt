@@ -34,6 +34,7 @@ class TecladoService : InputMethodService(),
     private var teclado: KeyboardView? = null
     private var emojis: EmojiPanel? = null
     private var tema: Tema? = null
+    private var firmaTamano = ""
     private lateinit var diccionario: Diccionario
     private var vibrador: Vibrator? = null
     private var audio: AudioManager? = null
@@ -83,9 +84,12 @@ class TecladoService : InputMethodService(),
         return w.attributes.height == WindowManager.LayoutParams.WRAP_CONTENT
     }
 
+    private fun firma() = "${Ajustes.altura(this)}-${Ajustes.letra(this)}-${Medidas.horizontal(this)}"
+
     private fun construir(): View {
         val t = Tema.desde(this, puedeDesenfocar())
         tema = t
+        firmaTamano = firma()
 
         val b = SuggestionBar(this, t, this).apply { visibility = View.GONE }
         val k = KeyboardView(this, t, this)
@@ -135,7 +139,7 @@ class TecladoService : InputMethodService(),
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        if (Tema.desde(this, puedeDesenfocar()) != tema) setInputView(construir())
+        if (Tema.desde(this, puedeDesenfocar()) != tema || firma() != firmaTamano) setInputView(construir())
         configurarVentana()
 
         vibrar = Ajustes.vibrar(this)
@@ -240,8 +244,20 @@ class TecladoService : InputMethodService(),
     private fun inicioDeOracion(): Boolean =
         (currentInputConnection?.getCursorCapsMode(TextUtils.CAP_MODE_SENTENCES) ?: 0) != 0
 
-    private fun buscarAtajo(p: String): String? =
-        if (atajosActivos && sugerenciasActivas) atajos[p.lowercase()] else null
+    /** Lo escrito desde el último espacio (para atajos con números o símbolos) */
+    private fun tokenActual(): String {
+        val antes = currentInputConnection?.getTextBeforeCursor(40, 0)?.toString() ?: return ""
+        var i = antes.length
+        while (i > 0 && !antes[i - 1].isWhitespace()) i--
+        return antes.substring(i)
+    }
+
+    private fun buscarAtajo(token: String): String? {
+        if (!atajosActivos || !sugerenciasActivas || token.isEmpty()) return null
+        val frase = atajos[token.lowercase()] ?: return null
+        // "Tqm" al inicio de oración → "Te quiero mucho"
+        return if (token[0].isUpperCase()) frase.replaceFirstChar { it.uppercase() } else frase
+    }
 
     private fun actualizar() {
         actualizarMayus()
@@ -262,9 +278,21 @@ class TecladoService : InputMethodService(),
             b.mostrar(emptyList()); b.visible(false); return
         }
         val (previa, p) = ultimasPalabras()
-        if (p.isNotEmpty() && !enEmojis) barraActiva = true
+        val token = tokenActual()
+        if ((p.isNotEmpty() || token.isNotEmpty()) && !enEmojis) barraActiva = true
         b.visible(barraActiva && !enEmojis)
         if (enEmojis) { b.mostrar(emptyList()); return }
+
+        // Si lo escrito es una sustitución, la frase aparece al centro (como en iPhone)
+        val frase = buscarAtajo(token)
+        if (frase != null) {
+            b.mostrar(listOf(
+                Sugerencia(token, literal = true, reemplaza = token.length),
+                Sugerencia(frase, destacada = true, reemplaza = token.length),
+                null,
+            ))
+            return
+        }
 
         if (p.isEmpty()) {
             // Predicción de la siguiente palabra, como en iPhone
@@ -279,7 +307,7 @@ class TecladoService : InputMethodService(),
             return
         }
 
-        val corr = buscarAtajo(p) ?: if (autocorreccionActiva) diccionario.corregir(p) else null
+        val corr = if (autocorreccionActiva) diccionario.corregir(p) else null
         val otras = diccionario.sugerir(p, 3).filter { it != corr && it != p }
         val centro = corr?.let { Sugerencia(it, destacada = true) } ?: otras.getOrNull(0)?.let { Sugerencia(it) }
         val derecha = (if (corr != null) otras.getOrNull(0) else otras.getOrNull(1))?.let { Sugerencia(it) }
@@ -291,9 +319,23 @@ class TecladoService : InputMethodService(),
         val ic = currentInputConnection ?: return
         val (previa, palabra) = ultimasPalabras()
         espacioAutomatico = false
+
+        // 1) Sustitución de texto
+        val token = tokenActual()
+        val frase = buscarAtajo(token)
+        if (frase != null) {
+            ic.beginBatchEdit()
+            ic.deleteSurroundingText(token.length, 0)
+            ic.commitText(frase + sufijo, 1)
+            ic.endBatchEdit()
+            ultimaCorreccion = Pair(token, frase + sufijo)
+            return
+        }
+
+        // 2) Autocorrección
         if (palabra.isNotEmpty()) {
-            val atajo = buscarAtajo(palabra)
-            val corr = atajo ?: if (autocorreccionActiva) diccionario.corregir(palabra) else null
+            val atajo: String? = null
+            val corr = if (autocorreccionActiva) diccionario.corregir(palabra) else null
             if (corr != null) {
                 ic.beginBatchEdit()
                 ic.deleteSurroundingText(palabra.length, 0)
@@ -440,8 +482,9 @@ class TecladoService : InputMethodService(),
         if (dictando) return
         val ic = currentInputConnection ?: return
         val (previa, palabra) = ultimasPalabras()
+        val borrarN = if (s.reemplaza >= 0) s.reemplaza else palabra.length
         ic.beginBatchEdit()
-        if (palabra.isNotEmpty()) ic.deleteSurroundingText(palabra.length, 0)
+        if (borrarN > 0) ic.deleteSurroundingText(borrarN, 0)
         ic.commitText(s.texto + " ", 1)
         ic.endBatchEdit()
         diccionario.aprender(s.texto, if (s.literal) 2 else 1)

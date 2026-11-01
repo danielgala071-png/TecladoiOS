@@ -47,7 +47,10 @@ class KeyboardView(
     private val d = Medidas.escala(context)
     private fun dp(v: Float) = v * d
 
-    private val altoFila = if (Medidas.horizontal(context)) dp(40f) else dp(54f)
+    // Tamaño ajustable desde Ajustes → Tamaño
+    private val escalaAlto = Ajustes.altura(context) / 100f
+    private val escalaLetra = Ajustes.letra(context) / 100f
+    private val altoFila = (if (Medidas.horizontal(context)) dp(40f) else dp(54f)) * escalaAlto
     private val margenArriba = dp(4f)
     private val margenAbajo = dp(8f)
     private val sepH = dp(3f)
@@ -154,7 +157,7 @@ class KeyboardView(
 
     private fun filaInferior(cambio: Tecla) = if (conTira) listOf(
         Tecla(cambio.tipo, cambio.texto, 2.5f),
-        Tecla(Tipo.ESPACIO, "espacio", 5f),
+        Tecla(Tipo.ESPACIO, "", 5f),
         Tecla(Tipo.ENTER, ancho = 2.5f),
     ) else listOf(
         cambio,
@@ -358,12 +361,22 @@ class KeyboardView(
             Tipo.SHIFT -> Iconos.shift(c, cx, cy, dp(20f), pinturaIcono, shift > 0, shift == 2)
             Tipo.BORRAR -> Iconos.borrar(c, cx, cy, dp(22f), pinturaIcono)
             Tipo.EMOJI -> Iconos.emoji(c, cx, cy, dp(22f), pinturaIcono)
-            Tipo.ENTER -> texto(c, etiquetaEnter, cx, cy, dp(16f), colorContenido)
+            Tipo.ENTER -> if (etiquetaEnter == "intro") Iconos.enter(c, cx, cy, dp(22f), pinturaIcono)
+                          else texto(c, etiquetaEnter, cx, cy, dp(16f) * escalaLetra, colorContenido)
+            Tipo.ESPACIO -> {
+                if (t.texto.isNotEmpty()) texto(c, t.texto, cx, cy, dp(16f) * escalaLetra, colorContenido)
+                else {
+                    // Idioma en la esquina, como "EN ES" en iPhone
+                    pinturaTexto.textSize = dp(9f)
+                    pinturaTexto.color = tema.textoSecundario
+                    c.drawText("ES", t.rect.right - dp(14f), t.rect.bottom - dp(6f), pinturaTexto)
+                }
+            }
             Tipo.LETRA -> {
                 val minuscula = modo == Modo.LETRAS && shift == 0
-                texto(c, etiqueta(t), cx, if (minuscula) cy - dp(1.5f) else cy, dp(23f), colorContenido)
+                texto(c, etiqueta(t), cx, if (minuscula) cy - dp(1.5f) else cy, dp(23f) * escalaLetra, colorContenido)
             }
-            else -> texto(c, t.texto, cx, cy, dp(16f), colorContenido)
+            else -> texto(c, t.texto, cx, cy, dp(16f) * escalaLetra, colorContenido)
         }
     }
 
@@ -381,7 +394,7 @@ class KeyboardView(
         if (t.tipo == Tipo.LETRA && VARIANTES.containsKey(t.texto)) {
             teclaLarga = t
             punteroLargo = id
-            manejador.postDelayed(abrirVariantes, 380)
+            manejador.postDelayed(abrirVariantes, 480)
         } else {
             teclaLarga = null
             punteroLargo = -1
@@ -425,17 +438,41 @@ class KeyboardView(
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                if (punteroVariantes != -1 || modoCursor) return true
                 val i = e.actionIndex
                 val id = e.getPointerId(i)
+                // Escritura rápida: si otro dedo se quedó apoyado y abrió los acentos
+                // o el cursor, se cierra y se sigue escribiendo sin perder letras
+                if (punteroVariantes != -1) {
+                    val base = teclaLarga
+                    variantes.cerrar()
+                    presionadas.remove(punteroVariantes)
+                    punteroVariantes = -1
+                    punteroLargo = -1
+                    teclaLarga = null
+                    if (base != null) {
+                        acciones.texto(etiqueta(base))
+                        if (shift == 1 && modo == Modo.LETRAS) shift = 0
+                    }
+                }
+                if (modoCursor) {
+                    presionadas.remove(punteroEspacio)
+                    punteroEspacio = -1
+                    modoCursor = false
+                }
                 val t = teclaEn(e.getX(i), e.getY(i)) ?: return true
-                // Escritura rápida con dos dedos: la letra anterior se escribe ya
-                val anteriores = presionadas.filterValues { it.tipo == Tipo.LETRA }.keys.toList()
+                // Escritura con dos dedos: la tecla anterior (letra o espacio) se escribe ya
+                val anteriores = presionadas.filterValues {
+                    it.tipo == Tipo.LETRA || it.tipo == Tipo.ESPACIO
+                }.keys.toList()
                 for (k in anteriores) {
                     if (k == punteroLargo) {
                         manejador.removeCallbacks(abrirVariantes)
                         punteroLargo = -1
                         teclaLarga = null
+                    }
+                    if (k == punteroEspacio) {
+                        manejador.removeCallbacks(activarCursor)
+                        punteroEspacio = -1
                     }
                     presionadas.remove(k)?.let { soltar(it) }
                 }

@@ -10,7 +10,14 @@ import android.text.TextUtils
 import android.view.MotionEvent
 import android.view.View
 
-data class Sugerencia(val texto: String, val literal: Boolean = false, val destacada: Boolean = false)
+data class Sugerencia(
+    val texto: String,
+    val literal: Boolean = false,
+    val destacada: Boolean = false,
+    val ia: Boolean = false,
+    /** Cuántas letras borrar al elegirla (-1 = la palabra actual) */
+    val reemplaza: Int = -1,
+)
 
 /** Barra de sugerencias de 3 casillas, como en iOS. */
 @SuppressLint("ViewConstructor")
@@ -56,7 +63,11 @@ class SuggestionBar(
             }
             pinturaTexto.typeface = if (s.destacada) media else normal
             pinturaTexto.color = tema.texto
-            val crudo = if (s.literal) "\u201C${s.texto}\u201D" else s.texto
+            val crudo = when {
+                s.literal -> "\u201C${s.texto}\u201D"
+                s.ia -> "\u2726 ${s.texto}"
+                else -> s.texto
+            }
             val txt = TextUtils.ellipsize(crudo, pinturaTexto, ancho - 16 * d, TextUtils.TruncateAt.END).toString()
             val fm = pinturaTexto.fontMetrics
             c.drawText(txt, x0 + ancho / 2f, height / 2f - (fm.ascent + fm.descent) / 2f, pinturaTexto)

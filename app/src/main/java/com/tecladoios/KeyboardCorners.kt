@@ -1,25 +1,38 @@
 package com.tecladoios
 
 import android.graphics.Outline
+import android.graphics.Path
+import android.graphics.RectF
+import android.os.Build
 import android.view.RoundedCorner
 import android.view.View
 import android.view.ViewOutlineProvider
 
 /**
- * Arriba recto y solo las esquinas inferiores curvas, con el mismo radio
- * que las esquinas de la pantalla del celular.
+ * Panel como el de iOS 26/27: esquinas de arriba curvas (donde empieza la barra
+ * de sugerencias) y esquinas de abajo con el mismo radio que la pantalla.
  */
 object KeyboardCorners {
 
     fun apply(root: View, alLeerRadio: (Float) -> Unit = {}, fallbackDp: Float = 42f) {
         val density = root.resources.displayMetrics.density
         var radio = fallbackDp * density
+        val radioArriba = 26f * Medidas.escala(root.context)
 
         root.outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: Outline) {
-                // El rectángulo empieza más arriba: solo se redondean las de abajo
-                val r = radio.toInt()
-                outline.setRoundRect(0, -r, view.width, view.height, radio)
+                val w = view.width.toFloat()
+                val h = view.height.toFloat()
+                if (Build.VERSION.SDK_INT >= 33) {
+                    val path = Path()
+                    path.addRoundRect(RectF(0f, 0f, w, h), floatArrayOf(
+                        radioArriba, radioArriba, radioArriba, radioArriba,
+                        radio, radio, radio, radio,
+                    ), Path.Direction.CW)
+                    outline.setPath(path)
+                } else {
+                    outline.setRoundRect(0, 0, view.width, view.height, radio)
+                }
             }
         }
         root.clipToOutline = true

@@ -22,6 +22,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -347,7 +348,13 @@ class SettingsActivity : Activity() {
             filaCheck("Automático", tema == "auto") { elegir("tema", "auto") },
             filaCheck("Claro", tema == "claro") { elegir("tema", "claro") },
             filaCheck("Oscuro", tema == "oscuro") { elegir("tema", "oscuro") },
-        ))
+            filaCheck("AMOLED (negro puro)", tema == "amoled") { elegir("tema", "amoled") },
+        ), pie = "AMOLED usa negro puro, como el teclado oscuro del iPhone, y ahorra batería.")
+
+        grupo("Tamaño", listOf(
+            filaDeslizador("Altura de las teclas", "altura"),
+            filaDeslizador("Tamaño de las letras", "letra"),
+        ), pie = "Los cambios se ven la próxima vez que abras el teclado.")
 
         grupo(null, listOf(
             filaAccion("Restablecer diccionario del teclado", rojo, derecha = null) {
@@ -378,6 +385,40 @@ class SettingsActivity : Activity() {
         grupo("Prueba", listOf(prueba))
     }
 
+    /** Fila con barra deslizante de 80% a 130% */
+    private fun filaDeslizador(titulo: String, clave: String): View {
+        val caja = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+        }
+        val arriba = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val valor = TextView(this).apply {
+            textSize = 17f
+            setTextColor(gris)
+        }
+        arriba.addView(textoFila(titulo), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        arriba.addView(valor)
+        val actual = prefs.getInt(clave, 100).coerceIn(80, 130)
+        valor.text = "$actual%"
+        val barra = SeekBar(this).apply {
+            max = 50
+            progress = actual - 80
+            progressTintList = ColorStateList.valueOf(azul)
+            thumbTintList = ColorStateList.valueOf(Color.WHITE)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(b: SeekBar?, p: Int, deUsuario: Boolean) {
+                    valor.text = "${p + 80}%"
+                    if (deUsuario) prefs.edit().putInt(clave, p + 80).apply()
+                }
+                override fun onStartTrackingTouch(b: SeekBar?) {}
+                override fun onStopTrackingTouch(b: SeekBar?) {}
+            })
+        }
+        caja.addView(arriba)
+        caja.addView(barra)
+        return caja
+    }
+
     private fun elegir(clave: String, valor: String) {
         prefs.edit().putString(clave, valor).apply()
         dibujar()
@@ -405,7 +446,19 @@ class SettingsActivity : Activity() {
             filas.add(filaAccion(frase, derecha = atajo) { editarAtajo(i) })
         }
         filas.add(filaAccion("Nueva sustitución", azul, derecha = "+") { editarAtajo(-1) })
-        grupo(null, filas, pie = "Escribe la función rápida y se reemplazará por la frase al poner espacio.")
+        grupo(null, filas, pie = "Escribe la función rápida y se reemplaza por la frase al poner espacio o un signo. " +
+                "Puede tener letras, números o símbolos. Si borras justo después, vuelve lo que escribiste.")
+
+        grupo(null, listOf(
+            filaAccion("Agregar sustituciones sugeridas", azul, derecha = null) {
+                val actuales = Ajustes.atajos(this)
+                val claves = actuales.map { it.first.lowercase() }.toSet()
+                val nuevas = Ajustes.ATAJOS_SUGERIDOS.filter { it.first.lowercase() !in claves }
+                Ajustes.guardarAtajos(this, actuales + nuevas)
+                Toast.makeText(this, "Se agregaron ${nuevas.size} sustituciones", Toast.LENGTH_SHORT).show()
+                dibujar()
+            },
+        ), pie = "Agrega atajos comunes como tqm, ntp, xfa, dnd, cdt…")
     }
 
     private fun editarAtajo(indice: Int) {
@@ -434,7 +487,13 @@ class SettingsActivity : Activity() {
                 val f = frase.text.toString().trim()
                 val a = atajo.text.toString().trim()
                 if (f.isNotEmpty() && a.isNotEmpty() && !a.contains(' ')) {
-                    if (actual == null) lista.add(a to f) else lista[indice] = a to f
+                    // Si ya existe esa función rápida, se reemplaza en vez de duplicarse
+                    val repetido = lista.indexOfFirst { it.first.equals(a, ignoreCase = true) }
+                    when {
+                        actual != null -> lista[indice] = a to f
+                        repetido >= 0 -> lista[repetido] = a to f
+                        else -> lista.add(a to f)
+                    }
                     Ajustes.guardarAtajos(this, lista)
                     dibujar()
                 } else {

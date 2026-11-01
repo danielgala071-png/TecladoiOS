@@ -44,6 +44,18 @@ object Iconos {
         c.drawLine(xc - k, cy + k, xc + k, cy - k, p)
     }
 
+    /** Flecha de "intro" (⏎) como en iOS 26/27 */
+    fun enter(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
+        p.style = Paint.Style.STROKE
+        val der = cx + s * 0.42f
+        val izq = cx - s * 0.42f
+        val base = cy + s * 0.14f
+        c.drawLine(der, cy - s * 0.32f, der, base, p)
+        c.drawLine(der, base, izq, base, p)
+        c.drawLine(izq, base, izq + s * 0.2f, base - s * 0.2f, p)
+        c.drawLine(izq, base, izq + s * 0.2f, base + s * 0.2f, p)
+    }
+
     fun microfono(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
         p.style = Paint.Style.STROKE
         val w = s * 0.32f
