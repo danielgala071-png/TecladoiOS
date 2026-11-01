@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -15,8 +16,9 @@ import android.view.animation.OvershootInterpolator
 import android.widget.PopupWindow
 
 /**
- * Vista previa estilo iOS 26: una cápsula de vidrio que nace de la tecla
- * y se estira hacia arriba como líquido, con la letra grande arriba.
+ * Vista previa como la del iPhone: un cuadro de vidrio "sobreexpuesto" más ancho
+ * que la tecla, con la letra grande, unido a la tecla por un cuello curvo.
+ * Nace de la tecla y se infla hacia arriba.
  */
 class KeyPreviewView(context: Context) : View(context) {
 
@@ -25,24 +27,26 @@ class KeyPreviewView(context: Context) : View(context) {
     var keyWidth = 0f
     var keyHeight = 0f
     var darkMode = false
-    /** Color de las teclas: la cápsula es del mismo tono, un poco más clara */
+    /** Color de las teclas: la vista previa es del mismo tono, mucho más clara */
     var colorTecla = 0xFF343437.toInt()
 
-    /** 0 = del tamaño de la tecla, 1 = cápsula completa */
+    /** 0 = del tamaño de la tecla, 1 = vista previa completa */
     var progreso = 0f
         set(value) { field = value; invalidate() }
 
     private val d = resources.displayMetrics.density
-    val pad get() = 12f * d
-    private val anchoPrev get() = keyWidth * 1.26f
-    private val altoPrev get() = keyHeight * 2.3f
+    val pad get() = 14f * d
+    /** Cuánto sobresale el cuadro a cada lado de la tecla */
+    private val extra get() = keyWidth * 0.25f
+    /** Alto del cuadro de arriba (donde va la letra) */
+    private val altoCuadro get() = keyHeight * 1.12f
 
-    fun totalWidth() = (anchoPrev + pad * 2).toInt()
-    fun totalHeight() = (altoPrev + pad * 2).toInt()
-    fun offsetX() = ((anchoPrev - keyWidth) / 2f + pad).toInt()
-    fun offsetY() = (altoPrev - keyHeight + pad).toInt()
+    fun totalWidth() = (keyWidth + extra * 2 + pad * 2).toInt()
+    fun totalHeight() = (altoCuadro + keyHeight + pad * 2).toInt()
+    fun offsetX() = (extra + pad).toInt()
+    fun offsetY() = (altoCuadro + pad).toInt()
 
-    private val rect = RectF()
+    private val path = Path()
     private val cuerpo = Paint(Paint.ANTI_ALIAS_FLAG)
     private val brillo = Paint(Paint.ANTI_ALIAS_FLAG)
     private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -53,59 +57,84 @@ class KeyPreviewView(context: Context) : View(context) {
         textAlign = Paint.Align.CENTER
     }.also { Fuentes.aplicar(it, 400) }
 
+    private fun construir(p: Float) {
+        val kw = keyWidth
+        val kh = keyHeight
+        val cx = pad + extra + kw / 2f
+        val fondo = pad + altoCuadro + kh
+        val e = extra * p
+        val bh = altoCuadro * p
+        val top = fondo - kh - bh
+        val bb = top + bh                 // parte de abajo del cuadro
+        val izq = cx - kw / 2f - e
+        val der = cx + kw / 2f + e
+        val kl = cx - kw / 2f
+        val kr = cx + kw / 2f
+        val r = minOf(bh * 0.34f, (der - izq) * 0.28f)
+        val rk = minOf(9f * d, kw * 0.3f)
+        val n = kh * 0.34f * p            // largo del cuello
+
+        path.reset()
+        path.moveTo(izq + r, top)
+        path.lineTo(der - r, top)
+        path.quadTo(der, top, der, top + r)
+        path.lineTo(der, maxOf(bb - r, top + r))
+        path.cubicTo(der, bb, kr, bb, kr, bb + n)
+        path.lineTo(kr, fondo - rk)
+        path.quadTo(kr, fondo, kr - rk, fondo)
+        path.lineTo(kl + rk, fondo)
+        path.quadTo(kl, fondo, kl, fondo - rk)
+        path.lineTo(kl, bb + n)
+        path.cubicTo(kl, bb, izq, bb, izq, maxOf(bb - r, top + r))
+        path.lineTo(izq, top + r)
+        path.quadTo(izq, top, izq + r, top)
+        path.close()
+    }
 
     override fun onDraw(canvas: Canvas) {
         if (keyWidth <= 0f || keyHeight <= 0f) return
-        val p = progreso.coerceIn(0f, 1.15f)
+        val p = progreso.coerceIn(0f, 1.12f)
+        construir(p)
+        val top = pad + altoCuadro * (1f - p)
+        val fondo = pad + altoCuadro + keyHeight
 
-        // La base queda fija en la tecla; lo que crece es la parte de arriba
-        val fondo = pad + altoPrev
-        val alto = keyHeight + (altoPrev - keyHeight) * p
-        val ancho = keyWidth + (anchoPrev - keyWidth) * p.coerceAtMost(1f)
-        val cx = pad + anchoPrev / 2f
-        rect.set(cx - ancho / 2f, fondo - alto, cx + ancho / 2f, fondo)
-        val radio = ancho * 0.3f
-
-        // Vidrio gris azulado translúcido, como en la imagen
         val arriba: Int; val abajo: Int
         if (darkMode) {
             // "Sobreexpuesta": mucho más clara que las teclas, como la O del iPhone
-            val base = aclarar(colorTecla, 0.50f)
-            arriba = (aclarar(base, 0.10f) and 0x00FFFFFF) or (0xF7 shl 24)
+            val base = aclarar(colorTecla, 0.52f)
+            arriba = (aclarar(base, 0.12f) and 0x00FFFFFF) or (0xF7 shl 24)
             abajo = (base and 0x00FFFFFF) or (0xF2 shl 24)
         } else {
-            arriba = 0xFFFFFFFF.toInt(); abajo = 0xFAF4F5F8.toInt()
+            arriba = 0xFFFFFFFF.toInt(); abajo = 0xFAF2F3F6.toInt()
         }
 
-        // Resplandor suave alrededor (luz que se escapa del vidrio)
+        // Resplandor alrededor (luz que se escapa del vidrio)
         cuerpo.shader = null
         cuerpo.color = abajo
         cuerpo.setShadowLayer(14f * d, 0f, 0f, if (darkMode) 0x55FFFFFF else 0x40000000)
-        canvas.drawRoundRect(rect, radio, radio, cuerpo)
+        canvas.drawPath(path, cuerpo)
         cuerpo.clearShadowLayer()
 
-        // Cuerpo de vidrio claro, un poco más brillante arriba
-        cuerpo.shader = LinearGradient(0f, rect.top, 0f, rect.bottom, arriba, abajo, Shader.TileMode.CLAMP)
-        canvas.drawRoundRect(rect, radio, radio, cuerpo)
+        // Cuerpo de vidrio, más brillante en el cuadro de arriba
+        cuerpo.shader = LinearGradient(0f, top, 0f, fondo, arriba, abajo, Shader.TileMode.CLAMP)
+        canvas.drawPath(path, cuerpo)
 
-        // Reflejo de luz en la parte de arriba
-        brillo.shader = LinearGradient(0f, rect.top, 0f, rect.top + alto * 0.35f,
+        brillo.shader = LinearGradient(0f, top, 0f, top + altoCuadro * 0.5f,
             0x40FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
-        canvas.drawRoundRect(rect, radio, radio, brillo)
+        canvas.drawPath(path, brillo)
 
         borde.color = if (darkMode) 0xB3FFFFFF.toInt() else 0x33000000
-        canvas.drawRoundRect(rect, radio, radio, borde)
+        canvas.drawPath(path, borde)
 
-        // La letra aparece y sube junto con la cápsula
-        val alfaLetra = ((p - 0.25f) / 0.6f).coerceIn(0f, 1f)
+        // Letra grande centrada en el cuadro de arriba
+        val alfaLetra = ((p - 0.3f) / 0.55f).coerceIn(0f, 1f)
         textPaint.color = if (darkMode) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
         textPaint.alpha = (255 * alfaLetra).toInt()
-        // Sombra suave para que la letra blanca resalte sobre el vidrio claro
         if (darkMode) textPaint.setShadowLayer(4f * d, 0f, 1f * d, 0x59000000) else textPaint.clearShadowLayer()
-        textPaint.textSize = keyHeight * 0.6f
+        textPaint.textSize = keyHeight * 0.68f
         val fm = textPaint.fontMetrics
-        // Letra en la parte de arriba de la cápsula, como la "O" del iPhone
-        val cy = rect.top + (alto - keyHeight) * 0.5f
+        val cx = pad + extra + keyWidth / 2f
+        val cy = top + altoCuadro * p * 0.5f
         canvas.drawText(label, cx, cy - (fm.ascent + fm.descent) / 2f, textPaint)
     }
 }
