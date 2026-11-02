@@ -4,44 +4,38 @@ import android.content.Context
 import android.content.SharedPreferences
 import org.json.JSONArray
 
-/** Todas las opciones del teclado, con los mismos nombres que en iPhone. */
+/** Todas las opciones del teclado, con los mismos nombres que en Ajustes > General > Teclado del iPhone. */
 object Ajustes {
     fun prefs(c: Context): SharedPreferences =
         c.getSharedPreferences("tecladoios", Context.MODE_PRIVATE)
 
-    fun vibrar(c: Context) = prefs(c).getBoolean("vibrar", true)
-    fun sonido(c: Context) = prefs(c).getBoolean("sonido", false)
-    fun vistaPrevia(c: Context) = prefs(c).getBoolean("vista_previa", true)
-    fun sugerencias(c: Context) = prefs(c).getBoolean("sugerencias", true)
-    fun autocorregir(c: Context) = prefs(c).getBoolean("autocorregir", true)
-    fun mayusculas(c: Context) = prefs(c).getBoolean("mayusculas", true)
-    fun puntoDoble(c: Context) = prefs(c).getBoolean("punto_doble", true)
-    fun bloqMayus(c: Context) = prefs(c).getBoolean("bloq_mayus", true)
-    fun atajosActivos(c: Context) = prefs(c).getBoolean("atajos_activos", true)
-    /** "auto", "claro", "oscuro" o "amoled" (negro puro) */
-    fun tema(c: Context) = prefs(c).getString("tema", "auto") ?: "auto"
-    /** Combinar el color del teclado con la app que estás usando */
-    fun adaptar(c: Context) = prefs(c).getBoolean("adaptar", true)
-    /** Mayúsculas, borrar, 123 y enter con el color translúcido de la app */
-    fun teclasColor(c: Context) = prefs(c).getBoolean("teclas_color", true)
-    /** Mostrar lo que copias en la barra de sugerencias para pegarlo */
-    fun portapapeles(c: Context) = prefs(c).getBoolean("portapapeles", true)
-    fun iconoOculto(c: Context) = prefs(c).getBoolean("ocultar_icono", false)
+    private fun si(c: Context, clave: String, porDefecto: Boolean) = prefs(c).getBoolean(clave, porDefecto)
 
-    /** Una sola vez: pasar al nuevo diseño igual al del iPhone */
-    fun migrarDiseno(c: Context) {
-        val p = prefs(c)
-        if (!p.getBoolean("diseno_v3", false)) {
-            p.edit().putString("tema", "auto").putString("vidrio", "tintado").putBoolean("diseno_v3", true).apply()
-        }
-    }
-    /** Altura de las teclas en % (80 a 130) */
-    fun altura(c: Context) = prefs(c).getInt("altura", 100).coerceIn(80, 130)
-    /** Tamaño de las letras en % (80 a 130) */
-    fun letra(c: Context) = prefs(c).getInt("letra", 100).coerceIn(80, 130)
-    /** "transparente", "normal" o "tintado" (como el control de Liquid Glass de iOS 27) */
-    fun vidrio(c: Context) = prefs(c).getString("vidrio", "tintado") ?: "tintado"
-    fun desenfoque(c: Context) = prefs(c).getBoolean("desenfoque", true)
+    // Todos los teclados
+    fun mayusculas(c: Context) = si(c, "mayusculas", true)
+    fun autocorregir(c: Context) = si(c, "autocorregir", true)
+    fun revisarOrtografia(c: Context) = si(c, "ortografia", true)
+    fun bloqMayus(c: Context) = si(c, "bloq_mayus", true)
+    fun atajosActivos(c: Context) = si(c, "atajos_activos", true)
+    fun sugerencias(c: Context) = si(c, "sugerencias", true)
+    fun enLinea(c: Context) = si(c, "en_linea", false)
+    fun puntuacionInteligente(c: Context) = si(c, "puntuacion", true)
+    fun deslizar(c: Context) = si(c, "deslizar", true)
+    fun borrarDeslizado(c: Context) = si(c, "borrar_deslizado", true)
+    fun vistaPrevia(c: Context) = si(c, "vista_previa", true)
+    fun puntoDoble(c: Context) = si(c, "punto_doble", true)
+
+    // Teclado con una mano: "no", "izq" o "der"
+    fun unaMano(c: Context) = prefs(c).getString("una_mano", "no") ?: "no"
+
+    // Respuesta del teclado
+    fun vibrar(c: Context) = si(c, "vibrar", true)
+    fun sonido(c: Context) = si(c, "sonido", false)
+
+    // Dictado
+    fun dictado(c: Context) = si(c, "dictado", true)
+    fun puntuacionDictado(c: Context) = si(c, "dictado_puntuacion", true)
+    fun idiomaDictado(c: Context) = prefs(c).getString("dictado_idioma", "es-PE") ?: "es-PE"
 
     /** Sustitución de texto: (función rápida, frase) */
     fun atajos(c: Context): MutableList<Pair<String, String>> {

@@ -2,6 +2,7 @@ package com.tecladoios
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.RectF
@@ -21,6 +22,8 @@ class VariantesView(context: Context) : View(context) {
     var celda = 0f
     var altoCelda = 0f
     var oscuro = false
+    /** Color de la app: la opción elegida se marca con ese color */
+    var acento = 0xFF007AFF.toInt()
 
     private val d = resources.displayMetrics.density
     val pad get() = 10f * d
@@ -63,11 +66,11 @@ class VariantesView(context: Context) : View(context) {
             val elegida = i == seleccion
             if (elegida) {
                 celdaRect.set(x + 1.5f * d, pad + margen, x + celda - 1.5f * d, pad + margen + altoCelda)
-                marca.color = 0xFF007AFF.toInt()
+                marca.color = acento
                 c.drawRoundRect(celdaRect, radio * 0.75f, radio * 0.75f, marca)
             }
             texto.color = when {
-                elegida -> 0xFFFFFFFF.toInt()
+                elegida -> if ((0.299 * Color.red(acento) + 0.587 * Color.green(acento) + 0.114 * Color.blue(acento)) > 175) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
                 oscuro -> 0xFFFFFFFF.toInt()
                 else -> 0xFF000000.toInt()
             }
@@ -90,11 +93,12 @@ class VariantesPopup(private val anchor: View) {
 
     val abierto get() = popup.isShowing
 
-    fun mostrar(r: RectF, opciones: List<String>, anchoTeclado: Float, oscuro: Boolean) {
+    fun mostrar(r: RectF, opciones: List<String>, anchoTeclado: Float, oscuro: Boolean, acento: Int) {
         if (anchor.windowToken == null || opciones.isEmpty()) return
         val d = anchor.resources.displayMetrics.density
         vista.opciones = opciones
         vista.oscuro = oscuro
+        vista.acento = acento
         vista.celda = r.width() + 4f * d
         vista.altoCelda = r.height() * 1.08f
 

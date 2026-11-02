@@ -23,12 +23,11 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 
-/** Ajustes con el mismo diseño y nombres que Ajustes > General > Teclado del iPhone. */
+/** Ajustes con el mismo diseño, orden y nombres que Ajustes > General > Teclado del iPhone. */
 class SettingsActivity : Activity() {
 
     private val prefs by lazy { Ajustes.prefs(this) }
@@ -51,10 +50,24 @@ class SettingsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
+            restaurarIcono()
             construirPantalla()
         } catch (e: Throwable) {
             mostrarError(Log.getStackTraceString(e))
         }
+    }
+
+    /** La opción de ocultar el ícono ya no existe (no está en el iPhone): se vuelve a mostrar una vez */
+    private fun restaurarIcono() {
+        if (prefs.getBoolean("icono_restaurado", false)) return
+        try {
+            packageManager.setComponentEnabledSetting(
+                ComponentName(this, "com.tecladoios.Lanzador"),
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                PackageManager.DONT_KILL_APP,
+            )
+        } catch (_: Exception) { }
+        prefs.edit().putBoolean("icono_restaurado", true).apply()
     }
 
     // ---------- Pantalla de error ----------
@@ -140,16 +153,27 @@ class SettingsActivity : Activity() {
         }
     }
 
+    private fun irA(p: String) {
+        pagina = p
+        dibujar()
+    }
+
     private fun dibujar() {
         contenedor.removeAllViews()
-        if (pagina == "atajos") paginaAtajos() else paginaPrincipal()
+        estado = null
+        when (pagina) {
+            "atajos" -> paginaAtajos()
+            "teclados" -> paginaTeclados()
+            "una_mano" -> paginaUnaMano()
+            "idiomas_dictado" -> paginaIdiomasDictado()
+            else -> paginaPrincipal()
+        }
     }
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (pagina != "principal") {
-            pagina = "principal"
-            dibujar()
+            irA("principal")
         } else {
             @Suppress("DEPRECATION")
             super.onBackPressed()
@@ -190,6 +214,17 @@ class SettingsActivity : Activity() {
             Fuentes.aplicar(this, 700)
             setTextColor(colorTexto)
             setPadding(dp(4), dp(12), 0, dp(12))
+        })
+    }
+
+    /** Enlace "‹ Teclado" para volver, como en iPhone */
+    private fun volver(destino: String = "principal", texto: String = "Teclado") {
+        contenedor.addView(TextView(this).apply {
+            text = "‹ $texto"
+            textSize = 17f
+            setTextColor(azul)
+            setPadding(dp(4), dp(10), dp(4), dp(4))
+            setOnClickListener { irA(destino) }
         })
     }
 
@@ -254,23 +289,7 @@ class SettingsActivity : Activity() {
     }
 
     @Suppress("DEPRECATION")
-    private fun filaInterruptor(titulo: String, clave: String, porDefecto: Boolean): View {
-        val f = fila()
-        f.addView(textoFila(titulo), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        val estados = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
-        val sw = Switch(this).apply {
-            isChecked = prefs.getBoolean(clave, porDefecto)
-            trackTintList = ColorStateList(estados, intArrayOf(verde, if (oscuro) 0xFF39393D.toInt() else 0xFFE9E9EA.toInt()))
-            thumbTintList = ColorStateList(estados, intArrayOf(Color.WHITE, Color.WHITE))
-            setOnCheckedChangeListener { _, activo -> prefs.edit().putBoolean(clave, activo).apply() }
-        }
-        f.addView(sw)
-        f.setOnClickListener { sw.toggle() }
-        return f
-    }
-
-    @Suppress("DEPRECATION")
-    private fun filaInterruptorAccion(titulo: String, clave: String, porDefecto: Boolean, alCambiar: (Boolean) -> Unit): View {
+    private fun filaInterruptor(titulo: String, clave: String, porDefecto: Boolean, alCambiar: (Boolean) -> Unit = {}): View {
         val f = fila()
         f.addView(textoFila(titulo), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         val estados = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
@@ -316,92 +335,61 @@ class SettingsActivity : Activity() {
         return f
     }
 
-    // ---------- Página principal ----------
+    private fun elegir(clave: String, valor: String) {
+        prefs.edit().putString(clave, valor).apply()
+        dibujar()
+    }
+
+    // ---------- Página principal: General > Teclado ----------
 
     private fun paginaPrincipal() {
         tituloGrande("Teclado")
 
-        estado = grupo("Teclados", listOf(
-            filaAccion("Activar TecladoiOS") { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
-            filaAccion("Elegir teclado") {
-                getSystemService(InputMethodManager::class.java)?.showInputMethodPicker()
-            },
-        ), pie = "")
-        actualizarEstado()
+        grupo(null, listOf(
+            filaAccion("Teclados", derecha = "2  ›") { irA("teclados") },
+        ))
 
+        val mano = when (Ajustes.unaMano(this)) {
+            "izq" -> "Izquierda"
+            "der" -> "Derecha"
+            else -> "No"
+        }
         val cantidad = Ajustes.atajos(this).size
         grupo(null, listOf(
-            filaAccion("Sustitución de texto", derecha = "$cantidad  ›") {
-                pagina = "atajos"
-                dibujar()
-            },
+            filaAccion("Teclado con una mano", derecha = "$mano  ›") { irA("una_mano") },
+            filaAccion("Sustitución de texto", derecha = "$cantidad  ›") { irA("atajos") },
         ))
 
         grupo("Todos los teclados", listOf(
             filaInterruptor("Mayúsculas automáticas", "mayusculas", true),
             filaInterruptor("Autocorrección", "autocorregir", true),
+            filaInterruptor("Revisar ortografía", "ortografia", true),
             filaInterruptor("Activar Bloq Mayús", "bloq_mayus", true),
             filaInterruptor("Atajos", "atajos_activos", true),
-            filaInterruptor("Predictivo", "sugerencias", true),
+            filaInterruptor("Texto predictivo", "sugerencias", true),
+            filaInterruptor("Mostrar predicciones en línea", "en_linea", false),
+            filaInterruptor("Puntuación inteligente", "puntuacion", true),
+            filaInterruptor("Deslizar para escribir", "deslizar", true),
+            filaInterruptor("Borrar con Deslizar para escribir por palabra", "borrar_deslizado", true),
             filaInterruptor("Previsualización de caracteres", "vista_previa", true),
             filaInterruptor("Atajo con “.”", "punto_doble", true),
-            filaInterruptor("Pegar lo copiado desde la barra", "portapapeles", true),
-        ), pie = "Pulsar dos veces la barra espaciadora inserta un punto seguido de un espacio. " +
-                "Mantén pulsada la barra espaciadora para mover el cursor. Lo que copias aparece unos " +
-                "minutos en la barra: si tiene números, puedes pegarlo completo, solo el texto o solo los números.")
-
-        grupo("Dictado", listOf(
-            if (microfonoPermitido()) filaAccion("Micrófono permitido", derecha = "✓") {}
-            else filaAccion("Permitir micrófono", azul) { pedirMicrofono() },
-        ), pie = "Toca el micrófono abajo a la derecha del teclado para dictar.")
+        ), pie = "Pulsar dos veces la barra espaciadora insertará un punto seguido de un espacio.")
 
         grupo("Respuesta del teclado", listOf(
             filaInterruptor("Sonido", "sonido", false),
-            filaInterruptor("Respuesta háptica", "vibrar", true),
+            filaInterruptor("Háptica", "vibrar", true),
         ))
 
-        val vidrio = Ajustes.vidrio(this)
-        grupo("Liquid Glass", listOf(
-            filaCheck("Transparente", vidrio == "transparente") { elegir("vidrio", "transparente") },
-            filaCheck("Predeterminado", vidrio == "normal") { elegir("vidrio", "normal") },
-            filaCheck("Sólido (como iPhone)", vidrio == "tintado") { elegir("vidrio", "tintado") },
-            filaCheck("De color (según la app)", vidrio == "color") { elegir("vidrio", "color") },
-            filaInterruptor("Desenfocar el fondo", "desenfoque", true),
-            filaInterruptor("Combinar con la app", "adaptar", true),
-            filaInterruptor("Teclas de función con color", "teclas_color", true),
-        ), pie = "“Sólido” es el diseño del teclado del iPhone. “Combinar con la app” toma el color " +
-                "de la app que estás usando (verde en WhatsApp, rosado en Instagram…) para la tecla de " +
-                "acción y un toque sutil del fondo. “Teclas de función con color” tiñe mayúsculas, borrar, " +
-                "123 y enter con un vidrio translúcido de ese color. “De color” tiñe todo el vidrio con el color de la app, " +
-                "difuminado de arriba hacia abajo; si la app no tiene color, usa el de tu fondo de pantalla.")
-
-        val tema = Ajustes.tema(this)
-        grupo("Apariencia", listOf(
-            filaCheck("Automático", tema == "auto") { elegir("tema", "auto") },
-            filaCheck("Claro", tema == "claro") { elegir("tema", "claro") },
-            filaCheck("Oscuro", tema == "oscuro") { elegir("tema", "oscuro") },
-            filaCheck("AMOLED (negro puro)", tema == "amoled") { elegir("tema", "amoled") },
-        ), pie = "AMOLED usa negro puro, como el teclado oscuro del iPhone, y ahorra batería.")
-
-        grupo("Tamaño", listOf(
-            filaDeslizador("Altura de las teclas", "altura"),
-            filaDeslizador("Tamaño de las letras", "letra"),
-        ), pie = "Los cambios se ven la próxima vez que abras el teclado.")
-
-        grupo("App", listOf(
-            filaInterruptorAccion("Ocultar ícono de la app", "ocultar_icono", false) { ocultar ->
-                packageManager.setComponentEnabledSetting(
-                    ComponentName(this, "com.tecladoios.Lanzador"),
-                    if (ocultar) PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-                    else PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                    PackageManager.DONT_KILL_APP,
-                )
-                if (ocultar) Toast.makeText(this,
-                    "Ícono oculto. Para volver aquí: Ajustes del celular → Teclado → TecladoiOS",
-                    Toast.LENGTH_LONG).show()
-            },
-        ), pie = "Para abrir estos ajustes con el ícono oculto: Ajustes del celular → Idioma y entrada " +
-                "(o Teclado) → TecladoiOS. Algunos celulares muestran igual un acceso a la información de la app.")
+        val idioma = IDIOMAS_DICTADO.firstOrNull { it.first == Ajustes.idiomaDictado(this) }?.second ?: "Español (Perú)"
+        val filasDictado = ArrayList<View>()
+        filasDictado.add(filaInterruptor("Activar Dictado", "dictado", true) { activo ->
+            if (activo) pedirMicrofono()
+        })
+        filasDictado.add(filaAccion("Idiomas de dictado", derecha = "$idioma  ›") { irA("idiomas_dictado") })
+        filasDictado.add(filaInterruptor("Puntuación automática", "dictado_puntuacion", true))
+        if (!microfonoPermitido()) filasDictado.add(filaAccion("Permitir micrófono", azul, derecha = null) { pedirMicrofono() })
+        grupo("Dictado", filasDictado,
+            pie = "Toca el micrófono al lado de la barra espaciadora para dictar en lugar de escribir.")
 
         grupo(null, listOf(
             filaAccion("Restablecer diccionario del teclado", rojo, derecha = null) {
@@ -424,23 +412,12 @@ class SettingsActivity : Activity() {
             },
         ))
 
-        val prueba = EditText(this).apply {
-            hint = "Escribe algo para probar…"
-            minLines = 3
-            gravity = Gravity.TOP
-            background = null
-            setTextColor(colorTexto)
-            setHintTextColor(gris)
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-        }
-        grupo("Prueba", listOf(prueba))
-
         // Número de versión: sirve para comprobar que se instaló la última compilación
         val version = try {
             packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
         } catch (_: Exception) { "?" }
         contenedor.addView(TextView(this).apply {
-            text = "TecladoiOS versión $version · escritura rápida v5"
+            text = "TecladoiOS versión $version · Liquid Glass v6"
             Fuentes.aplicar(this, 400)
             textSize = 13f
             setTextColor(gris)
@@ -449,59 +426,54 @@ class SettingsActivity : Activity() {
         })
     }
 
-    /** Fila con barra deslizante de 80% a 130% */
-    private fun filaDeslizador(titulo: String, clave: String): View {
-        val caja = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(10), dp(16), dp(10))
-        }
-        val arriba = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val valor = TextView(this).apply {
-            textSize = 17f
-            setTextColor(gris)
-        }
-        arriba.addView(textoFila(titulo), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        arriba.addView(valor)
-        val actual = prefs.getInt(clave, 100).coerceIn(80, 130)
-        valor.text = "$actual%"
-        val barra = SeekBar(this).apply {
-            max = 50
-            progress = actual - 80
-            progressTintList = ColorStateList.valueOf(azul)
-            thumbTintList = ColorStateList.valueOf(Color.WHITE)
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(b: SeekBar?, p: Int, deUsuario: Boolean) {
-                    valor.text = "${p + 80}%"
-                    if (deUsuario) prefs.edit().putInt(clave, p + 80).apply()
-                }
-                override fun onStartTrackingTouch(b: SeekBar?) {}
-                override fun onStopTrackingTouch(b: SeekBar?) {}
-            })
-        }
-        caja.addView(arriba)
-        caja.addView(barra)
-        return caja
+    // ---------- Teclados ----------
+
+    private fun paginaTeclados() {
+        volver()
+        tituloGrande("Teclados")
+        grupo(null, listOf(
+            filaAccion("Español (Perú)", derecha = "Español") {},
+            filaAccion("Emoji", derecha = null) {},
+        ))
+        estado = grupo(null, listOf(
+            filaAccion("Activar TecladoiOS", azul, derecha = null) { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
+            filaAccion("Elegir teclado", azul, derecha = null) {
+                getSystemService(InputMethodManager::class.java)?.showInputMethodPicker()
+            },
+        ), pie = "")
+        actualizarEstado()
     }
 
-    private fun elegir(clave: String, valor: String) {
-        prefs.edit().putString(clave, valor).apply()
-        dibujar()
+    // ---------- Teclado con una mano ----------
+
+    private fun paginaUnaMano() {
+        volver()
+        tituloGrande("Teclado con una mano")
+        val actual = Ajustes.unaMano(this)
+        grupo(null, listOf(
+            filaCheck("Izquierda", actual == "izq") { elegir("una_mano", "izq") },
+            filaCheck("No", actual == "no") { elegir("una_mano", "no") },
+            filaCheck("Derecha", actual == "der") { elegir("una_mano", "der") },
+        ), pie = "El teclado se hace más angosto y se pega al lado que elijas. Toca la flecha del " +
+                "costado del teclado para volver al tamaño completo. En horizontal y en el teclado " +
+                "numérico se usa siempre el teclado completo.")
+    }
+
+    // ---------- Idiomas de dictado ----------
+
+    private fun paginaIdiomasDictado() {
+        volver()
+        tituloGrande("Idiomas de dictado")
+        val actual = Ajustes.idiomaDictado(this)
+        grupo(null, IDIOMAS_DICTADO.map { (codigo, nombre) ->
+            filaCheck(nombre, actual == codigo) { elegir("dictado_idioma", codigo) }
+        })
     }
 
     // ---------- Sustitución de texto ----------
 
     private fun paginaAtajos() {
-        estado = null
-        contenedor.addView(TextView(this).apply {
-            text = "‹ Teclado"
-            textSize = 17f
-            setTextColor(azul)
-            setPadding(dp(4), dp(10), dp(4), dp(4))
-            setOnClickListener {
-                pagina = "principal"
-                dibujar()
-            }
-        })
+        volver()
         tituloGrande("Sustitución de texto")
 
         val lista = Ajustes.atajos(this)
@@ -573,5 +545,15 @@ class SettingsActivity : Activity() {
             }
         }
         dialogo.show()
+    }
+
+    companion object {
+        val IDIOMAS_DICTADO = listOf(
+            "es-PE" to "Español (Perú)",
+            "es-MX" to "Español (México)",
+            "es-US" to "Español (EE. UU.)",
+            "es-ES" to "Español (España)",
+            "en-US" to "Inglés (EE. UU.)",
+        )
     }
 }

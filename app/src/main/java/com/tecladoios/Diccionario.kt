@@ -78,6 +78,15 @@ class Diccionario(context: Context) {
     @Volatile
     private var indice: Indice? = null
 
+    /**
+     * Dónde cayó cada dedo en la palabra que estás escribiendo ([x, fila, letra tocada]).
+     * Con esto la corrección sabe si tocaste justo en el borde entre dos teclas
+     * (y entonces cambiar de letra "cuesta" casi nada) o en el centro de la tecla.
+     */
+    private var toq: Array<FloatArray>? = null
+    /** Alto de una fila medido en anchos de tecla (lo manda el teclado) */
+    @Volatile var proporcion = 1.37f
+
     // Memoria reutilizable para comparar palabras sin crear basura en cada tecla
     private var fila0 = FloatArray(48)
     private var fila1 = FloatArray(48)
@@ -207,13 +216,14 @@ class Diccionario(context: Context) {
         var actual = fila2
         antes[0] = 0f
         for (j in 1..m) antes[j] = antes[j - 1] + if (b[j - 1] == 'h') 0.3f else 1f
+        val tq = toq?.takeIf { it.size == n }
         for (i in 1..n) {
             actual[0] = i.toFloat()
             var minimo = actual[0]
             val ca = a[i - 1]
             for (j in 1..m) {
                 val cb = b[j - 1]
-                var v = antes[j - 1] + costoCambio(ca, cb)
+                var v = antes[j - 1] + (if (tq != null) costoToque(tq[i - 1], ca, cb) else costoCambio(ca, cb))
                 // Letra de más (si repetiste la misma letra cuesta menos: "holaa")
                 v = minOf(v, antes[j] + if (i >= 2 && a[i - 2] == ca) 0.5f else 1f)
                 // Letra que faltó (letra doble o "h" muda cuestan menos: "aroz" → "arroz", "ola" → "hola")
@@ -231,6 +241,29 @@ class Diccionario(context: Context) {
         // Equivocarse en la primera letra es raro: se penaliza un poco (salvo la "h" muda)
         if (a[0] != b[0] && !(b[0] == 'h' && b.length > 1 && a[0] == b[1]) && !similares(a[0], b[0])) r += 0.3f
         return r
+    }
+
+    /**
+     * Como Gboard: cuánto cuesta que quisieras [cb] si tu dedo cayó en [t].
+     * Si el dedo cayó en el borde entre las dos teclas, casi nada; si cayó en el
+     * centro de la tecla que tocaste, bastante más.
+     */
+    private fun costoToque(t: FloatArray, ca: Char, cb: Char): Float {
+        if (ca == cb) return 0f
+        val x = t[0]
+        if (x < 0f) return costoCambio(ca, cb)
+        val pb = POSICIONES[cb] ?: return costoCambio(ca, cb)
+        val tocada = t[2].toInt().toChar()
+        val pa = POSICIONES[tocada] ?: POSICIONES[ca] ?: return costoCambio(ca, cb)
+        val ky = proporcion * 0.75f
+        val dxb = x - pb[0]
+        val dyb = (t[1] - pb[1]) * ky
+        val dxa = x - pa[0]
+        val dya = (t[1] - pa[1]) * ky
+        var c = 0.5f * ((dxb * dxb + dyb * dyb) - (dxa * dxa + dya * dya))
+        c = c.coerceIn(0.05f, 1.4f)
+        if (similares(ca, cb)) c = minOf(c, 0.3f)
+        return c
     }
 
     private fun limitePara(n: Int) = when {
@@ -257,7 +290,19 @@ class Diccionario(context: Context) {
     // ---------- Sugerencias ----------
 
     @Synchronized
-    fun sugerir(prefijo: String, max: Int, previa: String = "", previa2: String = "", t: Int = turno()): List<String> {
+    fun sugerir(
+        prefijo: String, max: Int, previa: String = "", previa2: String = "", t: Int = turno(),
+        toques: Array<FloatArray>? = null,
+    ): List<String> {
+        toq = toques
+        try {
+            return sugerirSinToques(prefijo, max, previa, previa2, t)
+        } finally {
+            toq = null
+        }
+    }
+
+    private fun sugerirSinToques(prefijo: String, max: Int, previa: String, previa2: String, t: Int): List<String> {
         miTurno = t
         if (prefijo.isEmpty() || cortado()) return emptyList()
         val ix = indice
@@ -362,9 +407,14 @@ class Diccionario(context: Context) {
 
     /** Devuelve la corrección de [p] o null si está bien escrita. */
     @Synchronized
-    fun corregir(p: String, previa: String = "", previa2: String = "", t: Int = turno()): String? {
+    fun corregir(
+        p: String, previa: String = "", previa2: String = "", t: Int = turno(),
+        toques: Array<FloatArray>? = null,
+    ): String? {
         miTurno = t
-        val r = corregirSinFiltro(p, previa, previa2) ?: return null
+        toq = toques
+        val encontrada: String? = try { corregirSinFiltro(p, previa, previa2) } finally { toq = null }
+        val r = encontrada ?: return null
         if (cortado()) return null
         // Una corrección que ya deshiciste no se vuelve a hacer
         if (rechazos.isNotEmpty() && (p.lowercase() + ">" + r.lowercase()) in rechazos) return null
@@ -455,6 +505,139 @@ class Diccionario(context: Context) {
     @Synchronized
     fun interrogativa(w: String): String? =
         INTERROGATIVAS[normal(w)]?.let { igualarMayus(it, w) }?.takeIf { it != w }
+
+    /** ¿Es una palabra que el teclado conoce (del diccionario o que ya usaste)? */
+    @Synchronized
+    fun conocida(p: String): Boolean {
+        val ix = indice ?: return true
+        return conoce(ix, p)
+    }
+
+    // ---------- Deslizar para escribir ----------
+
+    /** Letras de la palabra como teclas (á → a, la ñ se queda), sin repetir teclas seguidas */
+    private fun teclasDe(w: String): CharArray? {
+        val out = CharArray(w.length)
+        var n = 0
+        for (ch in w) {
+            val l = ch.lowercaseChar()
+            val k = if (POSICIONES.containsKey(l)) l else (SIN_ACENTO[l] ?: return null)
+            if (n == 0 || out[n - 1] != k) out[n++] = k
+        }
+        return out.copyOf(n)
+    }
+
+    private fun dist(a: FloatArray, b: FloatArray): Float {
+        val dx = a[0] - b[0]
+        val dy = a[1] - b[1]
+        return Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+    }
+
+    private fun largo(p: Array<FloatArray>): Float {
+        var t = 0f
+        for (i in 1 until p.size) t += dist(p[i - 1], p[i])
+        return t
+    }
+
+    /** El recorrido repartido en [n] puntos a la misma distancia */
+    private fun remuestrear(p: Array<FloatArray>, n: Int): Array<FloatArray> {
+        val total = largo(p)
+        if (total <= 0f) return Array(n) { p[0].copyOf() }
+        val paso = total / (n - 1)
+        val res = ArrayList<FloatArray>(n)
+        res.add(p[0].copyOf())
+        var acum = 0f
+        var prev = p[0]
+        var i = 1
+        while (i < p.size && res.size < n) {
+            val cur = p[i]
+            val dd = dist(prev, cur)
+            if (dd > 0f && acum + dd >= paso) {
+                val f = (paso - acum) / dd
+                val q = floatArrayOf(prev[0] + f * (cur[0] - prev[0]), prev[1] + f * (cur[1] - prev[1]))
+                res.add(q)
+                prev = q
+                acum = 0f
+            } else {
+                acum += dd
+                prev = cur
+                i++
+            }
+        }
+        while (res.size < n) res.add(p[p.size - 1].copyOf())
+        return res.toTypedArray()
+    }
+
+    /**
+     * Deslizar para escribir: compara la forma del recorrido del dedo con el camino
+     * ideal de cada palabra (de centro a centro de sus teclas), revisa que el dedo haya
+     * pasado cerca de cada letra y desempata con lo común que es la palabra y el contexto.
+     * [puntos]: el recorrido en teclas; [prop]: alto de una fila en anchos de tecla.
+     */
+    @Synchronized
+    fun deslizar(puntos: List<FloatArray>, prop: Float, previa: String, previa2: String, max: Int): List<String> {
+        val ix = indice ?: return emptyList()
+        if (puntos.size < 2) return emptyList()
+        val pos = HashMap<Char, FloatArray>()
+        for ((k, v) in POSICIONES) pos[k] = floatArrayOf(v[0], v[1] * prop)
+        val usuario = Array(puntos.size) { floatArrayOf(puntos[it][0], puntos[it][1] * prop) }
+        val muestras = 40
+        val u = remuestrear(usuario, muestras)
+        val largoU = largo(usuario)
+        val inicio = usuario[0]
+        val fin = usuario[usuario.size - 1]
+
+        val mejores = HashMap<String, Float>()
+        fun evaluar(w: String, extra: Float) {
+            if (w.length < 2 || bloqueada(w)) return
+            val seq = teclasDe(w) ?: return
+            if (seq.size < 2) return
+            val pf = pos[seq[seq.size - 1]] ?: return
+            if (dist(pf, fin) > 1.3f) return
+            val pi = pos[seq[0]] ?: return
+            if (dist(pi, inicio) > 1.3f) return
+            val ideal = Array(seq.size) { pos[seq[it]]!! }
+            val largoI = largo(ideal)
+            if (largoI > largoU * 1.9f + 1f || largoI < largoU * 0.45f - 1f) return
+            val r = remuestrear(ideal, muestras)
+            var suma = 0f
+            for (k in 0 until muestras) suma += dist(u[k], r[k])
+            val forma = suma / muestras
+            if (forma > 1.15f) return
+            // El dedo tiene que haber pasado cerca de cada letra de la palabra
+            var peor = 0f
+            for (c in seq) {
+                val p = pos[c] ?: return
+                var m = Float.MAX_VALUE
+                for (q in u) { val dq = dist(p, q); if (dq < m) m = dq }
+                if (m > peor) peor = m
+                if (peor > 1.05f) return
+            }
+            val total = forma * 3f + peor * 1.5f + extra - contexto(previa, w, previa2) * 1.2f
+            val l = w.lowercase()
+            val antes = mejores[l]
+            if (antes == null || total < antes) mejores[l] = total
+        }
+
+        // Solo se revisan las palabras que empiezan cerca de donde empezó el dedo
+        val iniciales = pos.filter { dist(it.value, inicio) <= 1.3f }.keys
+            .map { if (it == 'ñ') 'n' else it }.toSet()
+        for (ch in iniciales) {
+            val grupo = ix.porInicial[ch] ?: continue
+            for (i in grupo) {
+                val n = ix.normal[i]
+                if (n.length < 2) continue
+                evaluar(ix.palabras[i], Math.log(i + 30.0).toFloat() * 0.22f)
+            }
+        }
+        // Las palabras que tú usas
+        for ((w, c) in aprendidas) {
+            if (c < 2) continue
+            evaluar(w, 1.0f - minOf(c, 30) * 0.03f - recencia(w) * 0.004f)
+        }
+        return mejores.entries.sortedBy { it.value }.take(max)
+            .map { if (esNombre(it.key)) it.key.replaceFirstChar { c -> c.uppercase() } else it.key }
+    }
 
     // ---------- Aprendizaje ----------
 
@@ -648,7 +831,7 @@ class Diccionario(context: Context) {
         private val POSICIONES: Map<Char, FloatArray> = HashMap<Char, FloatArray>().apply {
             "qwertyuiop".forEachIndexed { i, c -> put(c, floatArrayOf(i + 0.5f, 0f)) }
             "asdfghjklñ".forEachIndexed { i, c -> put(c, floatArrayOf(i + 0.5f, 1f)) }
-            "zxcvbnm".forEachIndexed { i, c -> put(c, floatArrayOf(i + 1.9f, 2f)) }
+            "zxcvbnm".forEachIndexed { i, c -> put(c, floatArrayOf(i + 2f, 2f)) }
         }
 
         private fun similares(a: Char, b: Char): Boolean = when (a) {
@@ -682,6 +865,13 @@ class Diccionario(context: Context) {
                 else -> 1.2f        // teclas lejanas: es raro equivocarse así
             }
         }
+
+        /** Letras con tilde → su tecla (la ñ tiene su propia tecla) */
+        private val SIN_ACENTO: Map<Char, Char> = mapOf(
+            'á' to 'a', 'à' to 'a', 'â' to 'a', 'ä' to 'a', 'é' to 'e', 'è' to 'e', 'ê' to 'e', 'ë' to 'e',
+            'í' to 'i', 'ì' to 'i', 'î' to 'i', 'ï' to 'i', 'ó' to 'o', 'ò' to 'o', 'ô' to 'o', 'ö' to 'o',
+            'ú' to 'u', 'ù' to 'u', 'û' to 'u', 'ü' to 'u', 'ç' to 'c',
+        )
 
         /** Para cada letra: las teclas vecinas y las que se confunden al escribir */
         private val VECINOS: Map<Char, List<Char>> = HashMap<Char, List<Char>>().apply {

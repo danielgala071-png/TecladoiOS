@@ -137,7 +137,7 @@ class KeyPreviewOverlay(private val anchor: View) {
         private val sombra = Paint(Paint.ANTI_ALIAS_FLAG)
         private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = maxOf(1f, 0.6f * d)
+            strokeWidth = maxOf(1f, 1f * d)
         }
         /** Colores calculados una sola vez por tema (antes se armaban degradados en cada cuadro) */
         private var temaColores: Tema? = null
@@ -149,19 +149,11 @@ class KeyPreviewOverlay(private val anchor: View) {
         private fun prepararColores(tm: Tema) {
             if (temaColores === tm) return
             temaColores = tm
-            if (tm.oscuro) {
-                // Como en iPhone: la burbuja es del mismo gris de la tecla, apenas más clara
-                val fondo = (tm.fondo and 0x00FFFFFF) or (0xFF shl 24)
-                colorCuerpo = aclarar(sobre(tm.tecla, if (Color.alpha(tm.fondo) > 0) fondo else 0xFF1C1C1E.toInt()), 0.10f)
-                colorBorde = 0x1FFFFFFF
-                colorSombra = 0x59000000
-                colorLetra = 0xFFFFFFFF.toInt()
-            } else {
-                colorCuerpo = 0xFFFFFFFF.toInt()
-                colorBorde = 0x14000000
-                colorSombra = 0x33000000
-                colorLetra = 0xFF000000.toInt()
-            }
+            // Vidrio del color de la app (no una burbuja brillante): verde en WhatsApp, rosado en Instagram…
+            colorCuerpo = tm.burbuja
+            colorBorde = tm.bordeBurbuja
+            colorSombra = if (tm.oscuro) 0x59000000 else 0x33000000
+            colorLetra = tm.texto
         }
         private val texto = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = Paint.Align.CENTER
@@ -173,7 +165,7 @@ class KeyPreviewOverlay(private val anchor: View) {
             val t = ahora()
             activas.remove(id) // si el mismo dedo cambió de tecla, la anterior desaparece en su sitio
             val b = Burbuja(RectF(rect), etiqueta)
-            if (deslizando) b.animar(0.86f, 1f, 110, true, t) else b.animar(0f, 1f, 170, true, t)
+            if (deslizando) b.animar(0.86f, 1f, 90, true, t) else b.animar(0f, 1f, 120, true, t)
             activas[id] = b
             postInvalidateOnAnimation()
         }
@@ -181,7 +173,7 @@ class KeyPreviewOverlay(private val anchor: View) {
         fun soltar(id: Int) {
             val b = activas.remove(id) ?: return
             val t = ahora()
-            b.animar(b.valor(t), 0f, 110, false, t)
+            b.animar(b.valor(t), 0f, 90, false, t)
             saliendo.add(b)
             postInvalidateOnAnimation()
         }

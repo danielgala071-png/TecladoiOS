@@ -95,6 +95,17 @@ object Iconos {
         c.drawLine(cx - s * 0.1f, cy + s * 0.28f, cx + s * 0.4f, cy - s * 0.26f, p)
     }
 
+    /** Flecha ‹ o › para volver al teclado completo (teclado con una mano) */
+    fun chevron(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint, haciaIzquierda: Boolean) {
+        p.style = Paint.Style.STROKE
+        val dx = if (haciaIzquierda) -s * 0.18f else s * 0.18f
+        path.reset()
+        path.moveTo(cx - dx, cy - s * 0.38f)
+        path.lineTo(cx + dx, cy)
+        path.lineTo(cx - dx, cy + s * 0.38f)
+        c.drawPath(path, p)
+    }
+
     fun microfono(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
         p.style = Paint.Style.STROKE
         val w = s * 0.32f
