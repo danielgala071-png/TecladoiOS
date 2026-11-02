@@ -49,12 +49,13 @@ class VariantesView(context: Context) : View(context) {
         if (opciones.isEmpty()) return
         rect.set(pad, pad, width - pad, height - pad)
         val radio = altoCelda * 0.32f
-        val arriba = if (oscuro) 0xEE6C6C72.toInt() else 0xF5FBFBFD.toInt()
-        val abajo = if (oscuro) 0xEE55555B.toInt() else 0xF0E8EAEF.toInt()
+        // Negro AMOLED con el filo del color de la app
+        val arriba = if (oscuro) 0xF7202022.toInt() else 0xF5FBFBFD.toInt()
+        val abajo = if (oscuro) 0xF70E0E10.toInt() else 0xF0E8EAEF.toInt()
         cuerpo.shader = LinearGradient(0f, rect.top, 0f, rect.bottom, arriba, abajo, Shader.TileMode.CLAMP)
         cuerpo.setShadowLayer(12f * d, 0f, 3f * d, 0x38000000)
         c.drawRoundRect(rect, radio, radio, cuerpo)
-        borde.color = if (oscuro) 0x40FFFFFF else 0xB3FFFFFF.toInt()
+        borde.color = if (oscuro) (acento and 0x00FFFFFF) or 0xCC000000.toInt() else 0xB3FFFFFF.toInt()
         c.drawRoundRect(rect, radio, radio, borde)
 
         texto.textSize = altoCelda * 0.5f

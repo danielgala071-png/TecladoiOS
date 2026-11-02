@@ -118,8 +118,8 @@ class SettingsActivity : Activity() {
             mostrarError(previo)
             return
         }
-        oscuro = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                Configuration.UI_MODE_NIGHT_YES
+        // Todo negro AMOLED, igual que el teclado
+        oscuro = true
         actionBar?.hide()
 
         contenedor = LinearLayout(this).apply {
@@ -322,6 +322,96 @@ class SettingsActivity : Activity() {
         return f
     }
 
+    /** Deslizador del tamaño del teclado, con una muestra de cómo se ven las letras */
+    private fun filaTamano(): View {
+        val caja = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(10), dp(16), dp(12))
+        }
+        val arriba = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val valor = TextView(this).apply {
+            textSize = 17f
+            setTextColor(gris)
+            Fuentes.aplicar(this, 400)
+        }
+        arriba.addView(textoFila("Tamaño"), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        arriba.addView(valor)
+        caja.addView(arriba)
+
+        // Muestra: una tecla negra con el filo de color y la letra al tamaño elegido
+        val muestra = TextView(this).apply {
+            text = "A  s  d  ñ"
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            Fuentes.aplicar(this, 400)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.BLACK)
+                setStroke(maxOf(1, dp(1)), azul)
+            }
+        }
+        caja.addView(muestra, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(10)
+        })
+
+        val paso = 5
+        val barraTam = android.widget.SeekBar(this).apply {
+            max = (Ajustes.TAMANO_MAX - Ajustes.TAMANO_MIN) / paso
+            progress = (Ajustes.tamano(this@SettingsActivity) - Ajustes.TAMANO_MIN) / paso
+            progressTintList = ColorStateList.valueOf(azul)
+            thumbTintList = ColorStateList.valueOf(azul)
+        }
+        fun pintar(porcentaje: Int) {
+            valor.text = "$porcentaje %"
+            val f = porcentaje / 100f
+            muestra.textSize = 23f * f
+            val alto = (54 * f).toInt()
+            muestra.minHeight = dp(alto)
+            muestra.setPadding(0, dp(4), 0, dp(4))
+        }
+        pintar(Ajustes.tamano(this))
+        barraTam.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: android.widget.SeekBar?, progreso: Int, delUsuario: Boolean) {
+                val porcentaje = Ajustes.TAMANO_MIN + progreso * paso
+                pintar(porcentaje)
+                if (delUsuario) prefs.edit().putInt("tamano", porcentaje).apply()
+            }
+            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
+        })
+        caja.addView(barraTam, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(10)
+        })
+
+        val pie = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        pie.addView(TextView(this).apply {
+            text = "Más chico"
+            textSize = 13f
+            setTextColor(gris)
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        pie.addView(TextView(this).apply {
+            text = "Normal"
+            textSize = 13f
+            setTextColor(azul)
+            setPadding(dp(12), 0, dp(12), 0)
+            setOnClickListener {
+                barraTam.progress = (100 - Ajustes.TAMANO_MIN) / paso
+                prefs.edit().putInt("tamano", 100).apply()
+            }
+        })
+        pie.addView(TextView(this).apply {
+            text = "Más grande"
+            textSize = 13f
+            setTextColor(gris)
+            gravity = Gravity.END
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        caja.addView(pie)
+        return caja
+    }
+
     private fun filaCheck(titulo: String, marcado: Boolean, accion: () -> Unit): View {
         val f = fila()
         f.addView(textoFila(titulo), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
@@ -380,16 +470,9 @@ class SettingsActivity : Activity() {
             filaInterruptor("Háptica", "vibrar", true),
         ))
 
-        val idioma = IDIOMAS_DICTADO.firstOrNull { it.first == Ajustes.idiomaDictado(this) }?.second ?: "Español (Perú)"
-        val filasDictado = ArrayList<View>()
-        filasDictado.add(filaInterruptor("Activar Dictado", "dictado", true) { activo ->
-            if (activo) pedirMicrofono()
-        })
-        filasDictado.add(filaAccion("Idiomas de dictado", derecha = "$idioma  ›") { irA("idiomas_dictado") })
-        filasDictado.add(filaInterruptor("Puntuación automática", "dictado_puntuacion", true))
-        if (!microfonoPermitido()) filasDictado.add(filaAccion("Permitir micrófono", azul, derecha = null) { pedirMicrofono() })
-        grupo("Dictado", filasDictado,
-            pie = "Toca el micrófono al lado de la barra espaciadora para dictar en lugar de escribir.")
+        grupo("Tamaño del teclado", listOf(filaTamano()),
+            pie = "Hace las teclas más altas o más bajas. Las letras se agrandan o achican junto con el " +
+                    "teclado. El cambio se ve la próxima vez que abras el teclado.")
 
         grupo(null, listOf(
             filaAccion("Restablecer diccionario del teclado", rojo, derecha = null) {
@@ -417,7 +500,7 @@ class SettingsActivity : Activity() {
             packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
         } catch (_: Exception) { "?" }
         contenedor.addView(TextView(this).apply {
-            text = "TecladoiOS versión $version · Liquid Glass v6"
+            text = "TecladoiOS versión $version · AMOLED v2"
             Fuentes.aplicar(this, 400)
             textSize = 13f
             setTextColor(gris)

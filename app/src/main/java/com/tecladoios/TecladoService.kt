@@ -8,6 +8,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
+import android.inputmethodservice.InputMethodService.Insets
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
@@ -28,6 +29,7 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethod
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.Toast
@@ -41,6 +43,11 @@ class TecladoService : InputMethodService(),
     }
 
     private var barra: SuggestionBar? = null
+    /** true cuando ya escribiste algo: la barra no aparece solo por abrir el teclado o mover el cursor */
+    private var escribiendo = false
+    private var ultimaEscritura = 0L
+    /** El teclado negro (sin la barra flotante de arriba) */
+    private var panel: View? = null
     private var teclado: KeyboardView? = null
     private var emojis: EmojiPanel? = null
     private var tema: Tema? = null
@@ -149,6 +156,17 @@ class TecladoService : InputMethodService(),
 
     override fun onCreateInputView(): View = construir()
 
+    /**
+     * Al entrar a una conversación, muchas apps piden abrir el teclado solas. Eso llega sin la
+     * marca de "lo pidió el usuario" (SHOW_EXPLICIT): en ese caso no se abre. Se abre cuando
+     * tocas donde escribir.
+     */
+    override fun onShowInputRequested(flags: Int, configChange: Boolean): Boolean {
+        if (!configChange && (flags and InputMethod.SHOW_EXPLICIT) == 0 &&
+            (flags and InputMethod.SHOW_FORCED) == 0) return false
+        return super.onShowInputRequested(flags, configChange)
+    }
+
     private fun dp(v: Float) = (v * Medidas.escala(this)).toInt()
 
     private fun puedeDesenfocar(): Boolean {
@@ -159,14 +177,15 @@ class TecladoService : InputMethodService(),
         return w.attributes.height == WindowManager.LayoutParams.WRAP_CONTENT
     }
 
-    private fun firma() = "${Medidas.horizontal(this)}"
+    /** Si cambia la orientación o el tamaño elegido en Ajustes, el teclado se vuelve a armar */
+    private fun firma() = "${Medidas.horizontal(this)}-${Ajustes.tamano(this)}"
 
     private fun construir(): View {
-        val t = Tema.desde(this, puedeDesenfocar(), colorDeApp(appActual))
+        val t = Tema.desde(this, false, colorDeApp(appActual))
         tema = t
         firmaTamano = firma()
 
-        val b = SuggestionBar(this, t, this).apply { visibility = View.GONE }
+        val b = SuggestionBar(this, t, this).apply { visibility = View.INVISIBLE }
         val k = KeyboardView(this, t, this)
         val e = EmojiPanel(this, t, this).apply { visibility = View.GONE }
         barra = b; teclado = k; emojis = e
@@ -175,42 +194,67 @@ class TecladoService : InputMethodService(),
         zona.addView(k, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
         zona.addView(e, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, k.alto()))
 
-        val radioArriba = 30f * Medidas.escala(this)
-        val raiz = Panel(this).apply {
+        // El teclado: negro AMOLED, recto (sin esquinas curvas) con el filo del color de la app
+        val p = Panel(this).apply {
             orientation = LinearLayout.VERTICAL
-            // Liquid Glass con el color de la app: más intenso arriba y se aclara hacia abajo
-            background = GradientDrawable().apply {
-                orientation = GradientDrawable.Orientation.TOP_BOTTOM
-                colors = intArrayOf(t.fondoArriba, t.fondo, t.fondo)
-                cornerRadii = floatArrayOf(radioArriba, radioArriba, radioArriba, radioArriba, 0f, 0f, 0f, 0f)
-            }
-            // Borde del teclado con el color de la app
-            radio = radioArriba
+            setBackgroundColor(t.fondo)
+            radio = 0f
             grosor = maxOf(1f, resources.displayMetrics.density * 1.1f)
             colorBorde = t.bordePanel
-            addView(b, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44f)))
             addView(zona, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
-        raiz.setOnApplyWindowInsetsListener { v, insets ->
+        p.setOnApplyWindowInsetsListener { v, insets ->
             val abajo = insets.getInsets(WindowInsets.Type.navigationBars()).bottom
             v.setPadding(0, 0, 0, abajo)
             insets
         }
-        KeyboardCorners.apply(raiz, { _ -> aplicarVidrio() })
+        p.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) { aplicarVentanaTransparente() }
+            override fun onViewDetachedFromWindow(v: View) {}
+        })
+        panel = p
+        // Con la barra a la vista, el filo de arriba lo dibuja la barra (con su curva abajo)
+        b.alCambiarVisible = { visible -> p.lineaArriba = !visible }
+
+        // La barra va pegada encima del teclado. Su espacio queda reservado (transparente cuando
+        // está escondida), así la app de atrás no salta cada vez que aparece o desaparece.
+        val raiz = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.TRANSPARENT)
+            addView(b, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44f)))
+            addView(p, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
         return raiz
     }
 
-    private fun aplicarVidrio() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+    /** La ventana del teclado es transparente: así se ve la app detrás de la barra flotante */
+    private fun aplicarVentanaTransparente() {
         val w = window?.window ?: return
-        val blur = tema?.desenfoque ?: 0
-        if (blur > 0) {
-            // Desenfoque rectangular: abajo lo recortan las propias esquinas de la pantalla
-            w.setBackgroundDrawable(GradientDrawable().apply { setColor(Color.TRANSPARENT) })
-            w.setBackgroundBlurRadius(blur)
-        } else {
-            w.setBackgroundBlurRadius(0)
-        }
+        w.setBackgroundDrawable(GradientDrawable().apply { setColor(Color.TRANSPARENT) })
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) w.setBackgroundBlurRadius(0)
+    }
+
+    /**
+     * La app de atrás solo se acomoda al teclado negro (no a la barra flotante), así no salta
+     * cuando la barra aparece o desaparece. Los toques en la zona de la barra escondida pasan a la app.
+     */
+    override fun onComputeInsets(outInsets: Insets) {
+        super.onComputeInsets(outInsets)
+        val p = panel ?: return
+        if (isFullscreenMode || !p.isAttachedToWindow || p.height == 0) return
+        val pos = IntArray(2)
+        p.getLocationInWindow(pos)
+        val arribaTeclado = pos[1]
+        val abajo = pos[1] + p.height
+        outInsets.contentTopInsets = arribaTeclado
+        outInsets.visibleTopInsets = arribaTeclado
+        val b = barra
+        val arribaTocable = if (b != null && b.visibility == View.VISIBLE && b.isAttachedToWindow) {
+            b.getLocationInWindow(pos)
+            pos[1]
+        } else arribaTeclado
+        outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
+        outInsets.touchableRegion.set(0, arribaTocable, p.width, abajo)
     }
 
     private fun configurarVentana() {
@@ -225,10 +269,11 @@ class TecladoService : InputMethodService(),
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         appActual = info.packageName
-        if (Tema.desde(this, puedeDesenfocar(), colorDeApp(appActual)) != tema || firma() != firmaTamano) {
+        if (Tema.desde(this, false, colorDeApp(appActual)) != tema || firma() != firmaTamano) {
             setInputView(construir())
         }
         configurarVentana()
+        aplicarVentanaTransparente()
 
         vibrar = Ajustes.vibrar(this)
         sonido = Ajustes.sonido(this)
@@ -288,7 +333,6 @@ class TecladoService : InputMethodService(),
             bloqMayusPermitido = Ajustes.bloqMayus(this@TecladoService)
             soloNumeros = esFecha
             configurar(
-                mic = Ajustes.dictado(this@TecladoService),
                 mano = Ajustes.unaMano(this@TecladoService),
                 deslizar = Ajustes.deslizar(this@TecladoService) && escribeTexto,
             )
@@ -316,13 +360,15 @@ class TecladoService : InputMethodService(),
         }
         ultimaCorreccion = null
         espacioAutomatico = false
+        escribiendo = false
+        barra?.visible(false, animar = false)
         volverABC()
         actualizar()
     }
 
     override fun onWindowHidden() {
         super.onWindowHidden()
-        barra?.visible(false)
+        barra?.visible(false, animar = false)
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
@@ -358,6 +404,8 @@ class TecladoService : InputMethodService(),
         }
         if (pendientes.isEmpty() && newSelStart == selIni && newSelEnd == selFin) return
         // Moviste el cursor o la app cambió el texto: se vuelve a leer cuando haga falta
+        // (la barra se esconde hasta que vuelvas a escribir)
+        if (SystemClock.uptimeMillis() - ultimaEscritura > 500) escribiendo = false
         pendientes.clear()
         selIni = newSelStart
         selFin = newSelEnd
@@ -607,14 +655,14 @@ class TecladoService : InputMethodService(),
         val enEmojis = emojis?.visibility == View.VISIBLE
         val modo = teclado?.modo
         val enPad = modo == Modo.PIN || modo == Modo.TELEFONO_SIMBOLOS
-        if (!sugerenciasActivas || enEmojis || enPad) {
-            b.mostrar(emptyList())
+        // La barra aparece cuando empiezas a escribir (no al abrir el teclado) y se esconde
+        // al enviar, al mover el cursor o al cerrar el teclado. Mientras escribes funciona
+        // completa: sugerencias, predicción de la siguiente palabra y deshacer la autocorrección.
+        if (!sugerenciasActivas || enEmojis || enPad || !escribiendo) {
             b.visible(false)
             return
         }
-        // Como en la imagen: la barra siempre está arriba de las teclas
         b.visible(true)
-
         // Recién deslizaste una palabra: la barra muestra las otras opciones
         val ud = ultimoDeslizado
         if (ud != null) {
@@ -853,6 +901,8 @@ class TecladoService : InputMethodService(),
     }
 
     override fun texto(s: String, x: Float, y: Float) {
+        escribiendo = true
+        ultimaEscritura = SystemClock.uptimeMillis()
         if (currentInputConnection == null) return
         ultimaAprendida = null
         var c = s
@@ -918,6 +968,8 @@ class TecladoService : InputMethodService(),
     }
 
     override fun borrar() {
+        escribiendo = true
+        ultimaEscritura = SystemClock.uptimeMillis()
         val ic = currentInputConnection ?: return
         espacioAutomatico = false
         // Borrar con Deslizar para escribir por palabra: se va la palabra entera
@@ -1019,6 +1071,8 @@ class TecladoService : InputMethodService(),
         val sinAccion = (info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0
         if (!sinAccion && accion != EditorInfo.IME_ACTION_NONE && accion != EditorInfo.IME_ACTION_UNSPECIFIED) {
             toques.clear()
+            // Enviaste o buscaste: dejaste de escribir, la barra se esconde
+            escribiendo = false
             ic.performEditorAction(accion)
             // Enviar/buscar suele limpiar el campo: se vuelve a leer cuando haga falta
             olvidarEspejo()
@@ -1124,6 +1178,8 @@ class TecladoService : InputMethodService(),
     // ---------- Deslizar para escribir ----------
 
     override fun deslizar(puntos: List<FloatArray>, proporcion: Float, mayus: Boolean) {
+        escribiendo = true
+        ultimaEscritura = SystemClock.uptimeMillis()
         if (currentInputConnection == null) return
         toques.clear()
         ultimaCorreccion = null

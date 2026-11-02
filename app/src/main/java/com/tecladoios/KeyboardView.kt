@@ -28,6 +28,8 @@ class Tecla(val tipo: Tipo, val texto: String = "", val ancho: Float = 1f, val s
     val forma = Path()
     /** Filo de color de la app (se calcula una vez) */
     var shaderBorde: Shader? = null
+    /** Reflejo de vidrio translúcido (se calcula una vez) */
+    var shaderBrillo: Shader? = null
 }
 
 /** Las teclas dibujadas directamente en pantalla, con el diseño del teclado del iPhone. */
@@ -57,7 +59,11 @@ class KeyboardView(
     private fun dp(v: Float) = v * d
 
     private val horizontal = Medidas.horizontal(context)
-    private val altoFila = if (horizontal) dp(40f) else dp(54f)
+    /** Tamaño elegido en Ajustes (1 = normal). Cambia el alto de las teclas y el tamaño de las letras. */
+    private val factor = Ajustes.tamano(context) / 100f
+    /** Medida de letras e íconos: crece y se achica junto con el teclado */
+    private fun tx(v: Float) = v * d * factor
+    private val altoFila = (if (horizontal) dp(40f) else dp(54f)) * factor
     private val margenArriba = dp(8f)
     private val margenAbajo = dp(6f)
     private val sepH = dp(3f)
@@ -80,7 +86,6 @@ class KeyboardView(
     var bloqMayusPermitido = true
     /** "pin", "telefono", "decimal" o "accion": qué va abajo a la izquierda del teclado numérico */
     var pinTipo = "pin"
-    private var conMic = true
     private var unaMano = "no"
     private var deslizarActivo = true
 
@@ -96,8 +101,7 @@ class KeyboardView(
 
     private val esPad get() = modo == Modo.PIN || modo == Modo.TELEFONO_SIMBOLOS
 
-    fun configurar(mic: Boolean, mano: String, deslizar: Boolean) {
-        conMic = mic
+    fun configurar(mano: String, deslizar: Boolean) {
         unaMano = mano
         deslizarActivo = deslizar
         modo = modo
@@ -197,16 +201,13 @@ class KeyboardView(
     private fun letras(s: String) = s.map { Tecla(Tipo.LETRA, it.toString()) }
     private fun simbolos(s: String, ancho: Float = 1f) = s.split(" ").map { Tecla(Tipo.LETRA, it, ancho) }
 
-    /** Fila de abajo como en la imagen: 123 · emoji · espacio · micrófono · intro */
-    private fun filaInferior(tipo: Tipo, texto: String): List<Tecla> {
-        val fila = ArrayList<Tecla>()
-        fila.add(Tecla(tipo, texto, 1.3f))
-        fila.add(Tecla(Tipo.EMOJI, ancho = 1.2f))
-        fila.add(Tecla(Tipo.ESPACIO, "espacio", if (conMic) 4.0f else 5.2f))
-        if (conMic) fila.add(Tecla(Tipo.MIC, ancho = 1.2f))
-        fila.add(Tecla(Tipo.ENTER, ancho = 2.3f))
-        return fila
-    }
+    /** Fila de abajo: 123 · emoji · espacio · intro (sin micrófono) */
+    private fun filaInferior(tipo: Tipo, texto: String): List<Tecla> = listOf(
+        Tecla(tipo, texto, 1.3f),
+        Tecla(Tipo.EMOJI, ancho = 1.2f),
+        Tecla(Tipo.ESPACIO, "espacio", 5.2f),
+        Tecla(Tipo.ENTER, ancho = 2.3f),
+    )
 
     private fun digito(n: String, sub: String) = Tecla(Tipo.LETRA, n, 1f, sub)
 
@@ -254,8 +255,12 @@ class KeyboardView(
     private fun colocar(t: Tecla, x: Float, w: Float, top: Float, sep: Float) {
         t.rect.set(x + sep, top + sepV, x + w - sep, top + altoFila - sepV)
         Formas.suave(t.forma, t.rect.left, t.rect.top, t.rect.right, t.rect.bottom, radio)
+        // Filo del color de la app: intenso arriba y se va desvaneciendo hacia abajo (vidrio)
         t.shaderBorde = LinearGradient(0f, t.rect.top, 0f, t.rect.bottom,
-            tema.borde, (tema.borde and 0x00FFFFFF) or ((Color.alpha(tema.borde) / 3) shl 24), Shader.TileMode.CLAMP)
+            tema.borde, (tema.borde and 0x00FFFFFF) or ((Color.alpha(tema.borde) * 2 / 5) shl 24), Shader.TileMode.CLAMP)
+        // Reflejo arriba de la tecla: le da el efecto translúcido de vidrio
+        t.shaderBrillo = LinearGradient(0f, t.rect.top, 0f, t.rect.top + t.rect.height() * 0.55f,
+            tema.brillo, tema.brillo and 0x00FFFFFF, Shader.TileMode.CLAMP)
     }
 
     private fun acomodar() {
@@ -440,6 +445,12 @@ class KeyboardView(
             }
             pintura.color = color
             c.drawPath(forma, pintura)
+            // Reflejo de vidrio (no en mayúsculas activadas ni en el enter de color)
+            if (!modoCursor && Color.alpha(color) < 0xC0) {
+                pintura.shader = t.shaderBrillo
+                c.drawPath(forma, pintura)
+                pintura.shader = null
+            }
             // Filo de vidrio con el color de la app
             if (!modoCursor) {
                 pinturaBorde.shader = t.shaderBorde
@@ -463,34 +474,34 @@ class KeyboardView(
         pinturaIcono.color = contenido
 
         when (t.tipo) {
-            Tipo.SHIFT -> Iconos.shift(c, cx, cy, dp(20f), pinturaIcono, shift > 0, shift == 2)
-            Tipo.BORRAR -> Iconos.borrar(c, cx, cy, dp(if (pad) 26f else 22f), pinturaIcono)
+            Tipo.SHIFT -> Iconos.shift(c, cx, cy, tx(20f), pinturaIcono, shift > 0, shift == 2)
+            Tipo.BORRAR -> Iconos.borrar(c, cx, cy, tx(if (pad) 26f else 22f), pinturaIcono)
             Tipo.EMOJI -> {
-                val fondoOpaco = color or (0xFF shl 24)
-                Iconos.emojiLleno(c, cx, cy, dp(23f), pinturaIcono, fondoOpaco)
+                // Los ojos y la boca del emoji se pintan del color que se ve en la tecla
+                val fondoOpaco = Tema.sobreNegro(color)
+                Iconos.emojiLleno(c, cx, cy, tx(23f), pinturaIcono, fondoOpaco)
             }
-            Tipo.MIC -> {
-                pinturaIcono.color = if (dictando) tema.azul else contenido
-                Iconos.microfonoLleno(c, cx, cy + dp(1f), dp(22f), pinturaIcono)
-            }
-            Tipo.ENTER -> if (pad) Iconos.visto(c, cx, cy, dp(22f), pinturaIcono)
-                else texto(c, etiquetaEnter, cx, cy, dp(16f), contenido)
-            Tipo.ESPACIO -> texto(c, t.texto, cx, cy, dp(16f), contenido)
+            Tipo.MIC -> {}
+            Tipo.ENTER -> if (pad) Iconos.visto(c, cx, cy, tx(22f), pinturaIcono)
+                else texto(c, etiquetaEnter, cx, cy, tx(16f), contenido)
+            Tipo.ESPACIO -> texto(c, t.texto, cx, cy, tx(16f), contenido)
             Tipo.LETRA -> {
                 if (pad) {
                     val conSub = t.sub.isNotEmpty()
-                    texto(c, t.texto, cx, if (conSub) cy - dp(5f) else cy, dp(26f), contenido)
+                    texto(c, t.texto, cx, if (conSub) cy - tx(5f) else cy, tx(26f), contenido)
                     if (conSub) {
-                        pinturaSub.textSize = dp(9.5f)
+                        pinturaSub.textSize = tx(9.5f)
                         pinturaSub.color = contenido
-                        c.drawText(t.sub, cx, cy + dp(15f), pinturaSub)
+                        c.drawText(t.sub, cx, cy + tx(15f), pinturaSub)
                     }
                 } else {
                     val minuscula = modo == Modo.LETRAS && shift == 0
-                    texto(c, etiqueta(t), cx, if (minuscula) cy - dp(1.5f) else cy, dp(23f), contenido)
+                    // La letra crece con el teclado, pero sin salirse del ancho de la tecla
+                    val tam = minOf(tx(23f), t.rect.width() * 0.78f)
+                    texto(c, etiqueta(t), cx, if (minuscula) cy - tx(1.5f) else cy, tam, contenido)
                 }
             }
-            else -> texto(c, t.texto, cx, cy, dp(16f), contenido)
+            else -> texto(c, t.texto, cx, cy, minOf(tx(16f), t.rect.width() * 0.42f), contenido)
         }
     }
 

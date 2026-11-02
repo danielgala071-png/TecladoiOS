@@ -28,6 +28,11 @@ object Ajustes {
     // Teclado con una mano: "no", "izq" o "der"
     fun unaMano(c: Context) = prefs(c).getString("una_mano", "no") ?: "no"
 
+    /** Tamaño del teclado en porcentaje (80 = más chico, 130 = más grande). Las letras se ajustan solas. */
+    const val TAMANO_MIN = 80
+    const val TAMANO_MAX = 130
+    fun tamano(c: Context) = prefs(c).getInt("tamano", 100).coerceIn(TAMANO_MIN, TAMANO_MAX)
+
     // Respuesta del teclado
     fun vibrar(c: Context) = si(c, "vibrar", true)
     fun sonido(c: Context) = si(c, "sonido", false)

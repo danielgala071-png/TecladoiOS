@@ -11,10 +11,10 @@ import android.view.ViewOutlineProvider
  */
 object KeyboardCorners {
 
-    fun apply(root: View, alLeerRadio: (Float) -> Unit = {}, fallbackDp: Float = 42f) {
+    fun apply(root: View, alLeerRadio: (Float) -> Unit = {}, fallbackDp: Float = 42f, radioArribaDp: Float = 30f) {
         val density = root.resources.displayMetrics.density
         var radio = fallbackDp * density
-        val radioArriba = 30f * Medidas.escala(root.context)
+        val radioArriba = radioArribaDp * Medidas.escala(root.context)
 
         root.outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: Outline) {

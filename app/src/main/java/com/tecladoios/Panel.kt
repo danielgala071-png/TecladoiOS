@@ -10,7 +10,7 @@ import android.widget.LinearLayout
 
 /**
  * Contenedor del teclado: dibuja el borde con el color de la app que estás usando.
- * Arriba sigue la curva de las esquinas; abajo el teclado queda recto y sin borde.
+ * Con [radio] = 0 el teclado es recto arriba. Abajo queda recto y sin borde.
  */
 class Panel(context: Context) : LinearLayout(context) {
 
@@ -20,6 +20,9 @@ class Panel(context: Context) : LinearLayout(context) {
         set(value) { field = value; armar(width, height) }
     var grosor = 1f
         set(value) { field = value; armar(width, height) }
+    /** El filo de arriba se esconde mientras la barra de sugerencias está a la vista */
+    var lineaArriba = true
+        set(value) { if (field != value) { field = value; armar(width, height) } }
 
     private val pintura = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val borde = Path()
@@ -38,15 +41,28 @@ class Panel(context: Context) : LinearLayout(context) {
         borde.reset()
         if (w <= 0 || h <= 0) return
         val g = grosor / 2f
-        val r = radio.coerceAtMost(w / 2f)
-        borde.moveTo(g, h.toFloat())
-        borde.lineTo(g, g + r)
-        esquina.set(g, g, g + r * 2f, g + r * 2f)
-        borde.arcTo(esquina, 180f, 90f, false)
-        borde.lineTo(w - g - r, g)
-        esquina.set(w - g - r * 2f, g, w - g, g + r * 2f)
-        borde.arcTo(esquina, 270f, 90f, false)
-        borde.lineTo(w - g, h.toFloat())
+        if (!lineaArriba) {
+            // Solo los costados (siguen a los de la barra de sugerencias)
+            borde.moveTo(g, 0f)
+            borde.lineTo(g, h.toFloat())
+            borde.moveTo(w - g, 0f)
+            borde.lineTo(w - g, h.toFloat())
+        } else if (radio <= 0f) {
+            borde.moveTo(g, h.toFloat())
+            borde.lineTo(g, g)
+            borde.lineTo(w - g, g)
+            borde.lineTo(w - g, h.toFloat())
+        } else {
+            val r = radio.coerceAtMost(w / 2f)
+            borde.moveTo(g, h.toFloat())
+            borde.lineTo(g, g + r)
+            esquina.set(g, g, g + r * 2f, g + r * 2f)
+            borde.arcTo(esquina, 180f, 90f, false)
+            borde.lineTo(w - g - r, g)
+            esquina.set(w - g - r * 2f, g, w - g, g + r * 2f)
+            borde.arcTo(esquina, 270f, 90f, false)
+            borde.lineTo(w - g, h.toFloat())
+        }
         invalidate()
     }
 
