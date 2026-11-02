@@ -2,6 +2,7 @@ package com.tecladoios
 
 import android.content.Context
 import java.text.Normalizer
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Sugerencias, predicción de la siguiente palabra y autocorrección en español peruano.
@@ -40,7 +41,19 @@ class Diccionario(context: Context) {
     /** Correcciones que deshiciste: "chamba>chamba" no se vuelve a corregir */
     private val rechazos = HashSet<String>()
     /** Modo incógnito: no se aprende nada (lo pide la app, como Chrome incógnito) */
-    var pausado = false
+    @Volatile var pausado = false
+
+    /**
+     * Turnos: el teclado calcula las sugerencias en un hilo aparte. Cuando llega una letra
+     * nueva, el cálculo anterior ya no sirve y se corta al instante (así nunca se acumula
+     * trabajo ni se traba el teclado al escribir rápido con dos dedos).
+     */
+    private val turnoGlobal = AtomicInteger()
+    private var miTurno = 0
+    fun interrumpir() { turnoGlobal.incrementAndGet() }
+    fun turno() = turnoGlobal.get()
+    fun vigente(t: Int) = turnoGlobal.get() == t
+    private fun cortado() = turnoGlobal.get() != miTurno
     private var revision = -1
     private var cambios = false
     private var sinGuardar = 0
@@ -243,8 +256,10 @@ class Diccionario(context: Context) {
 
     // ---------- Sugerencias ----------
 
-    fun sugerir(prefijo: String, max: Int, previa: String = "", previa2: String = ""): List<String> {
-        if (prefijo.isEmpty()) return emptyList()
+    @Synchronized
+    fun sugerir(prefijo: String, max: Int, previa: String = "", previa2: String = "", t: Int = turno()): List<String> {
+        miTurno = t
+        if (prefijo.isEmpty() || cortado()) return emptyList()
         val ix = indice
         val np = normal(prefijo)
         if (np.isEmpty()) return emptyList()
@@ -257,7 +272,7 @@ class Diccionario(context: Context) {
             while (k < ix.orden.size && revisadas < 6000) {
                 val i = ix.orden[k++]
                 if (!ix.normal[i].startsWith(np)) break
-                revisadas++
+                if ((++revisadas and 511) == 0 && cortado()) return emptyList()
                 val p = ix.palabras[i]
                 if (p.equals(lp, ignoreCase = true) || bloqueada(p)) continue
                 val s = ix.puntaje(i)
@@ -294,6 +309,7 @@ class Diccionario(context: Context) {
             }
             for (ch in iniciales(np)) {
                 val grupo = ix.porInicial[ch] ?: continue
+                if (cortado()) return emptyList()
                 for (i in grupo) {
                     val p = ix.palabras[i]
                     if (res.containsKey(p) || p.equals(lp, ignoreCase = true) || bloqueada(p)) continue
@@ -319,6 +335,7 @@ class Diccionario(context: Context) {
     }
 
     /** Predicción de la siguiente palabra (barra después de un espacio), como en iPhone */
+    @Synchronized
     fun siguientes(previa: String, max: Int, previa2: String = ""): List<String> {
         val l = previa.lowercase()
         val res = LinkedHashMap<String, Int>()
@@ -344,8 +361,11 @@ class Diccionario(context: Context) {
     // ---------- Autocorrección ----------
 
     /** Devuelve la corrección de [p] o null si está bien escrita. */
-    fun corregir(p: String, previa: String = "", previa2: String = ""): String? {
+    @Synchronized
+    fun corregir(p: String, previa: String = "", previa2: String = "", t: Int = turno()): String? {
+        miTurno = t
         val r = corregirSinFiltro(p, previa, previa2) ?: return null
+        if (cortado()) return null
         // Una corrección que ya deshiciste no se vuelve a hacer
         if (rechazos.isNotEmpty() && (p.lowercase() + ">" + r.lowercase()) in rechazos) return null
         return r
@@ -386,6 +406,7 @@ class Diccionario(context: Context) {
             var mejorTotal = Float.MAX_VALUE
             for (ch in iniciales(np)) {
                 val grupo = ix.porInicial[ch] ?: continue
+                if (cortado()) return null
                 for (i in grupo) {
                     val n = ix.normal[i]
                     if (Math.abs(n.length - np.length) > 2) continue
@@ -421,6 +442,7 @@ class Diccionario(context: Context) {
      * "como estas" → "cómo estás", "todo esta bien" → "todo está".
      * Devuelve (anterior, actual) corregidas, o null si no hay nada que cambiar.
      */
+    @Synchronized
     fun corregirPar(previa: String, palabra: String): Pair<String, String>? {
         if (previa.isEmpty() || palabra.isEmpty()) return null
         val par = PARES_TILDE[normal(previa) + " " + normal(palabra)] ?: return null
@@ -430,6 +452,7 @@ class Diccionario(context: Context) {
     }
 
     /** Palabra de pregunta con tilde: "que" → "qué", "como" → "cómo" */
+    @Synchronized
     fun interrogativa(w: String): String? =
         INTERROGATIVAS[normal(w)]?.let { igualarMayus(it, w) }?.takeIf { it != w }
 
@@ -438,6 +461,7 @@ class Diccionario(context: Context) {
     private fun valida(p: String) = p.length >= 1 && p.all { it.isLetter() }
 
     /** peso 2 o más = lo elegiste a propósito (sugerencia entre comillas o deshacer corrección) */
+    @Synchronized
     fun aprender(p: String, peso: Int = 1) {
         if (pausado || p.length < 2 || !valida(p)) return
         val l = p.lowercase()
@@ -453,6 +477,7 @@ class Diccionario(context: Context) {
         if (++sinGuardar >= 20) guardar()
     }
 
+    @Synchronized
     fun aprenderPar(previa: String, palabra: String, previa2: String = "") {
         if (pausado || !valida(palabra) || (previa.isNotEmpty() && !valida(previa))) return
         val mapa = pares.getOrPut(previa.lowercase()) { HashMap() }
@@ -468,6 +493,7 @@ class Diccionario(context: Context) {
     }
 
     /** Deshace el último aprendizaje (borraste la palabra justo después de escribirla) */
+    @Synchronized
     fun desaprender(palabra: String, previa: String, previa2: String = "") {
         val l = palabra.lowercase()
         aprendidas[l]?.let { n -> if (n <= 1) { aprendidas.remove(l); usadas.remove(l) } else aprendidas[l] = n - 1 }
@@ -481,6 +507,7 @@ class Diccionario(context: Context) {
     }
 
     /** Deshiciste la corrección de [original] a [corregido]: no se vuelve a hacer */
+    @Synchronized
     fun rechazarCorreccion(original: String, corregido: String) {
         val o = original.trim().lowercase()
         val c = corregido.trim().trimEnd { !it.isLetterOrDigit() }.lowercase()
@@ -490,6 +517,7 @@ class Diccionario(context: Context) {
     }
 
     /** Recuerda los nombres: mayúscula a mitad de oración suma, minúscula resta */
+    @Synchronized
     fun notarMayuscula(p: String, aMitadDeOracion: Boolean) {
         if (pausado || !aMitadDeOracion || p.length < 2 || !valida(p)) return
         val l = p.lowercase()
@@ -504,6 +532,7 @@ class Diccionario(context: Context) {
     }
 
     /** Olvidar una palabra (mantener presionada la sugerencia → Borrar) */
+    @Synchronized
     fun olvidar(p: String) {
         val l = p.lowercase()
         aprendidas.remove(l)
@@ -518,6 +547,7 @@ class Diccionario(context: Context) {
         guardar()
     }
 
+    @Synchronized
     fun guardar() {
         if (!cambios) return
         val dia = hoy()
@@ -553,6 +583,7 @@ class Diccionario(context: Context) {
         sinGuardar = 0
     }
 
+    @Synchronized
     fun recargarSiCambio() {
         if (prefs.getInt("aprendidas_rev", 0) != revision) {
             aprendidas.clear()
@@ -659,7 +690,7 @@ class Diccionario(context: Context) {
         }
 
         /** Al empezar una oración (como el iPhone: Hola, Yo, Ya...) */
-        private val INICIO = listOf("hola", "yo", "ya", "gracias", "ok", "buenos", "qué", "no", "sí", "te")
+        private val INICIO = listOf("hola", "yo", "ya", "gracias", "ok", "buenos", "qué", "no", "sí", "te", "buenas", "oye", "dale", "listo", "cómo", "me", "estoy", "amor", "voy", "bueno")
 
         /** Para cuando no hay predicción propia de la palabra anterior */
         private val GENERALES = listOf("y", "que", "de", "en", "a", "no", "con", "para")
@@ -706,6 +737,20 @@ class Diccionario(context: Context) {
             istagram:Instagram instagran:Instagram facebok:Facebook feisbuk:Facebook
             yutub:YouTube youtuve:YouTube
             ubicacion:ubicación direccion:dirección cancion:canción informacion:información
+            aber:a_ver hiba:iba ivamos:íbamos hechar:echar
+            haci:así hací:así extranio:extraño estrañar:extrañar estraño:extraño estraña:extraña
+            ecxelente:excelente escelente:excelente esepto:excepto exepto:excepto
+            nececito:necesito nesesitamos:necesitamos nececitas:necesitas nececita:necesita
+            ubiera:hubiera uviera:hubiera huviera:hubiera ubo:hubo uvo:hubo huvo:hubo
+            preosupado:preocupado preocupao:preocupado emosionado:emocionado emosionada:emocionada
+            entonses:entonces entoces:entonces enronces:entonces
+            porfabor:por_favor porfavo:por_favor
+            dispulpa:disculpa discupa:disculpa
+            okei:okey aorra:ahora alguen:alguien alguein:alguien sige:sigue
+            cuidate:cuídate quedate:quédate callate:cállate calmate:cálmate
+            avisame:avísame llamame:llámame escribeme:escríbeme pasame:pásame mandame:mándame
+            dimelo:dímelo esperame:espérame ayudame:ayúdame cuentame:cuéntame
+            yapeame:yapéame plineame:plinéame
         """.trim().split(ESPACIOS).mapNotNull { par ->
             val i = par.indexOf(':')
             if (i <= 0) null else par.substring(0, i) to par.substring(i + 1).replace('_', ' ')
@@ -931,6 +976,72 @@ class Diccionario(context: Context) {
             yara: con, que, causa
             ni: hablar, modo, idea, siquiera
             sin: roche, palta, problema, miedo
+yapéame: porfa, cuando, la, el, ahorita
+            yapea: al, a, nomás, la
+            yapeé: a, ya, la, el
+            plinéame: porfa, cuando, ahorita
+            cuánta: plata, gente
+            estuvo: bien, bacán, buenazo, rico, chévere, mal
+            estaba: en, durmiendo, trabajando, viendo, pensando
+            tenía: que, un, una, razón
+            puede: ser, que, ir, venir
+            podemos: ir, vernos, hablar, salir, quedar
+            quieres: ir, que, algo, salir, comer, venir
+            vienes: a, mañana, hoy, o
+            vengan: a, mañana, temprano
+            salimos: a, mañana, hoy, el
+            vemos: mañana, luego, el, en
+            hablamos: mañana, luego, más tarde, después
+            avisa: cuando, si, para
+            espérame: un, ahí, en, que
+            ayúdame: con, a, porfa
+            manda: la, el, foto, audio
+            llama: a, cuando, me
+            escribe: cuando, me
+            ojo: que, con, pe
+            normal: nomás, pe, no, ya
+            seguro: que, pe, sí, no
+            obvio: que, sí, no, pe
+            exacto: eso, pe, así
+            demasiado: bueno, rico, tarde, temprano, caro
+            bastante: bien, tarde, tiempo, gente
+            súper: bien, bueno, rico, lindo, linda, tarde, temprano
+            recién: llego, estoy, salgo, me, termino, acabo
+            acabo: de, que
+            acaba: de
+            ando: en, con, bien, cansado, cansada
+            andas: en, con, bien, haciendo
+            necesito: que, un, una, tu, hablar, ayuda
+            felicidades: por, amor, causa
+            bendiciones: para, a, amor
+            saludos: a, para, cordiales
+            atentamente: el, la
+            estimado: señor, cliente
+            estimada: señora, clienta
+            hace: un, una, rato, frío, calor, tiempo, días
+            hice: un, una, la, el
+            hizo: un, una, la, el
+            dijo: que, a, la
+            dije: que, a
+            sabías: que
+            cualquier: cosa, día, momento
+            cada: vez, día, uno
+            ningún: problema
+            fin: de
+            pase: lo, a, por
+            pasé: por, a, la
+            pasaste: la, el, por
+            entré: a, al, en
+            muchísimas: gracias
+            jajajaja: ya, no, sí, qué
+            xd: ya, no
+            lunes: a, en, por
+            martes: a, en
+            miércoles: a, en
+            jueves: a, en
+            viernes: a, en, por
+            sábado: a, en, por
+            domingo: a, en, por
         """.trim().lines().mapNotNull { linea ->
             val i = linea.indexOf(':')
             val clave = if (i <= 0) "" else linea.substring(0, i).trim()

@@ -189,29 +189,51 @@ class KeyboardView(
         Modo.NUMEROS -> listOf(
             letras("1234567890"),
             simbolos("- / : ; ( ) $ & @ \""),
-            listOf(Tecla(Tipo.A_SIMBOLOS, "#+=", 1.4f)) + simbolos(". , ? ! '", 1.4f) + Tecla(Tipo.BORRAR, ancho = 1.4f),
+            listOf(Tecla(Tipo.A_SIMBOLOS, "#+=", 1.4f)) + simbolos(". , ? ! '", 1.36f) + Tecla(Tipo.BORRAR, ancho = 1.4f),
             filaInferior(Tecla(Tipo.A_LETRAS, "ABC", 1.25f)),
         )
         Modo.SIMBOLOS -> listOf(
             simbolos("[ ] { } # % ^ * + ="),
             simbolos("_ \\ | ~ < > € £ ¥ •"),
-            listOf(Tecla(Tipo.A_NUMEROS, "123", 1.4f)) + simbolos(". , ? ! '", 1.4f) + Tecla(Tipo.BORRAR, ancho = 1.4f),
+            listOf(Tecla(Tipo.A_NUMEROS, "123", 1.4f)) + simbolos(". , ? ! '", 1.36f) + Tecla(Tipo.BORRAR, ancho = 1.4f),
             filaInferior(Tecla(Tipo.A_LETRAS, "ABC", 1.25f)),
         )
+    }
+
+    private fun colocar(t: Tecla, x: Float, w: Float, top: Float) {
+        t.rect.set(x + sepH, top + sepV, x + w - sepH, top + altoFila - sepV)
+        Formas.suave(t.forma, t.rect.left, t.rect.top, t.rect.right, t.rect.bottom, radio)
+        prepararShaders(t)
     }
 
     private fun acomodar() {
         if (width == 0) return
         val unidad = width / 10f
         filas.forEachIndexed { i, fila ->
+            val top = margenArriba + i * altoFila
+            val ladoIzq = fila.first()
+            val ladoDer = fila.last()
+            if (i == 2 && fila.size >= 3 && ladoIzq.tipo != Tipo.LETRA && ladoDer.tipo == Tipo.BORRAR) {
+                // Tercera fila como en iPhone: mayúsculas y borrar pegados a los bordes,
+                // las letras centradas debajo de las de arriba y un espacio libre entre ellas
+                val lado = 1.3f * unidad
+                colocar(ladoIzq, 0f, lado, top)
+                colocar(ladoDer, width - lado, lado, top)
+                val medio = fila.subList(1, fila.size - 1)
+                val total = medio.sumOf { it.ancho.toDouble() }.toFloat() * unidad
+                var x = (width - total) / 2f
+                for (t in medio) {
+                    val w = t.ancho * unidad
+                    colocar(t, x, w, top)
+                    x += w
+                }
+                return@forEachIndexed
+            }
             val total = fila.sumOf { it.ancho.toDouble() }.toFloat()
             var x = (width - total * unidad) / 2f
-            val top = margenArriba + i * altoFila
             for (t in fila) {
                 val w = t.ancho * unidad
-                t.rect.set(x + sepH, top + sepV, x + w - sepH, top + altoFila - sepV)
-                Formas.suave(t.forma, t.rect.left, t.rect.top, t.rect.right, t.rect.bottom, radio)
-                prepararShaders(t)
+                colocar(t, x, w, top)
                 x += w
             }
         }
@@ -377,10 +399,11 @@ class KeyboardView(
         }
         // Teclas de función: se iluminan y crecen un poquito, como gota de vidrio
         val colorFondo = if (f > 0f) mezclar(colorNormal, tema.teclaPresionada, f) else colorPrevio
-        val r = if (f > 0f) rectPulso.apply { set(t.rect); inset(-dp(2.5f) * f, -dp(2.5f) * f) } else t.rect
+        // Más sutil: apenas se agranda (antes crecía 2.5 dp y se veía exagerado)
+        val r = if (f > 0f) rectPulso.apply { set(t.rect); inset(-dp(1f) * f, -dp(1f) * f) } else t.rect
 
         val forma = if (f > 0f) {
-            Formas.suave(formaPulso, r.left, r.top, r.right, r.bottom, radio + dp(1f) * f)
+            Formas.suave(formaPulso, r.left, r.top, r.right, r.bottom, radio + dp(0.4f) * f)
             formaPulso
         } else t.forma
 
@@ -588,6 +611,11 @@ class KeyboardView(
                     if (actual.tipo != Tipo.LETRA) continue
                     val t = teclaEn(x, y) ?: continue
                     if (t !== actual && t.tipo == Tipo.LETRA) {
+                        // Solo cambia de tecla si el dedo entró de verdad en la otra (no por rozar
+                        // el borde al escribir rápido): así no salen letras vecinas por error
+                        val m = dp(5f)
+                        if (x < t.rect.left + m || x > t.rect.right - m ||
+                            y < t.rect.top + dp(3f) || y > t.rect.bottom - dp(3f)) continue
                         presionadas[id] = t
                         programarVariantes(t, id)
                         if (vistaPrevia) burbujas.mostrar(id, t.rect, etiqueta(t), tema, deslizando = true)

@@ -2,11 +2,10 @@ package com.tecladoios
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.LinearGradient
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
-import android.graphics.Shader
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
@@ -135,11 +134,34 @@ class KeyPreviewOverlay(private val anchor: View) {
         private val d = resources.displayMetrics.density
         private val path = Path()
         private val cuerpo = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val brillo = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val resplandor = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val sombra = Paint(Paint.ANTI_ALIAS_FLAG)
         private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = 1f * d
+            strokeWidth = maxOf(1f, 0.6f * d)
+        }
+        /** Colores calculados una sola vez por tema (antes se armaban degradados en cada cuadro) */
+        private var temaColores: Tema? = null
+        private var colorCuerpo = 0
+        private var colorBorde = 0
+        private var colorSombra = 0
+        private var colorLetra = 0
+
+        private fun prepararColores(tm: Tema) {
+            if (temaColores === tm) return
+            temaColores = tm
+            if (tm.oscuro) {
+                // Como en iPhone: la burbuja es del mismo gris de la tecla, apenas más clara
+                val fondo = (tm.fondo and 0x00FFFFFF) or (0xFF shl 24)
+                colorCuerpo = aclarar(sobre(tm.tecla, if (Color.alpha(tm.fondo) > 0) fondo else 0xFF1C1C1E.toInt()), 0.10f)
+                colorBorde = 0x1FFFFFFF
+                colorSombra = 0x59000000
+                colorLetra = 0xFFFFFFFF.toInt()
+            } else {
+                colorCuerpo = 0xFFFFFFFF.toInt()
+                colorBorde = 0x14000000
+                colorSombra = 0x33000000
+                colorLetra = 0xFF000000.toInt()
+            }
         }
         private val texto = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = Paint.Align.CENTER
@@ -241,36 +263,24 @@ class KeyPreviewOverlay(private val anchor: View) {
             path.quadTo(izq, top, izq + r, top)
             path.close()
 
-            val arriba: Int
-            val abajo: Int
-            if (tm.oscuro) {
-                // "Sobreexpuesta": mucho más clara que las teclas, como en el iPhone
-                val base = aclarar(tm.tecla, 0.52f)
-                arriba = (aclarar(base, 0.12f) and 0x00FFFFFF) or (0xF7 shl 24)
-                abajo = (base and 0x00FFFFFF) or (0xF2 shl 24)
-            } else {
-                arriba = 0xFFFFFFFF.toInt(); abajo = 0xFAF2F3F6.toInt()
-            }
-
-            // Resplandor suave alrededor (luz que se escapa del vidrio)
-            resplandor.color = abajo
-            resplandor.setShadowLayer(10f * d, 0f, 0f, if (tm.oscuro) 0x55FFFFFF else 0x40000000)
-            c.drawPath(path, resplandor)
-
-            cuerpo.shader = LinearGradient(0f, top, 0f, fondo, arriba, abajo, Shader.TileMode.CLAMP)
+            prepararColores(tm)
+            // Sombra suave y fina debajo (sin desenfoque: así cada cuadro se dibuja rapidísimo)
+            sombra.color = colorSombra
+            c.save()
+            c.translate(0f, 1.2f * d)
+            c.drawPath(path, sombra)
+            c.restore()
+            cuerpo.color = colorCuerpo
             c.drawPath(path, cuerpo)
-            brillo.shader = LinearGradient(0f, top, 0f, top + altoCuadro * 0.5f,
-                0x40FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
-            c.drawPath(path, brillo)
-            borde.color = if (tm.oscuro) 0xB3FFFFFF.toInt() else 0x33000000
+            borde.color = colorBorde
             c.drawPath(path, borde)
 
             // Letra grande en el cuadro de arriba
             val alfaLetra = ((p - 0.3f) / 0.55f).coerceIn(0f, 1f)
             if (alfaLetra <= 0f) return
-            texto.color = if (tm.oscuro) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
+            texto.color = colorLetra
             texto.alpha = (255 * alfaLetra).toInt()
-            texto.textSize = kh * 0.68f
+            texto.textSize = kh * 0.72f
             val fm = texto.fontMetrics
             val cx = (izq + der) / 2f
             val cy = top + bh * 0.5f
@@ -281,6 +291,14 @@ class KeyPreviewOverlay(private val anchor: View) {
     private companion object {
         val REBOTE = OvershootInterpolator(1.4f)
         val FRENO = DecelerateInterpolator()
+
+        /** Color [a] (con transparencia) puesto encima de [b] (opaco) */
+        fun sobre(a: Int, b: Int): Int {
+            val al = Color.alpha(a) / 255f
+            fun canal(x: Int, y: Int) = (x * al + y * (1f - al)).toInt().coerceIn(0, 255)
+            return Color.rgb(canal(Color.red(a), Color.red(b)), canal(Color.green(a), Color.green(b)),
+                canal(Color.blue(a), Color.blue(b)))
+        }
 
         fun aclarar(c: Int, f: Float): Int {
             fun canal(x: Int) = (x + (255 - x) * f).toInt().coerceIn(0, 255)

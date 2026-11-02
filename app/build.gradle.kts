@@ -14,7 +14,7 @@ android {
         // Cada compilación de GitHub tiene su propio número, para saber cuál está instalada
         val compilacion = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
         versionCode = 100 + compilacion
-        versionName = "4.$compilacion"
+        versionName = "5.$compilacion"
     }
 
     buildTypes {

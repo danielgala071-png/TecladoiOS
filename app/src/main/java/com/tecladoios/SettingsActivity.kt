@@ -440,7 +440,7 @@ class SettingsActivity : Activity() {
             packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
         } catch (_: Exception) { "?" }
         contenedor.addView(TextView(this).apply {
-            text = "TecladoiOS versión $version · vista previa con cuadro"
+            text = "TecladoiOS versión $version · escritura rápida v5"
             Fuentes.aplicar(this, 400)
             textSize = 13f
             setTextColor(gris)

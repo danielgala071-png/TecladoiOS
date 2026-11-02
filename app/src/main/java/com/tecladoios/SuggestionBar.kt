@@ -67,10 +67,21 @@ class SuggestionBar(
     private fun sePuedeOlvidar(s: Sugerencia) =
         !s.portapapeles && !s.revertir && s.reemplaza < 0 && !s.texto.contains(' ') && s.texto.length >= 2 &&
                 s.texto.all { it.isLetter() }
-    private val pinturaTexto = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+    // Una pintura por grosor de letra: cambiar el grosor en cada dibujo es lento
+    private val pinturaNormal = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         textSize = 17f * d
     }.also { Fuentes.aplicar(it, 400) }
+    private val pinturaMedia = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        textSize = 17f * d
+    }.also { Fuentes.aplicar(it, 500) }
+    private var pinturaTexto: TextPaint = pinturaNormal
+    private fun grosor(peso: Int, tam: Float = 17f) {
+        pinturaTexto = if (peso >= 500) pinturaMedia else pinturaNormal
+        pinturaTexto.textSize = tam * d
+    }
+    private val espacios = Regex("\\s+")
     private val pintura = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pinturaEtiqueta = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
@@ -78,8 +89,18 @@ class SuggestionBar(
     }.also { Fuentes.aplicar(it, 500) }
 
     fun mostrar(nuevos: List<Sugerencia?>) {
-        items = List(3) { nuevos.getOrNull(it) }
-        presionado = -1
+        val lista = List(3) { nuevos.getOrNull(it) }
+        // Si no cambió nada, no se vuelve a dibujar (menos trabajo en cada letra)
+        if (lista == items) return
+        items = lista
+        if (confirmar == null) presionado = -1
+        invalidate()
+    }
+
+    /** Al escribir una letra: lo escrito aparece al instante, mientras se calculan las demás */
+    fun mostrarEscrito(s: Sugerencia) {
+        if (items[0] == s || items.any { it?.portapapeles == true }) return
+        items = listOf(s, items[1], items[2])
         invalidate()
     }
 
@@ -99,11 +120,10 @@ class SuggestionBar(
 
     private fun dibujarConfirmar(c: Canvas, s: Sugerencia) {
         val tercio = width / 3f
-        pinturaTexto.textSize = 17f * d
+        grosor(400)
         val fm = pinturaTexto.fontMetrics
         val cy = height / 2f - (fm.ascent + fm.descent) / 2f
         // Cancelar a la izquierda
-        Fuentes.aplicar(pinturaTexto, 400)
         pinturaTexto.color = tema.textoSecundario
         if (tocoEn == 0) {
             pintura.color = tema.teclaPresionada
@@ -114,7 +134,7 @@ class SuggestionBar(
         val rojo = if (tema.oscuro) 0xFFFF453A.toInt() else 0xFFFF3B30.toInt()
         pintura.color = (rojo and 0x00FFFFFF) or (if (tocoEn == 1) 0x55000000 else 0x26000000)
         c.drawRoundRect(tercio + 4 * d, 6 * d, width - 4 * d, height - 6 * d, 10 * d, 10 * d, pintura)
-        Fuentes.aplicar(pinturaTexto, 500)
+        grosor(500)
         pinturaTexto.color = rojo
         val txt = TextUtils.ellipsize("Borrar \u201C${s.texto}\u201D", pinturaTexto,
             tercio * 2f - 24 * d, TextUtils.TruncateAt.END).toString()
@@ -134,11 +154,10 @@ class SuggestionBar(
             c.drawText(etiqueta, x0 + ancho / 2f, height * 0.33f - (fe.ascent + fe.descent) / 2f, pinturaEtiqueta)
             centroTexto = height * 0.66f
         } else centroTexto = height / 2f
-        pinturaTexto.textSize = (if (etiqueta != null) 14.5f else 16f) * d
-        Fuentes.aplicar(pinturaTexto, 500)
+        grosor(500, if (etiqueta != null) 14.5f else 16f)
         pinturaTexto.color = tema.texto
         // Una sola línea: los saltos de línea se ven como espacios (al pegar se respetan)
-        val plano = s.texto.replace(Regex("\\s+"), " ")
+        val plano = s.texto.replace(espacios, " ")
         val txt = TextUtils.ellipsize(plano, pinturaTexto, ancho - 22 * d, TextUtils.TruncateAt.END).toString()
         val fm = pinturaTexto.fontMetrics
         c.drawText(txt, x0 + ancho / 2f, centroTexto - (fm.ascent + fm.descent) / 2f, pinturaTexto)
@@ -155,8 +174,7 @@ class SuggestionBar(
                 c.drawRoundRect(x0 + 4 * d, 6 * d, x0 + ancho - 4 * d, height - 6 * d, 10 * d, 10 * d, pintura)
             }
             if (s.portapapeles) { dibujarCopiado(c, s, x0, ancho, i == presionado); continue }
-            pinturaTexto.textSize = 17f * d
-            Fuentes.aplicar(pinturaTexto, if (s.destacada) 500 else 400)
+            grosor(if (s.destacada) 500 else 400)
             pinturaTexto.color = tema.texto
             val crudo = when {
                 s.literal -> "\u201C${s.texto}\u201D"
