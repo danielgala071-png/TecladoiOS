@@ -185,7 +185,7 @@ class TecladoService : InputMethodService(),
         tema = t
         firmaTamano = firma()
 
-        val b = SuggestionBar(this, t, this).apply { visibility = View.INVISIBLE }
+        val b = SuggestionBar(this, t, this)
         val k = KeyboardView(this, t, this)
         val e = EmojiPanel(this, t, this).apply { visibility = View.GONE }
         barra = b; teclado = k; emojis = e
@@ -213,11 +213,10 @@ class TecladoService : InputMethodService(),
             override fun onViewDetachedFromWindow(v: View) {}
         })
         panel = p
-        // Con la barra a la vista, el filo de arriba lo dibuja la barra (con su curva abajo)
-        b.alCambiarVisible = { visible -> p.lineaArriba = !visible }
+        // El filo de arriba (con la curva) lo dibuja la barra; el teclado solo dibuja los costados
+        p.lineaArriba = false
 
-        // La barra va pegada encima del teclado. Su espacio queda reservado (transparente cuando
-        // está escondida), así la app de atrás no salta cada vez que aparece o desaparece.
+        // La barra y el teclado son una sola pieza: la barra arriba (curva) y el teclado abajo (recto).
         val raiz = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.TRANSPARENT)
@@ -235,26 +234,24 @@ class TecladoService : InputMethodService(),
     }
 
     /**
-     * La app de atrás solo se acomoda al teclado negro (no a la barra flotante), así no salta
-     * cuando la barra aparece o desaparece. Los toques en la zona de la barra escondida pasan a la app.
+     * La app de atrás se acomoda desde el borde de arriba de la barra de sugerencias.
+     * Así la caja de texto de la app (WhatsApp, etc.) queda siempre encima del teclado
+     * y nunca debajo de la barra.
      */
     override fun onComputeInsets(outInsets: Insets) {
         super.onComputeInsets(outInsets)
         val p = panel ?: return
-        if (isFullscreenMode || !p.isAttachedToWindow || p.height == 0) return
+        val b = barra ?: return
+        if (isFullscreenMode || !p.isAttachedToWindow || !b.isAttachedToWindow || p.height == 0) return
         val pos = IntArray(2)
+        b.getLocationInWindow(pos)
+        val arriba = pos[1]
         p.getLocationInWindow(pos)
-        val arribaTeclado = pos[1]
         val abajo = pos[1] + p.height
-        outInsets.contentTopInsets = arribaTeclado
-        outInsets.visibleTopInsets = arribaTeclado
-        val b = barra
-        val arribaTocable = if (b != null && b.visibility == View.VISIBLE && b.isAttachedToWindow) {
-            b.getLocationInWindow(pos)
-            pos[1]
-        } else arribaTeclado
+        outInsets.contentTopInsets = arriba
+        outInsets.visibleTopInsets = arriba
         outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
-        outInsets.touchableRegion.set(0, arribaTocable, p.width, abajo)
+        outInsets.touchableRegion.set(0, arriba, p.width, abajo)
     }
 
     private fun configurarVentana() {

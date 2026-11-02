@@ -1,5 +1,6 @@
 package com.tecladoios
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
@@ -27,9 +28,10 @@ data class Sugerencia(
 )
 
 /**
- * Barra de sugerencias de 3 casillas, como en iOS, pegada encima del teclado.
- * Es negra y su filo del color de la app termina en curva en la parte de abajo.
- * Aparece cuando empiezas a escribir y se esconde cuando dejas de escribir.
+ * Barra de sugerencias de 3 casillas, como en iOS. Es la parte de arriba del teclado:
+ * una sola pieza negra con el teclado, con las esquinas de arriba curvas y la parte de
+ * abajo unida a las teclas (sin línea). Siempre ocupa su lugar, así nunca tapa la caja
+ * de texto de la app; las sugerencias aparecen al escribir y se apagan al dejar de escribir.
  * Mantener presionada una sugerencia muestra la opción de borrar esa palabra.
  */
 @SuppressLint("ViewConstructor")
@@ -89,13 +91,15 @@ class SuggestionBar(
         strokeWidth = maxOf(1f, 1.1f * d)
     }
 
-    // Filo del color de la app: recto arriba y con curva abajo
+    // Forma de la barra: esquinas curvas arriba, recta abajo (pegada al teclado)
+    private val forma = Path()
     private val filo = Path()
     private val esquina = RectF()
+    private val pinturaFondo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private var mostrando = false
-
-    /** Avisa cuando la barra aparece (true) o termina de esconderse (false) */
-    var alCambiarVisible: ((Boolean) -> Unit)? = null
+    /** Qué tan visibles están las sugerencias (0 = apagadas, 1 = a la vista) */
+    private var opacidad = 0f
+    private var animador: ValueAnimator? = null
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
@@ -103,24 +107,32 @@ class SuggestionBar(
     }
 
     private fun armarForma(w: Float, h: Float) {
+        forma.reset()
         filo.reset()
         if (w <= 0f || h <= 0f) return
+        val r = minOf(18f * d, h / 2f)
+        // Relleno negro: curvo arriba y recto abajo, hasta el borde del teclado
+        forma.moveTo(0f, h)
+        forma.lineTo(0f, r)
+        esquina.set(0f, 0f, r * 2f, r * 2f)
+        forma.arcTo(esquina, 180f, 90f, false)
+        forma.lineTo(w - r, 0f)
+        esquina.set(w - r * 2f, 0f, w, r * 2f)
+        forma.arcTo(esquina, 270f, 90f, false)
+        forma.lineTo(w, h)
+        forma.close()
+        // Filo del color de la app: sube por los costados, hace la curva arriba
+        // y abajo queda abierto (sigue por los costados del teclado)
         val g = pinturaBorde.strokeWidth / 2f
-        val r = minOf(20f * d, h / 2f)
-        val abajo = h - g
-        // Arriba: borde recto de lado a lado (es el borde de arriba del teclado)
+        val rf = r - g
         filo.moveTo(g, h)
-        filo.lineTo(g, g)
-        filo.lineTo(w - g, g)
+        filo.lineTo(g, g + rf)
+        esquina.set(g, g, g + rf * 2f, g + rf * 2f)
+        filo.arcTo(esquina, 180f, 90f, false)
+        filo.lineTo(w - g - rf, g)
+        esquina.set(w - g - rf * 2f, g, w - g, g + rf * 2f)
+        filo.arcTo(esquina, 270f, 90f, false)
         filo.lineTo(w - g, h)
-        // Abajo: la curva que separa la barra de las teclas
-        filo.moveTo(g, abajo - r * 1.6f)
-        esquina.set(g, abajo - r * 2f, g + r * 2f, abajo)
-        filo.arcTo(esquina, 180f, -90f, false)
-        filo.lineTo(w - g - r, abajo)
-        esquina.set(w - g - r * 2f, abajo - r * 2f, w - g, abajo)
-        filo.arcTo(esquina, 90f, -90f, false)
-        filo.lineTo(w - g, abajo - r * 1.6f)
     }
 
     fun mostrar(nuevos: List<Sugerencia?>) {
@@ -140,52 +152,33 @@ class SuggestionBar(
     }
 
     /**
-     * Mostrar u ocultar la barra con una animación suave. El espacio de la barra queda
-     * reservado (transparente), así la app de atrás no salta al aparecer o desaparecer.
+     * Mostrar u ocultar las sugerencias con una animación suave. La barra en sí nunca se
+     * esconde (es parte del teclado), así la app de atrás no salta ni queda tapada.
      */
     fun visible(si: Boolean, animar: Boolean = true) {
         if (!si) cancelar()
-        if (!si && !animar) {
-            // Al cerrar el teclado: se esconde al instante (sin animación pendiente)
-            mostrando = false
-            animate().cancel()
-            alpha = 0f
-            visibility = INVISIBLE
-            alCambiarVisible?.invoke(false)
-            avisarCambio()
-            return
-        }
-        if (si == mostrando) return
+        val destino = if (si) 1f else 0f
+        if (si == mostrando && (animar || opacidad == destino)) return
         mostrando = si
-        animate().cancel()
+        animador?.cancel()
         if (si) {
             // Al volver a aparecer no se ven las sugerencias de la palabra anterior
             items = listOf(null, null, null)
             presionado = -1
-            if (visibility != VISIBLE) {
-                alpha = 0f
-                visibility = VISIBLE
-            }
-            alCambiarVisible?.invoke(true)
-            animate().alpha(1f).setDuration(130).start()
-        } else {
-            animate().alpha(0f).setDuration(120)
-                .withEndAction {
-                    if (!mostrando) {
-                        visibility = INVISIBLE
-                        alCambiarVisible?.invoke(false)
-                        avisarCambio()
-                    }
-                }
-                .start()
         }
-        avisarCambio()
-    }
-
-    /** Avisa al teclado que cambió la zona tocable (para que los toques pasen a la app) */
-    private fun avisarCambio() {
-        (parent as? View)?.requestLayout()
-        requestLayout()
+        if (!animar) {
+            opacidad = destino
+            invalidate()
+            return
+        }
+        animador = ValueAnimator.ofFloat(opacidad, destino).apply {
+            duration = if (si) 130 else 120
+            addUpdateListener {
+                opacidad = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
     }
 
     private fun cancelar() {
@@ -224,12 +217,21 @@ class SuggestionBar(
     }
 
     override fun onDraw(c: Canvas) {
-        // Fondo negro como el teclado y el filo del color de la app con la curva abajo
-        c.drawColor(tema.fondo)
+        // Fondo negro como el teclado (curvo arriba) y el filo del color de la app
+        pinturaFondo.color = tema.fondo
+        c.drawPath(forma, pinturaFondo)
         pinturaBorde.color = tema.bordePanel
         c.drawPath(filo, pinturaBorde)
 
         confirmar?.let { dibujarConfirmar(c, it); return }
+        if (opacidad <= 0f) return
+        // Las sugerencias se encienden y apagan suavemente
+        val capa = if (opacidad < 1f) c.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), (opacidad * 255).toInt()) else -1
+        dibujarSugerencias(c)
+        if (capa >= 0) c.restoreToCount(capa)
+    }
+
+    private fun dibujarSugerencias(c: Canvas) {
         val ancho = width / 3f
         for (i in 0 until 3) {
             val s = items[i] ?: continue
@@ -274,6 +276,8 @@ class SuggestionBar(
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (width == 0) return true
+        // Sin sugerencias a la vista, tocar la barra no hace nada
+        if (!mostrando && confirmar == null) return true
         val conf = confirmar
         if (conf != null) {
             // Modo borrar: izquierda = Cancelar, el resto = Borrar palabra
