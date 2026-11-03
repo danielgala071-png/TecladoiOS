@@ -50,24 +50,35 @@ class SettingsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
-            restaurarIcono()
             construirPantalla()
         } catch (e: Throwable) {
             mostrarError(Log.getStackTraceString(e))
         }
     }
 
-    /** La opción de ocultar el ícono ya no existe (no está en el iPhone): se vuelve a mostrar una vez */
-    private fun restaurarIcono() {
-        if (prefs.getBoolean("icono_restaurado", false)) return
-        try {
-            packageManager.setComponentEnabledSetting(
-                ComponentName(this, "com.tecladoios.Lanzador"),
-                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                PackageManager.DONT_KILL_APP,
-            )
-        } catch (_: Exception) { }
-        prefs.edit().putBoolean("icono_restaurado", true).apply()
+    // ---------- Ocultar aplicación ----------
+
+    private val lanzador get() = ComponentName(this, "com.tecladoios.Lanzador")
+
+    private fun iconoOculto(): Boolean = try {
+        packageManager.getComponentEnabledSetting(lanzador) ==
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+    } catch (_: Exception) { false }
+
+    /** Quita o vuelve a poner el ícono de TecladoiOS en el menú de apps */
+    private fun ocultarIcono(ocultar: Boolean) {
+        packageManager.setComponentEnabledSetting(
+            lanzador,
+            if (ocultar) PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            else PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+            PackageManager.DONT_KILL_APP,
+        )
+        Toast.makeText(
+            this,
+            if (ocultar) "Ícono oculto. Puede tardar unos segundos en desaparecer."
+            else "El ícono vuelve a aparecer en el menú de apps.",
+            Toast.LENGTH_SHORT,
+        ).show()
     }
 
     // ---------- Pantalla de error ----------
@@ -473,6 +484,14 @@ class SettingsActivity : Activity() {
         grupo("Tamaño del teclado", listOf(filaTamano()),
             pie = "Hace las teclas más altas o más bajas. Las letras se agrandan o achican junto con el " +
                     "teclado. El cambio se ve la próxima vez que abras el teclado.")
+
+        // El interruptor siempre muestra el estado real del ícono
+        prefs.edit().putBoolean("ocultar_app", iconoOculto()).apply()
+        grupo("Aplicación", listOf(
+            filaInterruptor("Ocultar aplicación", "ocultar_app", false) { ocultarIcono(it) },
+        ), pie = "Quita el ícono de TecladoiOS del menú de apps. El teclado sigue funcionando. Para " +
+                "volver a estos ajustes, entra a los ajustes del teléfono, busca la sección de " +
+                "teclados y toca TecladoiOS.")
 
         grupo(null, listOf(
             filaAccion("Restablecer diccionario del teclado", rojo, derecha = null) {
