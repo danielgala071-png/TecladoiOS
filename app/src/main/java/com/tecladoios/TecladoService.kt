@@ -213,8 +213,10 @@ class TecladoService : InputMethodService(),
             override fun onViewDetachedFromWindow(v: View) {}
         })
         panel = p
-        // El filo de arriba (con la curva) lo dibuja la barra; el teclado solo dibuja los costados
-        p.lineaArriba = false
+        // Con la barra a la vista, su filo curvo es el de arriba y el teclado solo dibuja los
+        // costados. Con la barra oculta, el teclado dibuja su propio filo recto arriba.
+        p.lineaArriba = true
+        b.alCambiar = { mostrando -> p.lineaArriba = !mostrando }
 
         // La barra y el teclado son una sola pieza: la barra arriba (curva) y el teclado abajo (recto).
         val raiz = LinearLayout(this).apply {
@@ -234,9 +236,9 @@ class TecladoService : InputMethodService(),
     }
 
     /**
-     * La app de atrás se acomoda desde el borde de arriba de la barra de sugerencias.
-     * Así la caja de texto de la app (WhatsApp, etc.) queda siempre encima del teclado
-     * y nunca debajo de la barra.
+     * La app de atrás se acomoda desde el borde de arriba de la barra de sugerencias (o del
+     * teclado, si la barra está oculta). Así la caja de texto de la app (WhatsApp, etc.)
+     * queda siempre encima y nunca debajo de la barra.
      */
     override fun onComputeInsets(outInsets: Insets) {
         super.onComputeInsets(outInsets)
@@ -244,10 +246,14 @@ class TecladoService : InputMethodService(),
         val b = barra ?: return
         if (isFullscreenMode || !p.isAttachedToWindow || !b.isAttachedToWindow || p.height == 0) return
         val pos = IntArray(2)
-        b.getLocationInWindow(pos)
-        val arriba = pos[1]
         p.getLocationInWindow(pos)
+        val arribaTeclado = pos[1]
         val abajo = pos[1] + p.height
+        // Si la barra está oculta, la app llega hasta el borde de arriba del teclado
+        val arriba = if (b.visibility == View.VISIBLE && b.height > 0) {
+            b.getLocationInWindow(pos)
+            pos[1]
+        } else arribaTeclado
         outInsets.contentTopInsets = arriba
         outInsets.visibleTopInsets = arriba
         outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION

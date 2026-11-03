@@ -30,8 +30,8 @@ data class Sugerencia(
 /**
  * Barra de sugerencias de 3 casillas, como en iOS. Es la parte de arriba del teclado:
  * una sola pieza negra con el teclado, con las esquinas de arriba curvas y la parte de
- * abajo unida a las teclas (sin línea). Siempre ocupa su lugar, así nunca tapa la caja
- * de texto de la app; las sugerencias aparecen al escribir y se apagan al dejar de escribir.
+ * abajo unida a las teclas (sin línea). Está oculta y solo aparece mientras escribes;
+ * al dejar de escribir desaparece entera y el teclado queda con su borde recto arriba.
  * Mantener presionada una sugerencia muestra la opción de borrar esa palabra.
  */
 @SuppressLint("ViewConstructor")
@@ -101,6 +101,14 @@ class SuggestionBar(
     private var opacidad = 0f
     private var animador: ValueAnimator? = null
 
+    /** Avisa cuando la barra aparece o desaparece (para que el teclado ponga su filo de arriba) */
+    var alCambiar: ((Boolean) -> Unit)? = null
+
+    init {
+        // Empieza oculta: aparece recién al escribir
+        visibility = GONE
+    }
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         armarForma(w.toFloat(), h.toFloat())
@@ -152,8 +160,8 @@ class SuggestionBar(
     }
 
     /**
-     * Mostrar u ocultar las sugerencias con una animación suave. La barra en sí nunca se
-     * esconde (es parte del teclado), así la app de atrás no salta ni queda tapada.
+     * Mostrar u ocultar la barra. Al escribir aparece y las sugerencias se encienden suavemente;
+     * al dejar de escribir la barra entera desaparece (no queda el espacio negro vacío).
      */
     fun visible(si: Boolean, animar: Boolean = true) {
         if (!si) cancelar()
@@ -161,11 +169,19 @@ class SuggestionBar(
         if (si == mostrando && (animar || opacidad == destino)) return
         mostrando = si
         animador?.cancel()
-        if (si) {
-            // Al volver a aparecer no se ven las sugerencias de la palabra anterior
-            items = listOf(null, null, null)
-            presionado = -1
+        val vis = if (si) VISIBLE else GONE
+        if (visibility != vis) {
+            visibility = vis
+            alCambiar?.invoke(si)
         }
+        if (!si) {
+            opacidad = 0f
+            invalidate()
+            return
+        }
+        // Al volver a aparecer no se ven las sugerencias de la palabra anterior
+        items = listOf(null, null, null)
+        presionado = -1
         if (!animar) {
             opacidad = destino
             invalidate()
