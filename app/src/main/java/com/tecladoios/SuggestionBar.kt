@@ -9,6 +9,7 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.text.TextPaint
 import android.text.TextUtils
 import android.view.HapticFeedbackConstants
@@ -54,6 +55,15 @@ class SuggestionBar(
     private val d = Medidas.escala(context)
     private var items: List<Sugerencia?> = listOf(null, null, null)
     private var presionado = -1
+
+    /**
+     * Momento (uptime) en que tocaste la última letra. Lo pone el servicio. Un toque en la
+     * barra que llega pegadito a una letra casi siempre es un dedo despistado escribiendo
+     * rápido (no un toque a propósito), así que se ignora.
+     */
+    @Volatile var ultimaTeclaMs = 0L
+    /** Este gesto empezó mientras escribías: se ignora completo (no elige sugerencia) */
+    private var ignorarGesto = false
 
     /** Sugerencia que se está por borrar (la barra muestra Cancelar / Borrar) */
     private var confirmar: Sugerencia? = null
@@ -387,12 +397,18 @@ class SuggestionBar(
         val i = if (esCopiado) 0 else (e.x / (width / 3f)).toInt().coerceIn(0, 2)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                // Toque accidental al escribir rápido: si acabas de tocar una letra hace muy
+                // poco, este toque en la barra se ignora. El del portapapeles no se ignora
+                // porque solo aparece cuando no estás escribiendo.
+                ignorarGesto = !esCopiado && SystemClock.uptimeMillis() - ultimaTeclaMs < GUARDA_MS
+                if (ignorarGesto) return true
                 mantenido = false
                 presionado = if (items[i] != null) i else -1
                 if (presionado != -1) manejador.postDelayed(alMantener, 450)
                 invalidate()
             }
             MotionEvent.ACTION_MOVE -> {
+                if (ignorarGesto) return true
                 if (presionado != -1 && i != presionado) {
                     manejador.removeCallbacks(alMantener)
                     presionado = -1
@@ -400,6 +416,7 @@ class SuggestionBar(
                 }
             }
             MotionEvent.ACTION_UP -> {
+                if (ignorarGesto) { ignorarGesto = false; return true }
                 manejador.removeCallbacks(alMantener)
                 val s = if (presionado == i && !mantenido) items[i] else null
                 mantenido = false
@@ -408,11 +425,17 @@ class SuggestionBar(
                 if (s != null) acciones.elegir(s)
             }
             MotionEvent.ACTION_CANCEL -> {
+                ignorarGesto = false
                 manejador.removeCallbacks(alMantener)
                 presionado = -1
                 invalidate()
             }
         }
         return true
+    }
+
+    private companion object {
+        /** Debajo de este tiempo tras tocar una letra, un toque en la barra se ignora */
+        const val GUARDA_MS = 130L
     }
 }

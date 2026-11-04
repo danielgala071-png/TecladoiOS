@@ -992,6 +992,7 @@ class TecladoService : InputMethodService(),
         teclado?.probLetras = null
         escribiendo = true
         ultimaEscritura = SystemClock.uptimeMillis()
+        barra?.ultimaTeclaMs = ultimaEscritura
         if (currentInputConnection == null) return
         ultimaAprendida = null
         var c = s

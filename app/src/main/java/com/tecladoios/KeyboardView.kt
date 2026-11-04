@@ -704,6 +704,9 @@ class KeyboardView(
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                // Entrega los toques apenas llegan (sin agruparlos por cuadro): menos latencia
+                // al escribir rápido, así se siente menos "pegajoso".
+                requestUnbufferedDispatch(e)
                 // Primer dedo: si quedó algo colgado de antes (un toque perdido), se limpia
                 if (e.actionMasked == MotionEvent.ACTION_DOWN && presionadas.isNotEmpty()) reiniciar()
                 val i = e.actionIndex
