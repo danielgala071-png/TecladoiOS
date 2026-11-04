@@ -1,32 +1,37 @@
 package com.tecladoios
 
 import android.content.Context
+import java.io.File
 import java.text.Normalizer
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Sugerencias, predicción de la siguiente palabra y autocorrección en español peruano.
+ * Sugerencias, predicción de la siguiente palabra y autocorrección en español
+ * (general, formal y peruano).
  *
  * Autocorrección: compara lo que escribiste con cada palabra conocida usando la
  * distribución del teclado (equivocarte con una tecla vecina "cuesta" poco, como
- * Tqrjeta → Tarjeta), letras invertidas, letras dobles, faltantes o sobrantes.
- * Entre los candidatos gana el que mejor combina parecido, frecuencia y contexto.
+ * Tqrjeta → Tarjeta), dónde cayó exactamente cada dedo, letras invertidas, dobles,
+ * faltantes o sobrantes, y palabras pegadas ("estoybien" → "estoy bien").
+ * Entre los candidatos gana el que mejor combina parecido, frecuencia real y contexto.
  *
- * Rendimiento: el diccionario (más de 20 mil palabras) se ordena una sola vez en
- * segundo plano. Buscar por prefijo es una búsqueda binaria y la autocorrección solo
- * revisa las palabras que empiezan con la misma letra o una tecla vecina, así cada
- * tecla responde en un instante aunque escribas rápido con dos dedos.
+ * Rendimiento: el diccionario (más de 100 mil palabras, ordenadas de la más común a la
+ * menos común) se arma una sola vez en segundo plano. Buscar por prefijo es una búsqueda
+ * binaria; la autocorrección solo revisa las palabras que empiezan con la misma letra o
+ * una vecina y que tienen un largo parecido. Así cada tecla responde al instante y casi
+ * no gasta batería.
  *
  * Aprendizaje: cuenta las palabras que usas y el orden en que las usas (de a dos y de a
- * tres palabras, para predecir mejor), recuerda cuándo usaste cada palabra (lo reciente
- * pesa más y lo que escribiste una sola vez hace mucho se olvida solo), recuerda los
- * nombres que escribes con mayúscula, "desaprende" lo que borras justo después de
- * escribirlo, no vuelve a hacer una corrección que deshiciste y no aprende nada en
- * modo incógnito. Se puede olvidar una palabra manteniendo presionada su sugerencia.
+ * tres), recuerda cuándo usaste cada una (lo reciente pesa más y lo que escribiste una
+ * sola vez hace mucho se olvida solo), recuerda los nombres con mayúscula, "desaprende"
+ * lo que borras justo después de escribirlo, no repite una corrección que deshiciste y
+ * no aprende nada en modo incógnito. Todo se guarda en un archivo propio, pocas veces y
+ * solo si cambió algo.
  */
 class Diccionario(context: Context) {
 
     private val prefs = Ajustes.prefs(context)
+    private val archivo = File(context.applicationContext.filesDir, ARCHIVO)
     private val normales = HashMap<String, String>()
     private val aprendidas = HashMap<String, Int>()
     private val pares = HashMap<String, HashMap<String, Int>>()
@@ -57,6 +62,14 @@ class Diccionario(context: Context) {
     private var revision = -1
     private var cambios = false
     private var sinGuardar = 0
+    /** Lo aprendido estaba en el formato viejo (dentro de los ajustes): se pasa al archivo */
+    private var migrar = false
+
+    /**
+     * Palabras de una letra inicial agrupadas por largo: la autocorrección solo mira las
+     * de largo parecido al de lo que escribiste (muchas menos comparaciones por tecla).
+     */
+    private class Grupo(val idx: IntArray, val desde: IntArray)
 
     /** Diccionario base ya ordenado. Se arma en segundo plano para que el teclado abra al instante. */
     private class Indice(
@@ -64,15 +77,15 @@ class Diccionario(context: Context) {
         val normal: Array<String>,
         /** Posiciones ordenadas por la palabra sin tildes (para buscar por prefijo) */
         val orden: IntArray,
-        /** Palabra sin tildes → la más común que se escribe así ("tambien" → "también") */
-        val mejorPorNormal: HashMap<String, Int>,
-        /** Palabras agrupadas por su primera letra (la autocorrección solo revisa unas pocas) */
-        val porInicial: HashMap<Char, IntArray>,
-        val minusculas: HashSet<String>,
+        /** Lo mismo, pero solo con las palabras más comunes (prefijos de una o dos letras) */
+        val ordenTop: IntArray,
+        val grupos: HashMap<Char, Grupo>,
+        /** Predicción: después de cada palabra, las que más se escriben (código + archivo) */
+        val pares: HashMap<String, List<String>>,
+        /** Predicción con las dos palabras anteriores: "lo antes" → "posible" */
+        val trios: HashMap<String, List<String>>,
     ) {
         val total = palabras.size
-        /** Más alto = más común */
-        fun puntaje(i: Int) = total - i
     }
 
     @Volatile
@@ -105,33 +118,86 @@ class Diccionario(context: Context) {
     }
 
     private fun construir(c: Context): Indice {
-        val fijas = (FRECUENCIA + " " + BASE + " " + BASE_EXTRA + " " + JERGA + " " + BASE_TILDES).trim().split(ESPACIOS)
-        // Diccionario grande (español, Latinoamérica y Perú) desde assets/diccionario.txt
-        val archivo = try {
+        val vistos = HashSet<String>(140_000)
+        val lista = ArrayList<String>(130_000)
+        fun sumar(p: String) { if (p.isNotEmpty() && vistos.add(p)) lista.add(p) }
+        // 1) Lo más usado en el chat
+        for (p in FRECUENCIA.trim().split(ESPACIOS)) sumar(p)
+        // 2) El diccionario grande, de la palabra más común a la menos común.
+        //    En "@fijas" entran las listas del código (chat peruano, tildes, jerga).
+        var conFijas = false
+        try {
             c.assets.open("diccionario.txt").bufferedReader().useLines { lineas ->
-                lineas.map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.toList()
+                for (linea in lineas) {
+                    val p = linea.trim()
+                    if (p.isEmpty() || p[0] == '#') continue
+                    if (p == "@fijas") {
+                        conFijas = true
+                        for (w in (BASE + " " + BASE_TILDES + " " + BASE_EXTRA + " " + JERGA).trim().split(ESPACIOS)) sumar(w)
+                        continue
+                    }
+                    sumar(p)
+                }
             }
-        } catch (_: Exception) { emptyList() }
-
-        val vistos = HashSet<String>(fijas.size + archivo.size)
-        val lista = ArrayList<String>(fijas.size + archivo.size)
-        for (p in fijas) if (p.isNotEmpty() && vistos.add(p)) lista.add(p)
-        for (p in archivo) if (vistos.add(p)) lista.add(p)
+        } catch (_: Exception) { }
+        if (!conFijas) for (w in (BASE + " " + BASE_TILDES + " " + BASE_EXTRA + " " + JERGA).trim().split(ESPACIOS)) sumar(w)
+        vistos.clear()
 
         val palabras = lista.toTypedArray()
-        val normal = Array(palabras.size) { normal(palabras[it]) }
-        val orden = palabras.indices.sortedWith { a, b -> normal[a].compareTo(normal[b]) }.toIntArray()
-        val mejor = HashMap<String, Int>(palabras.size * 2)
-        val grupos = HashMap<Char, ArrayList<Int>>()
-        val minusculas = HashSet<String>(palabras.size * 2)
-        for (i in palabras.indices) {
-            mejor.putIfAbsent(normal[i], i) // la primera es la más común
-            normal[i].firstOrNull()?.let { grupos.getOrPut(it) { ArrayList() }.add(i) }
-            minusculas.add(palabras[i].lowercase())
+        lista.clear()
+        // La forma sin tildes: si es igual a la palabra se usa el mismo texto (menos memoria)
+        val normal = Array(palabras.size) {
+            val p = palabras[it]
+            val n = normal(p)
+            if (n == p) p else n
         }
-        val porInicial = HashMap<Char, IntArray>()
-        for ((k, v) in grupos) porInicial[k] = v.toIntArray()
-        return Indice(palabras, normal, orden, mejor, porInicial, minusculas)
+        val orden = palabras.indices.sortedWith { a, b -> normal[a].compareTo(normal[b]) }.toIntArray()
+        val ordenTop = orden.filter { it < TOP }.toIntArray()
+
+        // Grupos por letra inicial, ordenados por largo (y dentro, de más a menos común)
+        val porLetra = HashMap<Char, ArrayList<Int>>()
+        for (i in palabras.indices) {
+            val n = normal[i]
+            if (n.isEmpty() || n.length > MAX_LARGO) continue
+            porLetra.getOrPut(n[0]) { ArrayList() }.add(i)
+        }
+        val grupos = HashMap<Char, Grupo>()
+        for ((k, v) in porLetra) {
+            val idx = v.sortedWith(compareBy<Int>({ normal[it].length }, { it })).toIntArray()
+            val desde = IntArray(MAX_LARGO + 2)
+            var pos = 0
+            for (largo in 0..MAX_LARGO + 1) {
+                while (pos < idx.size && normal[idx[pos]].length < largo) pos++
+                desde[largo] = pos
+            }
+            grupos[k] = Grupo(idx, desde)
+        }
+
+        // Predicciones: las del código y las del archivo bigramas.txt
+        val paresFijos = HashMap<String, List<String>>(PARES_BASE.size * 2)
+        for ((k, v) in PARES_BASE) paresFijos[k] = v
+        val triosFijos = HashMap<String, List<String>>()
+        try {
+            c.assets.open("bigramas.txt").bufferedReader().useLines { lineas ->
+                for (linea in lineas) {
+                    if (linea.isBlank() || linea.trimStart().startsWith("#")) continue
+                    val i = linea.indexOf(':')
+                    if (i <= 0) continue
+                    val clave = linea.substring(0, i).trim().lowercase()
+                    // Como en iPhone: se predice una palabra a la vez (de "fin de semana" va "fin")
+                    val sig = linea.substring(i + 1).split(",")
+                        .mapNotNull { s -> s.trim().split(' ').firstOrNull()?.takeIf { it.isNotEmpty() } }
+                        .distinct()
+                    if (sig.isEmpty()) continue
+                    val partes = clave.split(' ')
+                    when (partes.size) {
+                        1 -> paresFijos[clave] = ((paresFijos[clave] ?: emptyList()) + sig).distinct()
+                        2 -> triosFijos[clave] = ((triosFijos[clave] ?: emptyList()) + sig).distinct()
+                    }
+                }
+            }
+        } catch (_: Exception) { }
+        return Indice(palabras, normal, orden, ordenTop, grupos, paresFijos, triosFijos)
     }
 
     private fun normal(s: String) = sinTildes(s)
@@ -141,10 +207,37 @@ class Diccionario(context: Context) {
 
     private fun bloqueada(p: String) = bloqueadas.isNotEmpty() && p.lowercase() in bloqueadas
 
-    private fun conoce(ix: Indice, p: String): Boolean {
-        val l = p.lowercase()
-        return l in ix.minusculas || (aprendidas[l] ?: 0) >= 2
+    /** Más alto = más común (escala logarítmica, como la frecuencia real de las palabras) */
+    private fun frec(i: Int): Int = (1000.0 - 85.0 * Math.log(i + 1.0)).toInt().coerceAtLeast(1)
+
+    /** Posición de la palabra exacta (sin importar mayúsculas) en el diccionario, o -1 */
+    private fun rango(ix: Indice, p: String): Int {
+        val n = normal(p)
+        if (n.isEmpty()) return -1
+        var k = desde(ix, n)
+        var mejor = -1
+        while (k < ix.orden.size) {
+            val i = ix.orden[k++]
+            if (ix.normal[i] != n) break
+            if (ix.palabras[i].equals(p, ignoreCase = true) && (mejor < 0 || i < mejor)) mejor = i
+        }
+        return mejor
     }
+
+    /** La palabra más común que se escribe así sin tildes ("tambien" → "también"), o -1 */
+    private fun mejorPorNormal(ix: Indice, n: String): Int {
+        var k = desde(ix, n)
+        var mejor = -1
+        while (k < ix.orden.size) {
+            val i = ix.orden[k++]
+            if (ix.normal[i] != n) break
+            if (mejor < 0 || i < mejor) mejor = i
+        }
+        return mejor
+    }
+
+    private fun conoce(ix: Indice, p: String): Boolean =
+        rango(ix, p) >= 0 || (aprendidas[p.lowercase()] ?: 0) >= 2
 
     private fun igualarMayus(c: String, modelo: String): String = when {
         modelo.length > 1 && modelo.all { !it.isLetter() || it.isUpperCase() } -> c.uppercase()
@@ -179,12 +272,12 @@ class Diccionario(context: Context) {
     }
 
     /** Primera posición (en el orden alfabético) cuya palabra es >= [np] */
-    private fun desde(ix: Indice, np: String): Int {
+    private fun desde(ix: Indice, np: String, orden: IntArray = ix.orden): Int {
         var a = 0
-        var b = ix.orden.size
+        var b = orden.size
         while (a < b) {
             val m = (a + b) ushr 1
-            if (ix.normal[ix.orden[m]] < np) a = m + 1 else b = m
+            if (ix.normal[orden[m]] < np) a = m + 1 else b = m
         }
         return a
     }
@@ -198,6 +291,14 @@ class Diccionario(context: Context) {
         s.add('h') // "ola" → "hola"
         if (np.length > 1) s.add(np[1]) // "uqe" → "que"
         return s
+    }
+
+    /** Recorre las palabras de [ch] con un largo entre [min] y [max] */
+    private inline fun recorrer(ix: Indice, ch: Char, min: Int, max: Int, accion: (Int) -> Unit) {
+        val g = ix.grupos[ch] ?: return
+        val a = g.desde[min.coerceIn(0, MAX_LARGO + 1)]
+        val b = g.desde[(max + 1).coerceIn(0, MAX_LARGO + 1)]
+        for (k in a until b) accion(g.idx[k])
     }
 
     // ---------- Distancia "de teclado" ----------
@@ -221,11 +322,17 @@ class Diccionario(context: Context) {
             actual[0] = i.toFloat()
             var minimo = actual[0]
             val ca = a[i - 1]
+            // Letra de más: si repetiste la letra o es vecina de la anterior/siguiente, fue un
+            // dedo que rozó dos teclas ("hokla" → "hola") y cuesta menos
+            val extra = when {
+                i >= 2 && a[i - 2] == ca -> 0.5f
+                (i >= 2 && costoCambio(a[i - 2], ca) <= 0.4f) || (i < n && costoCambio(a[i], ca) <= 0.4f) -> 0.65f
+                else -> 1f
+            }
             for (j in 1..m) {
                 val cb = b[j - 1]
                 var v = antes[j - 1] + (if (tq != null) costoToque(tq[i - 1], ca, cb) else costoCambio(ca, cb))
-                // Letra de más (si repetiste la misma letra cuesta menos: "holaa")
-                v = minOf(v, antes[j] + if (i >= 2 && a[i - 2] == ca) 0.5f else 1f)
+                v = minOf(v, antes[j] + extra)
                 // Letra que faltó (letra doble o "h" muda cuestan menos: "aroz" → "arroz", "ola" → "hola")
                 v = minOf(v, actual[j - 1] + if (cb == 'h') 0.3f else if (j >= 2 && b[j - 2] == cb) 0.5f else 1f)
                 // Dos letras invertidas: "qeu" → "que"
@@ -273,18 +380,26 @@ class Diccionario(context: Context) {
         else -> 2.1f
     }
 
+    /** Las palabras que suelen ir después de [l] (código + archivo) */
+    private fun paresFijos(l: String): List<String>? {
+        val ix = indice
+        return if (ix != null) ix.pares[l] ?: ix.pares[normal(l)] else PARES_BASE[l]
+    }
+
     /** Puntos extra si sueles escribir [w] después de [previa] (y de [previa2] antes de esa) */
     private fun contexto(previa: String, w: String, previa2: String = ""): Float {
         if (previa.isEmpty()) return 0f
         val l = previa.lowercase()
         val lw = w.lowercase()
         if (previa2.isNotEmpty()) {
-            val trio = trios[previa2.lowercase() + " " + l]?.get(lw) ?: 0
+            val clave = previa2.lowercase() + " " + l
+            val trio = trios[clave]?.get(lw) ?: 0
             if (trio > 0) return 0.8f + minOf(trio, 10) * 0.05f
+            if (indice?.trios?.get(clave)?.contains(lw) == true) return 0.55f
         }
         val propio = pares[l]?.get(lw) ?: 0
         if (propio > 0) return 0.5f + minOf(propio, 10) * 0.05f
-        return if (PARES_BASE[l]?.contains(lw) == true) 0.35f else 0f
+        return if (paresFijos(l)?.contains(lw) == true) 0.35f else 0f
     }
 
     // ---------- Sugerencias ----------
@@ -311,16 +426,18 @@ class Diccionario(context: Context) {
         val lp = prefijo.lowercase()
         val res = HashMap<String, Int>()
         if (ix != null) {
-            // Todas las palabras que empiezan así (búsqueda binaria, sin recorrer todo)
-            var k = desde(ix, np)
+            // Todas las palabras que empiezan así (búsqueda binaria, sin recorrer todo).
+            // Con una o dos letras se miran solo las más comunes (si no, serían miles).
+            val orden = if (np.length <= 2) ix.ordenTop else ix.orden
+            var k = desde(ix, np, orden)
             var revisadas = 0
-            while (k < ix.orden.size && revisadas < 6000) {
-                val i = ix.orden[k++]
+            while (k < orden.size && revisadas < 6000) {
+                val i = orden[k++]
                 if (!ix.normal[i].startsWith(np)) break
                 if ((++revisadas and 511) == 0 && cortado()) return emptyList()
                 val p = ix.palabras[i]
                 if (p.equals(lp, ignoreCase = true) || bloqueada(p)) continue
-                val s = ix.puntaje(i)
+                val s = frec(i)
                 if ((res[p] ?: 0) < s) res[p] = s
             }
         }
@@ -331,12 +448,16 @@ class Diccionario(context: Context) {
                 if (w != lp && normalDe(w).startsWith(np) && !bloqueada(w)) res[w] = (res[w] ?: 0) + 400 + c * 120
             }
             if (previa2.isNotEmpty()) {
-                trios[previa2.lowercase() + " " + lprev]?.forEach { (w, c) ->
+                val clave = previa2.lowercase() + " " + lprev
+                trios[clave]?.forEach { (w, c) ->
                     if (w != lp && normalDe(w).startsWith(np) && !bloqueada(w)) res[w] = (res[w] ?: 0) + 600 + c * 150
                 }
+                ix?.trios?.get(clave)?.forEachIndexed { i, w ->
+                    if (w != lp && normalDe(w).startsWith(np) && !bloqueada(w)) res[w] = (res[w] ?: 0) + 380 - i * 30
+                }
             }
-            PARES_BASE[lprev]?.forEachIndexed { i, w ->
-                if (w != lp && normalDe(w).startsWith(np) && !bloqueada(w)) res[w] = (res[w] ?: 0) + 300 - i * 30
+            paresFijos(lprev)?.forEachIndexed { i, w ->
+                if (w != lp && normalDe(w).startsWith(np) && !bloqueada(w)) res[w] = (res[w] ?: 0) + 300 - minOf(i, 8) * 25
             }
         }
         for ((p, c) in aprendidas) {
@@ -353,18 +474,17 @@ class Diccionario(context: Context) {
                 else -> 1.1f
             }
             for (ch in iniciales(np)) {
-                val grupo = ix.porInicial[ch] ?: continue
                 if (cortado()) return emptyList()
-                for (i in grupo) {
+                recorrer(ix, ch, np.length - 2, MAX_LARGO) { i ->
                     val p = ix.palabras[i]
-                    if (res.containsKey(p) || p.equals(lp, ignoreCase = true) || bloqueada(p)) continue
-                    val n = ix.normal[i]
-                    if (n.length + 2 < np.length) continue
-                    val c = minOf(
-                        distancia(np, n, np.length, lim),
-                        distancia(np, n, n.length, lim),
-                    )
-                    if (c <= lim) res[p] = (ix.puntaje(i) * 0.5f * (1f - c / (lim + 0.6f))).toInt()
+                    if (!res.containsKey(p) && !p.equals(lp, ignoreCase = true) && !bloqueada(p)) {
+                        val n = ix.normal[i]
+                        val c = minOf(
+                            distancia(np, n, np.length, lim),
+                            distancia(np, n, n.length, lim),
+                        )
+                        if (c <= lim) res[p] = (frec(i) * 0.55f * (1f - c / (lim + 0.6f))).toInt()
+                    }
                 }
             }
             for ((p, c) in aprendidas) {
@@ -379,6 +499,52 @@ class Diccionario(context: Context) {
             .map { igualarMayus(it.key, prefijo) }
     }
 
+    /**
+     * Qué tan probable es cada letra como la siguiente de [prefijo] (a–z y ñ al final).
+     * El teclado lo usa para agrandar un poquito las teclas probables cuando tocas justo
+     * en el borde, como hace el iPhone. null si no hay datos.
+     */
+    @Synchronized
+    fun letrasProbables(prefijo: String, t: Int): FloatArray? {
+        miTurno = t
+        val ix = indice ?: return null
+        if (prefijo.isEmpty() || prefijo.length > 20) return null
+        val np = normal(prefijo)
+        if (np.length != prefijo.length) return null
+        val res = FloatArray(27)
+        var total = 0f
+        val largo = np.length
+        var k = desde(ix, np, ix.ordenTop)
+        var revisadas = 0
+        while (k < ix.ordenTop.size && revisadas < 3000) {
+            val i = ix.ordenTop[k++]
+            val n = ix.normal[i]
+            if (!n.startsWith(np)) break
+            revisadas++
+            if (n.length <= largo || ix.palabras[i].length <= largo) continue
+            val ch = ix.palabras[i][largo].lowercaseChar()
+            val tecla = if (ch == 'ñ') 26 else (SIN_ACENTO[ch] ?: ch) - 'a'
+            if (tecla !in 0..26) continue
+            val w = frec(i).toFloat()
+            res[tecla] += w
+            total += w
+        }
+        if (cortado()) return null
+        val lp = prefijo.lowercase()
+        for ((p, c) in aprendidas) {
+            if (c < 2 || p.length <= largo || !p.startsWith(lp)) continue
+            val ch = p[largo]
+            val tecla = if (ch == 'ñ') 26 else (SIN_ACENTO[ch] ?: ch) - 'a'
+            if (tecla !in 0..26) continue
+            val w = minOf(c, 40) * 40f
+            res[tecla] += w
+            total += w
+        }
+        if (total <= 0f) return null
+        for (i in res.indices) res[i] /= total
+        return res
+    }
+
     /** Predicción de la siguiente palabra (barra después de un espacio), como en iPhone */
     @Synchronized
     fun siguientes(previa: String, max: Int, previa2: String = ""): List<String> {
@@ -386,10 +552,14 @@ class Diccionario(context: Context) {
         val res = LinkedHashMap<String, Int>()
         // Lo que sueles escribir después de esas dos palabras manda: "nos vemos" → "mañana"
         if (previa2.isNotEmpty() && l.isNotEmpty()) {
-            trios[previa2.lowercase() + " " + l]?.forEach { (w, c) -> if (!bloqueada(w)) res[w] = c * 30 }
+            val clave = previa2.lowercase() + " " + l
+            trios[clave]?.forEach { (w, c) -> if (!bloqueada(w)) res[w] = c * 30 }
+            indice?.trios?.get(clave)?.forEachIndexed { i, w ->
+                if (!bloqueada(w)) res[w] = (res[w] ?: 0) + (12 - i).coerceAtLeast(2)
+            }
         }
         pares[l]?.forEach { (w, c) -> if (!bloqueada(w)) res[w] = (res[w] ?: 0) + c * 10 + recencia(w) / 10 }
-        val fijas = if (l.isEmpty()) INICIO else PARES_BASE[l] ?: PARES_BASE[normal(l)]
+        val fijas = if (l.isEmpty()) INICIO else paresFijos(l)
         fijas?.forEachIndexed { i, w -> if (!bloqueada(w)) res[w] = (res[w] ?: 0) + (8 - i).coerceAtLeast(1) }
         // Siempre 3 opciones, como en iPhone: si no hay nada para esa palabra, las más comunes
         if (res.size < max) {
@@ -421,6 +591,75 @@ class Diccionario(context: Context) {
         return r
     }
 
+    /**
+     * La palabra más parecida a [np] (sin tildes) del diccionario y de lo que aprendiste.
+     * [maxRango]: solo palabras más comunes que esa posición (-1 = todas).
+     */
+    private fun masParecida(
+        ix: Indice, np: String, lim: Float, previa: String, previa2: String, maxRango: Int = -1,
+    ): String? {
+        var mejor: String? = null
+        var mejorTotal = Float.MAX_VALUE
+        for (ch in iniciales(np)) {
+            if (cortado()) return null
+            recorrer(ix, ch, np.length - 2, np.length + 2) { i ->
+                if (maxRango < 0 || i <= maxRango) {
+                    val c = ix.palabras[i]
+                    if (!bloqueada(c)) {
+                        val n = ix.normal[i]
+                        val d = distancia(np, n, n.length, lim)
+                        if (d <= lim) {
+                            val ctx = contexto(previa, c, previa2)
+                            // Si no es un error "de tecla vecina", solo corrige hacia palabras comunes
+                            if (!(d > 0.65f && i > 2500 && ctx == 0f)) {
+                                val total = d * 2.5f + Math.log(i + 30.0).toFloat() * 0.3f - ctx
+                                if (total < mejorTotal) { mejorTotal = total; mejor = c }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (maxRango < 0) {
+            for ((c, n) in aprendidas) {
+                if (n < 2 || bloqueada(c)) continue
+                val nc = normalDe(c)
+                if (Math.abs(nc.length - np.length) > 2) continue
+                val d = distancia(np, nc, nc.length, lim)
+                if (d > lim || (d > 0.65f && n < 3)) continue
+                val total = d * 2.5f + 1.1f - minOf(n, 30) * 0.04f - contexto(previa, c, previa2) - recencia(c) * 0.004f
+                if (total < mejorTotal) { mejorTotal = total; mejor = c }
+            }
+        }
+        return mejor
+    }
+
+    /**
+     * Palabras pegadas por no tocar el espacio: "estoybien" → "estoy bien", "porfavor" → "por favor".
+     * Las dos partes tienen que ser palabras comunes.
+     */
+    private fun separar(ix: Indice, p: String): String? {
+        val l = p.lowercase()
+        if (l.length < 5) return null
+        var mejor: String? = null
+        var mejorPuntaje = 0
+        for (k in 1 until l.length - 1) {
+            val a = l.substring(0, k)
+            val b = l.substring(k)
+            if (a.length == 1 && a[0] !in "ayoeu") continue
+            if (b.length < 2) continue
+            val ra = rango(ix, a)
+            if (ra < 0 || ra > COMUN) continue
+            val rb = rango(ix, b)
+            if (rb < 0 || rb > COMUN) continue
+            var s = minOf(frec(ra), frec(rb)) + (frec(ra) + frec(rb)) / 4
+            if (paresFijos(a)?.contains(b) == true || pares[a]?.containsKey(b) == true) s += 250
+            if (s > mejorPuntaje) { mejorPuntaje = s; mejor = ix.palabras[ra].lowercase() + " " + ix.palabras[rb] }
+        }
+        // Solo si ambas partes son bastante comunes (evita cortes raros)
+        return if (mejorPuntaje >= 520) mejor else null
+    }
+
     private fun corregirSinFiltro(p: String, previa: String, previa2: String): String? {
         if (p.length < 2) return null
         val l = p.lowercase()
@@ -430,19 +669,30 @@ class Diccionario(context: Context) {
         }
         if (expresiva(l)) return null
         val ix = indice ?: return null // aún cargando: mejor no tocar nada
-        if (conoce(ix, p)) {
-            // Nombres que siempre escribes con mayúscula: "javier" → "Javier"
-            return if (p[0].isLowerCase() && esNombre(l) && !bloqueada(l)) p.replaceFirstChar { it.uppercase() } else null
-        }
         val np = normal(p)
         if (np.isEmpty()) return null
+        val rp = rango(ix, p)
+        val usada = aprendidas[l] ?: 0
+        if (rp >= 0 || usada >= 2) {
+            // Nombres que siempre escribes con mayúscula: "javier" → "Javier"
+            if (p[0].isLowerCase() && esNombre(l) && !bloqueada(l)) return p.replaceFirstChar { it.uppercase() }
+            // Una palabra rarísima que nunca usaste, tocada justo en el borde de una tecla,
+            // cuando a un toque hay una palabra muy común: casi seguro fue un dedo desviado
+            // ("cpmo" está en el diccionario como rara → "como"). Solo con la posición del dedo.
+            if (rp > RARA && usada == 0 && np.length >= 3 && toq != null) {
+                val alt = masParecida(ix, np, 0.28f, previa, previa2, maxRango = 4000)
+                if (alt != null && !alt.equals(p, ignoreCase = true)) return igualarMayus(alt, p)
+            }
+            return null
+        }
 
         // 1) Solo faltan tildes: "tambien" → "también"
         var mejor: String? = null
         var puntaje = -1
-        ix.mejorPorNormal[np]?.let { i ->
-            val c = ix.palabras[i]
-            if (!bloqueada(c)) { mejor = c; puntaje = ix.puntaje(i) }
+        val mi = mejorPorNormal(ix, np)
+        if (mi >= 0) {
+            val c = ix.palabras[mi]
+            if (!bloqueada(c)) { mejor = c; puntaje = frec(mi) }
         }
         for ((c, n) in aprendidas) {
             if (n >= 2 && n * 40 > puntaje && normalDe(c) == np && !bloqueada(c)) { mejor = c; puntaje = n * 40 }
@@ -450,36 +700,13 @@ class Diccionario(context: Context) {
 
         // 2) Errores de tipeo con la distribución del teclado
         // (una palabra rara escrita una sola vez puede ser un error; desde la segunda ya es tuya)
-        val yaLaUsaste = (aprendidas[l] ?: 0) >= 2
-        if (mejor == null && np.length >= 3 && !yaLaUsaste) {
-            val lim = limitePara(np.length)
-            var mejorTotal = Float.MAX_VALUE
-            for (ch in iniciales(np)) {
-                val grupo = ix.porInicial[ch] ?: continue
-                if (cortado()) return null
-                for (i in grupo) {
-                    val n = ix.normal[i]
-                    if (Math.abs(n.length - np.length) > 2) continue
-                    val c = ix.palabras[i]
-                    if (bloqueada(c)) continue
-                    val d = distancia(np, n, n.length, lim)
-                    if (d > lim) continue
-                    val r = i // 0 = la más común
-                    val ctx = contexto(previa, c, previa2)
-                    // Si no es un error "de tecla vecina", solo corrige hacia palabras comunes
-                    if (d > 0.65f && r > 2500 && ctx == 0f) continue
-                    val total = d * 2.5f + Math.log(r + 30.0).toFloat() * 0.3f - ctx
-                    if (total < mejorTotal) { mejorTotal = total; mejor = c }
-                }
-            }
-            for ((c, n) in aprendidas) {
-                if (n < 2 || bloqueada(c)) continue
-                val nc = normalDe(c)
-                if (Math.abs(nc.length - np.length) > 2) continue
-                val d = distancia(np, nc, nc.length, lim)
-                if (d > lim || (d > 0.65f && n < 3)) continue
-                val total = d * 2.5f + 1.1f - minOf(n, 30) * 0.04f - contexto(previa, c, previa2) - recencia(c) * 0.004f
-                if (total < mejorTotal) { mejorTotal = total; mejor = c }
+        if (mejor == null && np.length >= 3) {
+            mejor = masParecida(ix, np, limitePara(np.length), previa, previa2)
+        }
+        // 3) Palabras pegadas: "estoybien" → "estoy bien"
+        if (mejor == null && np.length >= 5) {
+            separar(ix, p)?.let { s ->
+                return if (p[0].isUpperCase()) s.replaceFirstChar { it.uppercase() } else s
             }
         }
         val elegida = mejor ?: return null
@@ -623,10 +850,7 @@ class Diccionario(context: Context) {
         val iniciales = pos.filter { dist(it.value, inicio) <= 1.3f }.keys
             .map { if (it == 'ñ') 'n' else it }.toSet()
         for (ch in iniciales) {
-            val grupo = ix.porInicial[ch] ?: continue
-            for (i in grupo) {
-                val n = ix.normal[i]
-                if (n.length < 2) continue
+            recorrer(ix, ch, 2, MAX_LARGO) { i ->
                 evaluar(ix.palabras[i], Math.log(i + 30.0).toFloat() * 0.22f)
             }
         }
@@ -656,8 +880,8 @@ class Diccionario(context: Context) {
         aprendidas[l] = (aprendidas[l] ?: 0) + peso
         usadas[l] = hoy()
         cambios = true
-        // Guardar seguido para no perder lo aprendido si Android cierra el teclado
-        if (++sinGuardar >= 20) guardar()
+        // Por si Android cierra el teclado de golpe: cada tanto se guarda igual
+        if (++sinGuardar >= 150) guardar()
     }
 
     @Synchronized
@@ -730,40 +954,75 @@ class Diccionario(context: Context) {
         guardar()
     }
 
+    /** ¿Hay algo aprendido sin guardar? (el teclado decide cuándo guardar para no gastar batería) */
+    @Synchronized
+    fun pendiente() = cambios
+
+    /** Los pares (o tríos) más usados, hasta [max] (los que sobran y casi no se usan se descartan) */
+    private fun mejoresDe(mapas: HashMap<String, HashMap<String, Int>>, max: Int, sb: StringBuilder) {
+        var total = 0
+        for (m in mapas.values) total += m.size
+        val limite = if (total <= max) 0 else {
+            // Umbral para quedarse con los ~max más usados sin ordenar todo
+            val cuentas = IntArray(32)
+            for (m in mapas.values) for (c in m.values) cuentas[minOf(c, 31)]++
+            var acum = 0
+            var u = 31
+            while (u > 0 && acum + cuentas[u] <= max) { acum += cuentas[u]; u-- }
+            u + 1
+        }
+        var n = 0
+        for ((clave, mapa) in mapas) {
+            for ((w, c) in mapa) {
+                if (c < limite || n >= max) continue
+                n++
+                sb.append(clave).append('\t').append(w).append('\t').append(c).append('\n')
+            }
+        }
+    }
+
+    /** Guarda lo aprendido en su propio archivo (rápido y sin reescribir los ajustes) */
     @Synchronized
     fun guardar() {
         if (!cambios) return
+        // Si restableciste el diccionario desde los ajustes, no se vuelve a guardar lo viejo
+        if (prefs.getInt("aprendidas_rev", 0) != revision) {
+            recargarSiCambio()
+            return
+        }
         val dia = hoy()
-        val texto = aprendidas.entries
-            .sortedByDescending { it.value * 10 + recencia(it.key) }
-            .take(6000)
-            .joinToString("|") { "${it.key}:${it.value}:${usadas[it.key] ?: dia}" }
-        val sb = StringBuilder()
-        var n = 0
-        loop@ for ((previa, mapa) in pares) {
-            for ((w, c) in mapa) {
-                if (n++ > 8000) break@loop
-                sb.append(previa).append(SEP1).append(w).append(SEP1).append(c).append(SEP2)
+        val sb = StringBuilder(128 * 1024)
+        sb.append(VERSION_ARCHIVO).append('\n')
+        sb.append("#a\n")
+        val lista = if (aprendidas.size <= 8000) aprendidas.entries.toList()
+        else aprendidas.entries.sortedByDescending { it.value * 10 + recencia(it.key) }.take(8000)
+        for ((p, c) in lista) sb.append(p).append('\t').append(c).append('\t').append(usadas[p] ?: dia).append('\n')
+        sb.append("#p\n")
+        mejoresDe(pares, 12000, sb)
+        sb.append("#t\n")
+        mejoresDe(trios, 10000, sb)
+        sb.append("#r\n")
+        for (r in rechazos.take(2000)) sb.append(r).append('\n')
+        sb.append("#b\n")
+        for (b in bloqueadas) sb.append(b).append('\n')
+        sb.append("#n\n")
+        for ((k, v) in nombres) sb.append(k).append('\t').append(v).append('\n')
+        try {
+            // Primero a un archivo temporal y luego se reemplaza: nunca queda a medias
+            val tmp = File(archivo.parentFile, "$ARCHIVO.tmp")
+            tmp.writeText(sb.toString(), Charsets.UTF_8)
+            if (!tmp.renameTo(archivo)) {
+                archivo.delete()
+                tmp.renameTo(archivo)
             }
-        }
-        val sb3 = StringBuilder()
-        var n3 = 0
-        loop3@ for ((clave, mapa) in trios) {
-            for ((w, c) in mapa) {
-                if (n3++ > 8000) break@loop3
-                sb3.append(clave).append(SEP1).append(w).append(SEP1).append(c).append(SEP2)
+            if (migrar) {
+                migrar = false
+                prefs.edit().remove("aprendidas").remove("pares").remove("trios").remove("rechazos")
+                    .remove("bloqueadas").remove("nombres").apply()
             }
-        }
-        prefs.edit()
-            .putString("aprendidas", texto)
-            .putString("pares", sb.toString())
-            .putString("trios", sb3.toString())
-            .putString("rechazos", rechazos.take(2000).joinToString("|"))
-            .putString("bloqueadas", bloqueadas.joinToString("|"))
-            .putString("nombres", nombres.entries.joinToString("|") { "${it.key}:${it.value}" })
-            .apply()
-        cambios = false
-        sinGuardar = 0
+            cambios = false
+            sinGuardar = 0
+        } catch (_: Exception) { }
     }
 
     @Synchronized
@@ -776,12 +1035,61 @@ class Diccionario(context: Context) {
             rechazos.clear()
             bloqueadas.clear()
             nombres.clear()
+            normales.clear()
             cargar()
         }
     }
 
+    private fun agregarAprendida(p: String, n: Int, usada: Int, dia: Int) {
+        if (p.isEmpty()) return
+        val dias = dia - usada
+        // Limpieza: lo que escribiste una sola vez y no volviste a usar en 45 días era un error
+        if (n <= 1 && dias > 45) return
+        // Lo que dejaste de usar hace meses pierde fuerza poco a poco
+        aprendidas[p] = if (dias > 120 && n > 2) maxOf(2, n / 2) else n
+        usadas[p] = usada
+    }
+
     private fun cargar() {
         revision = prefs.getInt("aprendidas_rev", 0)
+        cambios = false
+        if (archivo.exists()) {
+            try { cargarArchivo(); return } catch (_: Exception) { }
+        }
+        cargarViejo()
+    }
+
+    private fun cargarArchivo() {
+        val dia = hoy()
+        var seccion = ' '
+        archivo.bufferedReader(Charsets.UTF_8).useLines { lineas ->
+            for (linea in lineas) {
+                if (linea.isEmpty()) continue
+                if (linea[0] == '#' && linea.length == 2) { seccion = linea[1]; continue }
+                val partes = linea.split('\t')
+                when (seccion) {
+                    'a' -> if (partes.size >= 2) {
+                        val n = partes[1].toIntOrNull() ?: continue
+                        agregarAprendida(partes[0], n, partes.getOrNull(2)?.toIntOrNull() ?: dia, dia)
+                    }
+                    'p' -> if (partes.size == 3) {
+                        val c = partes[2].toIntOrNull() ?: continue
+                        pares.getOrPut(partes[0]) { HashMap() }[partes[1]] = c
+                    }
+                    't' -> if (partes.size == 3) {
+                        val c = partes[2].toIntOrNull() ?: continue
+                        trios.getOrPut(partes[0]) { HashMap() }[partes[1]] = c
+                    }
+                    'r' -> if (linea.contains('>')) rechazos.add(linea)
+                    'b' -> bloqueadas.add(linea)
+                    'n' -> if (partes.size == 2) nombres[partes[0]] = partes[1].toIntOrNull() ?: continue
+                }
+            }
+        }
+    }
+
+    /** Lo aprendido con las versiones anteriores (guardado dentro de los ajustes) */
+    private fun cargarViejo() {
         val texto = prefs.getString("aprendidas", "") ?: ""
         val dia = hoy()
         for (par in texto.split("|")) {
@@ -789,13 +1097,7 @@ class Diccionario(context: Context) {
             val partes = par.split(':')
             if (partes.size < 2 || partes[0].isEmpty()) continue
             val n = partes[1].toIntOrNull() ?: continue
-            val usada = partes.getOrNull(2)?.toIntOrNull() ?: dia
-            val dias = dia - usada
-            // Limpieza: lo que escribiste una sola vez y no volviste a usar en 45 días era un error
-            if (n <= 1 && dias > 45) continue
-            // Lo que dejaste de usar hace meses pierde fuerza poco a poco
-            aprendidas[partes[0]] = if (dias > 120 && n > 2) maxOf(2, n / 2) else n
-            usadas[partes[0]] = usada
+            agregarAprendida(partes[0], n, partes.getOrNull(2)?.toIntOrNull() ?: dia, dia)
         }
         fun leerMapas(clave: String, destino: HashMap<String, HashMap<String, Int>>) {
             val t = prefs.getString(clave, "") ?: ""
@@ -815,10 +1117,30 @@ class Diccionario(context: Context) {
             if (i <= 0) continue
             nombres[par.substring(0, i)] = par.substring(i + 1).toIntOrNull() ?: continue
         }
-        cambios = false
+        if (aprendidas.isNotEmpty() || pares.isNotEmpty()) {
+            // Se pasa al archivo nuevo en el próximo guardado
+            migrar = true
+            cambios = true
+        }
     }
 
     companion object {
+        /** Archivo con lo que el teclado aprendió de ti */
+        private const val ARCHIVO = "aprendido.txt"
+        private const val VERSION_ARCHIVO = "tecladoios-aprendido-2"
+        /** Las palabras más comunes (para prefijos cortos y letras probables) */
+        private const val TOP = 20000
+        private const val MAX_LARGO = 40
+        /** Desde esta posición la palabra es rarísima (formas poco usadas) */
+        private const val RARA = 45000
+        /** Hasta esta posición la palabra es común (para separar palabras pegadas) */
+        private const val COMUN = 15000
+
+        /** Borra todo lo aprendido (Restablecer diccionario en los ajustes) */
+        fun borrarDatos(c: Context) {
+            try { File(c.applicationContext.filesDir, ARCHIVO).delete() } catch (_: Exception) { }
+        }
+
         private val MARCAS = Regex("\\p{Mn}+")
         private val ESPACIOS = Regex("\\s+")
 
@@ -880,10 +1202,10 @@ class Diccionario(context: Context) {
         }
 
         /** Al empezar una oración (como el iPhone: Hola, Yo, Ya...) */
-        private val INICIO = listOf("hola", "yo", "ya", "gracias", "ok", "buenos", "qué", "no", "sí", "te", "buenas", "oye", "dale", "listo", "cómo", "me", "estoy", "amor", "voy", "bueno")
+        private val INICIO = listOf("hola", "yo", "ya", "gracias", "ok", "buenos", "qué", "no", "sí", "te", "buenas", "oye", "dale", "listo", "cómo", "me", "estoy", "el", "la", "en", "estimado", "quisiera", "por", "bueno", "amor", "voy", "muchas", "les", "le")
 
         /** Para cuando no hay predicción propia de la palabra anterior */
-        private val GENERALES = listOf("y", "que", "de", "en", "a", "no", "con", "para")
+        private val GENERALES = listOf("y", "que", "de", "en", "a", "no", "con", "para", "el", "la", "por", "se")
 
         /** Risas que no se corrigen: jajaja, jsjsjs, jeje, xd */
         private val RISA = Regex("(?:j+[aeiouhs]+)+j*|(?:js|sj)+[js]?|x+d+")
@@ -941,6 +1263,38 @@ class Diccionario(context: Context) {
             avisame:avísame llamame:llámame escribeme:escríbeme pasame:pásame mandame:mándame
             dimelo:dímelo esperame:espérame ayudame:ayúdame cuentame:cuéntame
             yapeame:yapéame plineame:plinéame
+            haver:haber aver:a_ver  hechar:echar   bayan:vayan  
+            exito:éxito  proposito:propósito analisis:análisis basicamente:básicamente
+            practicamente:prácticamente rapidamente:rápidamente facilmente:fácilmente ultimamente:últimamente
+            unicamente:únicamente especificamente:específicamente automaticamente:automáticamente
+            economicamente:económicamente tecnicamente:técnicamente logicamente:lógicamente
+              consiencia:conciencia conciente:consciente 
+            inconciente:inconsciente desicion:decisión desiciones:decisiones decision:decisión ocacion:ocasión
+            ocaciones:ocasiones ocasion:ocasión previlegio:privilegio privilejio:privilegio exepcion:excepción
+            excepcion:excepción  espectativa:expectativa espectativas:expectativas
+            exhorbitante:exorbitante extrictamente:estrictamente  sinembargo:sin_embargo
+            noobstante:no_obstante porlotanto:por_lo_tanto osea:o_sea apartir:a_partir 
+               inprescindible:imprescindible
+            imprecindible:imprescindible inprimir:imprimir inportante:importante inposible:imposible
+            inperdible:imperdible inbitacion:invitación invitacion:invitación nececidad:necesidad nesesidad:necesidad
+            nesecidad:necesidad presisamente:precisamente  presicion:precisión
+            precision:precisión  concecuencia:consecuencia conclucion:conclusión
+            conclusion:conclusión revicion:revisión revision:revisión dirijir:dirigir corrijir:corregir
+            elejir:elegir elijir:elegir escojer:escoger recojer:recoger protejer:proteger
+            reciviste:recibiste recivir:recibir recivido:recibido recibi:recibí recivi:recibí
+            enviame:envíame envialo:envíalo enviamelo:envíamelo pasamelo:pásamelo dimelo:dímelo
+            explicame:explícame explicamelo:explícamelo mandamelo:mándamelo ayudame:ayúdame
+            confirmame:confírmame indicame:indícame comunicame:comunícame informame:infórmame
+            agradeceria:agradecería podria:podría podrias:podrías deberia:debería deberias:deberías
+            tendria:tendría tendrias:tendrías  serian:serían habria:habría haria:haría
+            gustaria:gustaría encantaria:encantaría queria:quería querias:querías  tenia:tenía
+            tenias:tenías habian:habían habiamos:habíamos estabamos:estábamos ibamos:íbamos eramos:éramos
+            reunion:reunión atencion:atención solucion:solución situacion:situación educacion:educación
+            relacion:relación organizacion:organización administracion:administración comunicacion:comunicación
+            investigacion:investigación presentacion:presentación evaluacion:evaluación aplicacion:aplicación
+            confirmacion:confirmación cotizacion:cotización explicacion:explicación participacion:participación
+            documentacion:documentación capacitacion:capacitación coordinacion:coordinación gestion:gestión
+            opcion:opción  razon:razón corazon:corazón tambien:también despues:después
         """.trim().split(ESPACIOS).mapNotNull { par ->
             val i = par.indexOf(':')
             if (i <= 0) null else par.substring(0, i) to par.substring(i + 1).replace('_', ' ')

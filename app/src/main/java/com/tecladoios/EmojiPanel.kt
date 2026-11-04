@@ -358,6 +358,9 @@ class EmojiGrid(
         pinturaTitulo.color = tema.textoSecundario
         val fmt = pinturaTitulo.fontMetrics
         val yTitulo = altoTitulo * 0.5f - (fmt.ascent + fmt.descent) / 2f + 2f * d
+        // Sin crear objetos por cada emoji dibujado (deslizar más fluido)
+        val pi = presionado?.first ?: -1
+        val pj = presionado?.second ?: -1
         secciones.forEachIndexed { i, s ->
             val ini = inicios.getOrElse(i) { 0f }
             val fin = finales.getOrElse(i) { 0f }
@@ -383,7 +386,7 @@ class EmojiGrid(
                     val j = col * filas + fila
                     if (j >= s.emojis.size) break
                     val y = altoTitulo + fila * altoCelda
-                    if (presionado == Pair(i, j)) {
+                    if (pi == i && pj == j) {
                         fondo.color = (tema.teclaPresionada and 0x00FFFFFF) or 0x99000000.toInt()
                         val r = 9f * d
                         c.drawRoundRect(x + 2f * d, y + 1f * d, x + anchoCelda - 2f * d, y + altoCelda - 1f * d, r, r, fondo)

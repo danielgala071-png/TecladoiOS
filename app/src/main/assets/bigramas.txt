@@ -1,0 +1,169 @@
+# palabra: siguientes más probables (en orden). Se suman a las del código.
+estimado: señor, cliente, equipo, colega, profesor, ingeniero, doctor, licenciado
+estimada: señora, clienta, profesora, doctora, ingeniera, licenciada
+estimados: señores, colegas, clientes, todos, padres, compañeros
+estimadas: señoras, colegas, compañeras
+querido: amigo, hermano, papá, hijo
+querida: amiga, mamá, hermana, hija, familia
+señor: presidente, director, gerente, alcalde, juez
+señora: presidenta, directora, gerente
+le: escribo, saluda, informo, comento, agradezco, consulto, adjunto, envío, recuerdo, comunico, solicito, pido, pregunto, aviso
+les: escribo, informo, comento, agradezco, recuerdo, comunico, envío, deseo, saluda, invito
+por: favor, eso, lo tanto, medio, otro, último, ejemplo, supuesto, cierto, ello, parte, su, tu, el, la, qué
+sin: embargo, duda, problema, ningún, ninguna, importar, más, que
+no: obstante, sé, te, hay, es, puedo, tengo, me, se, lo, quiero, solo, dudes
+en: cuanto, caso, efecto, realidad, general, particular, conclusión, resumen, primer, este, esta, base, relación, consecuencia, todo, cambio
+es: decir, importante, necesario, posible, fundamental, que, un, una, el, la, mejor, muy, cierto
+de: acuerdo, hecho, nuevo, igual, manera, forma, todos, nada, verdad, inmediato, antemano, la, los, las, mi, tu, su, este, esta, que
+a: continuación, pesar, partir, través, menos, veces, tiempo, cabo, fin, medida, la, las, los, mí, ti, ver, que, qué
+con: respecto, relación, el, la, los, las, mucho, gusto, todo, mi, tu, su, quién, base
+para: que, el, la, los, las, mí, ti, poder, ello, esto, eso, mañana, hoy, qué, ser
+quedo: atento, atenta, pendiente, a la espera, al tanto
+quedamos: atentos, pendientes, a la espera, en contacto
+atentamente: el, la
+cordialmente: el, la
+saludos: cordiales, a, para, desde
+muchas: gracias, veces, felicidades, cosas
+muchísimas: gracias, felicidades
+gracias: por, de, a, amor, igualmente, de antemano, a ti, a todos, por todo
+agradezco: su, tu, mucho, de antemano, la, el, que
+agradecemos: su, tu, la, el, de antemano
+de antemano: gracias
+espero: que, su, tu, tus, sus, verte, poder, con, estés, estén, contar
+deseo: que, informarle, comunicarle, saber, consultar
+quisiera: saber, consultar, pedirte, pedirle, solicitar, preguntar, informarle, agradecerte, que, hablar
+me: gustaría, gustaría saber, permito, dirijo, comunico, encantaría, parece, alegra, preocupa, interesa, dices, avisas, gusta
+nos: vemos, gustaría, comunicamos, permitimos, dirigimos, alegra, interesa, encantaría
+gustaría: saber, consultar, que, pedirte, pedirle, hablar, conocer, proponer, invitarte, agendar
+podría: ser, usted, enviarme, ayudarme, indicarme, confirmar, explicar, decirme
+podrías: enviarme, ayudarme, decirme, explicarme, pasarme, confirmar, mandarme, llamarme
+podrían: enviarme, ayudarme, confirmar, indicarme
+puede: ser, que, usted, enviarme, ayudarme, confirmar
+adjunto: el, la, los, las, encontrará, encontrarás
+envío: el, la, los, las, adjunto, adjunta
+por favor: confirmar, enviar, revisar
+favor: de, confirmar, enviar, revisar
+confirmar: si, la, el, su, tu, que, asistencia, recepción
+revisar: el, la, los, las, si, que
+según: lo, el, la, los, las, mi, su, tu
+debido: a, al, que
+dado: que, el, la, lo
+ya: que, está, sé, te, me, lo, voy, llegué, estoy, es, no
+tanto: como, que, el, la, tiempo
+así: como, que, es, mismo, pues, nomás
+además: de, del, el, la, es, se, me
+también: es, te, me, se, puede, quiero, hay, yo
+sin embargo: el, la, es, no, se, me, hay
+no obstante: el, la, es, se
+lo: que, siento, mismo, antes, más, cual, sé, tengo, hago, voy
+la: verdad, reunión, semana, empresa, propuesta, información, idea, situación, próxima, mejor, misma, otra
+el: tema, día, lunes, próximo, mismo, informe, proyecto, documento, equipo, archivo, problema, trabajo, cliente
+los: documentos, resultados, datos, detalles, demás, días, chicos
+las: cosas, personas, veces, fotos, gracias
+un: momento, saludo, abrazo, poco, día, tema, problema, favor, gusto, placer
+una: reunión, consulta, pregunta, vez, idea, propuesta, duda, semana, oportunidad
+muy: bien, buen, buena, importante, amable, agradecido, agradecida, interesante, pronto, contento, contenta
+buen: día, trabajo, viaje, fin de semana, provecho, punto
+buena: suerte, idea, noticia, onda, tarde, noche
+buenos: días, resultados, deseos
+buenas: noches, tardes, noticias
+feliz: cumpleaños, día, año, navidad, fin de semana, viaje, aniversario
+tenga: un, una, buen, buena, en cuenta
+tengan: un, una, buen, buena
+que: tengas, tenga, tengan, te, le, me, se, no, es, estés, sea, pases, descanses, bueno, tal
+tengas: un, una, buen, buena, lindo, linda
+reunión: de, del, con, para, el, sobre
+informe: de, del, sobre, final, mensual
+proyecto: de, del, para
+tema: de, del, que, es
+consulta: sobre, de, acerca
+respecto: a, al, de
+acerca: de, del
+través: de, del
+partir: de, del
+lugar: de
+caso: de, contrario, que
+cuenta: con, de, que
+cuanto: a, antes, más, sea
+medida: que, de
+lo más: pronto, antes, rápido
+lo antes: posible
+cuanto antes: mejor, posible
+posible: que, para
+necesario: que, para
+importante: que, para, es
+claro: que, está
+seguro: que, de
+creo: que, no, sí, mejor, conveniente
+pienso: que, en, ir
+considero: que, importante, necesario, oportuno, pertinente
+opino: que
+supongo: que
+entiendo: que, perfectamente, tu, su
+recuerda: que, traer, llevar
+recuerde: que
+tener: en cuenta, que, cuidado
+tomar: en cuenta, una, un, el, la, nota, decisión
+hacer: un, una, el, la, lo, eso, algo, falta, caso
+dar: un, una, el, la, seguimiento, cuenta
+llevar: a, el, la, cabo
+llevarse: a cabo
+estar: en, de, bien, pendiente, atento, seguro
+estoy: de acuerdo, seguro, segura, pendiente, disponible, atento, atenta, bien, en, llegando, saliendo
+estamos: de acuerdo, en, pendientes, trabajando, disponibles
+están: en, de acuerdo, invitados, invitadas
+tiene: que, razón, un, una, algún, alguna
+tienen: que, razón, un, una
+hay: que, un, una, algo, algún, alguna, problema, tiempo
+he: estado, visto, hecho, recibido, enviado, revisado, pensado, tenido, sido
+hemos: recibido, revisado, enviado, decidido, tenido, estado
+ha: sido, estado, hecho, recibido, enviado, tenido, llegado
+han: sido, estado, recibido, llegado
+fue: un, una, muy, el, la, un placer
+será: un, una, el, la, muy, mejor
+sería: bueno, mejor, ideal, genial, importante, conveniente, un, una
+queda: claro, pendiente, en
+por lo: tanto, menos, general
+lo tanto: es, se, el, la
+primer: lugar, día, paso, año
+segundo: lugar, día, paso
+último: día, momento, lugar
+próximo: lunes, martes, miércoles, jueves, viernes, sábado, domingo, mes, año, semana, paso
+próxima: semana, reunión, vez
+esta: semana, tarde, noche, mañana, vez, es, situación, propuesta
+este: fin, mes, año, lunes, martes, miércoles, jueves, viernes, sábado, domingo, tema, proyecto
+fin: de semana, de mes
+de semana: largo
+día: de, a, tras
+mi: nombre, número, correo, casa, familia, amor, mamá, papá, trabajo, opinión
+su: nombre, número, correo, atención, respuesta, apoyo, ayuda, tiempo, disposición, propuesta
+tu: nombre, número, correo, respuesta, ayuda, apoyo, tiempo, casa
+atención: al, a, de
+disposición: para, de
+disponible: para, en, a
+en contacto: con
+ponerme: en contacto, de acuerdo
+ponernos: de acuerdo, en contacto
+hasta: luego, pronto, mañana, el, la, que, ahora
+nos vemos: mañana, pronto, luego
+desde: el, la, que, mi, hace, ya, luego, aquí
+durante: el, la, los, las, este, esta
+entre: el, la, los, las, otros, todos, nosotros
+sobre: el, la, los, las, todo, este, esta
+cada: vez, día, uno, una, semana, año
+todo: bien, el, lo, está, esto, eso, momento
+todos: los, ustedes, nosotros, juntos
+toda: la, una
+nada: más, que, de, mal
+algo: así, más, de, que, para
+alguien: que, más, me
+siempre: que, es, me, te
+nunca: más, me, te, se
+mejor: dicho, aún, que, así
+o sea: que
+es decir: que, el, la
+aunque: no, sea, sí, también
+porque: no, es, me, te, se, el, la, estoy
+mientras: tanto, que
+cuando: puedas, pueda, tengas, llegues, llegue, quieras, termines, salgas
+si: puedes, tienes, quieres, necesitas, es, no, te, me, se, gustas

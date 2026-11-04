@@ -24,6 +24,8 @@ object Ajustes {
     fun borrarDeslizado(c: Context) = si(c, "borrar_deslizado", true)
     fun vistaPrevia(c: Context) = si(c, "vista_previa", true)
     fun puntoDoble(c: Context) = si(c, "punto_doble", true)
+    /** Lo copiado aparece en la barra de sugerencias para pegarlo con un toque */
+    fun portapapeles(c: Context) = si(c, "portapapeles", true)
 
     // Teclado con una mano: "no", "izq" o "der"
     fun unaMano(c: Context) = prefs(c).getString("una_mano", "no") ?: "no"
@@ -36,11 +38,6 @@ object Ajustes {
     // Respuesta del teclado
     fun vibrar(c: Context) = si(c, "vibrar", true)
     fun sonido(c: Context) = si(c, "sonido", false)
-
-    // Dictado
-    fun dictado(c: Context) = si(c, "dictado", true)
-    fun puntuacionDictado(c: Context) = si(c, "dictado_puntuacion", true)
-    fun idiomaDictado(c: Context) = prefs(c).getString("dictado_idioma", "es-PE") ?: "es-PE"
 
     /** Sustitución de texto: (función rápida, frase) */
     fun atajos(c: Context): MutableList<Pair<String, String>> {

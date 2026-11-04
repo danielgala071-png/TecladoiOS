@@ -1,6 +1,5 @@
 package com.tecladoios
 
-import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
@@ -144,24 +143,6 @@ class SettingsActivity : Activity() {
         }
         setContentView(scroll)
         dibujar()
-        if (intent?.getBooleanExtra("pedir_microfono", false) == true) pedirMicrofono()
-    }
-
-    private fun microfonoPermitido() =
-        checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-
-    private fun pedirMicrofono() {
-        if (!microfonoPermitido()) requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 7)
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 7) {
-            if (microfonoPermitido()) {
-                Toast.makeText(this, "Listo, ya puedes dictar con el micrófono del teclado", Toast.LENGTH_SHORT).show()
-            }
-            if (::contenedor.isInitialized) dibujar()
-        }
     }
 
     private fun irA(p: String) {
@@ -176,7 +157,6 @@ class SettingsActivity : Activity() {
             "atajos" -> paginaAtajos()
             "teclados" -> paginaTeclados()
             "una_mano" -> paginaUnaMano()
-            "idiomas_dictado" -> paginaIdiomasDictado()
             else -> paginaPrincipal()
         }
     }
@@ -476,6 +456,11 @@ class SettingsActivity : Activity() {
             filaInterruptor("Atajo con “.”", "punto_doble", true),
         ), pie = "Pulsar dos veces la barra espaciadora insertará un punto seguido de un espacio.")
 
+        grupo("Portapapeles", listOf(
+            filaInterruptor("Mostrar lo copiado", "portapapeles", true),
+        ), pie = "Lo que copias aparece unos minutos en la barra de sugerencias para pegarlo con un " +
+                "toque. Mantenlo presionado para quitarlo. Las contraseñas se muestran con puntos.")
+
         grupo("Respuesta del teclado", listOf(
             filaInterruptor("Sonido", "sonido", false),
             filaInterruptor("Háptica", "vibrar", true),
@@ -507,6 +492,7 @@ class SettingsActivity : Activity() {
                             .remove("nombres")
                             .putInt("aprendidas_rev", prefs.getInt("aprendidas_rev", 0) + 1)
                             .apply()
+                        Diccionario.borrarDatos(this)
                         Toast.makeText(this, "Diccionario restablecido", Toast.LENGTH_SHORT).show()
                     }
                     .setNegativeButton("Cancelar", null)
@@ -519,7 +505,7 @@ class SettingsActivity : Activity() {
             packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
         } catch (_: Exception) { "?" }
         contenedor.addView(TextView(this).apply {
-            text = "TecladoiOS versión $version · AMOLED v2"
+            text = "TecladoiOS versión $version · AMOLED v3"
             Fuentes.aplicar(this, 400)
             textSize = 13f
             setTextColor(gris)
@@ -559,17 +545,6 @@ class SettingsActivity : Activity() {
         ), pie = "El teclado se hace más angosto y se pega al lado que elijas. Toca la flecha del " +
                 "costado del teclado para volver al tamaño completo. En horizontal y en el teclado " +
                 "numérico se usa siempre el teclado completo.")
-    }
-
-    // ---------- Idiomas de dictado ----------
-
-    private fun paginaIdiomasDictado() {
-        volver()
-        tituloGrande("Idiomas de dictado")
-        val actual = Ajustes.idiomaDictado(this)
-        grupo(null, IDIOMAS_DICTADO.map { (codigo, nombre) ->
-            filaCheck(nombre, actual == codigo) { elegir("dictado_idioma", codigo) }
-        })
     }
 
     // ---------- Sustitución de texto ----------
@@ -647,15 +622,5 @@ class SettingsActivity : Activity() {
             }
         }
         dialogo.show()
-    }
-
-    companion object {
-        val IDIOMAS_DICTADO = listOf(
-            "es-PE" to "Español (Perú)",
-            "es-MX" to "Español (México)",
-            "es-US" to "Español (EE. UU.)",
-            "es-ES" to "Español (España)",
-            "en-US" to "Inglés (EE. UU.)",
-        )
     }
 }

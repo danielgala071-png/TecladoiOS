@@ -18,8 +18,17 @@ android {
     }
 
     buildTypes {
+        // GitHub compila la versión "debug": se deja optimizada igual que una versión final
+        // (sin modo depuración y con R8), así el teclado va más rápido y gasta menos batería.
+        // Se firma igual que antes.
+        debug {
+            isDebuggable = false
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 

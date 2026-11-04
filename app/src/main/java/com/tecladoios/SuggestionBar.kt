@@ -25,6 +25,10 @@ data class Sugerencia(
     val revertir: Boolean = false,
     /** Predicción en línea: lo que falta de la palabra, en gris (se acepta con espacio) */
     val resto: String? = null,
+    /** Lo que copiaste (se pega al tocarlo, como en iPhone). [texto] es lo que se ve */
+    val portapapeles: Boolean = false,
+    /** Lo que se pega de verdad (puede ser distinto a lo que se ve, p. ej. una clave con puntos) */
+    val pegar: String? = null,
 )
 
 /**
@@ -58,6 +62,15 @@ class SuggestionBar(
     private val manejador = Handler(Looper.getMainLooper())
     private val alMantener = Runnable {
         val s = items.getOrNull(presionado) ?: return@Runnable
+        if (s.portapapeles) {
+            // Mantener presionado lo copiado: se quita de la barra
+            mantenido = true
+            presionado = -1
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            acciones.olvidar(s)
+            invalidate()
+            return@Runnable
+        }
         if (!sePuedeOlvidar(s)) return@Runnable
         mantenido = true
         tocoEn = -1
@@ -68,7 +81,7 @@ class SuggestionBar(
     }
 
     private fun sePuedeOlvidar(s: Sugerencia) =
-        !s.revertir && s.reemplaza < 0 && !s.texto.contains(' ') && s.texto.length >= 2 &&
+        !s.portapapeles && !s.revertir && s.reemplaza < 0 && !s.texto.contains(' ') && s.texto.length >= 2 &&
                 s.texto.all { it.isLetter() }
 
     // Una pintura por grosor de letra: cambiar el grosor en cada dibujo es lento
@@ -247,7 +260,62 @@ class SuggestionBar(
         if (capa >= 0) c.restoreToCount(capa)
     }
 
+    // Cápsula de lo copiado
+    private val capsula = RectF()
+    private val pinturaClip = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        strokeWidth = 1.5f * d
+    }
+    private val pinturaChica = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.LEFT
+        textSize = 15f * d
+    }.also { Fuentes.aplicar(it, 400) }
+    private var clipCrudo: String? = null
+    private var clipLinea = ""
+    private var clipAncho = -1f
+
+    /** Lo copiado: una cápsula al centro con el ícono del portapapeles y el texto en una línea */
+    private fun dibujarCopiado(c: Canvas, s: Sugerencia) {
+        val h = height.toFloat()
+        val maxAncho = width * 0.78f
+        val icono = 14f * d
+        val hueco = 8f * d
+        val lados = 14f * d
+        val disponible = maxAncho - lados * 2 - icono - hueco
+        // El texto ya recortado se guarda: no se vuelve a medir en cada cuadro
+        if (s.texto != clipCrudo || disponible != clipAncho) {
+            clipCrudo = s.texto
+            clipAncho = disponible
+            val unaLinea = s.texto.replace(Regex("\\s+"), " ").trim()
+            clipLinea = TextUtils.ellipsize(unaLinea, pinturaChica, disponible, TextUtils.TruncateAt.END).toString()
+        }
+        val anchoTexto = pinturaChica.measureText(clipLinea)
+        val ancho = lados * 2 + icono + hueco + anchoTexto
+        val izq = (width - ancho) / 2f
+        capsula.set(izq, 6f * d, izq + ancho, h - 10f * d)
+        val radioC = capsula.height() / 2f
+        pintura.color = if (presionado == 0) tema.teclaPresionada else tema.tecla
+        c.drawRoundRect(capsula, radioC, radioC, pintura)
+        pinturaBorde.color = tema.borde
+        c.drawRoundRect(capsula, radioC, radioC, pinturaBorde)
+        // Ícono de portapapeles (una tablilla con su gancho)
+        pinturaClip.color = tema.texto
+        val cx = izq + lados + icono / 2f
+        val cy = capsula.centerY()
+        val w2 = icono * 0.38f
+        val h2 = icono * 0.5f
+        c.drawRoundRect(cx - w2, cy - h2 + 1.5f * d, cx + w2, cy + h2, 2.5f * d, 2.5f * d, pinturaClip)
+        c.drawRoundRect(cx - w2 * 0.5f, cy - h2, cx + w2 * 0.5f, cy - h2 + 3f * d, 1.5f * d, 1.5f * d, pinturaClip)
+        // El texto
+        pinturaChica.color = tema.texto
+        val fm = pinturaChica.fontMetrics
+        c.drawText(clipLinea, izq + lados + icono + hueco, cy - (fm.ascent + fm.descent) / 2f, pinturaChica)
+    }
+
     private fun dibujarSugerencias(c: Canvas) {
+        items[0]?.let { if (it.portapapeles) { dibujarCopiado(c, it); return } }
         val ancho = width / 3f
         for (i in 0 until 3) {
             val s = items[i] ?: continue
@@ -315,7 +383,8 @@ class SuggestionBar(
             }
             return true
         }
-        val i = (e.x / (width / 3f)).toInt().coerceIn(0, 2)
+        val esCopiado = items[0]?.portapapeles == true
+        val i = if (esCopiado) 0 else (e.x / (width / 3f)).toInt().coerceIn(0, 2)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 mantenido = false
@@ -332,7 +401,8 @@ class SuggestionBar(
             }
             MotionEvent.ACTION_UP -> {
                 manejador.removeCallbacks(alMantener)
-                val s = if (presionado == i) items[i] else null
+                val s = if (presionado == i && !mantenido) items[i] else null
+                mantenido = false
                 presionado = -1
                 invalidate()
                 if (s != null) acciones.elegir(s)

@@ -12,9 +12,12 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.os.Handler
 import android.os.Looper
+import android.os.Build
 import android.os.SystemClock
 import android.view.MotionEvent
+import android.view.RoundedCorner
 import android.view.View
+import android.view.WindowInsets
 import android.view.animation.DecelerateInterpolator
 
 enum class Tipo { LETRA, SHIFT, BORRAR, A_NUMEROS, A_SIMBOLOS, A_LETRAS, EMOJI, ESPACIO, ENTER, MIC, UNA_MANO, VACIO }
@@ -23,6 +26,16 @@ enum class Tipo { LETRA, SHIFT, BORRAR, A_NUMEROS, A_SIMBOLOS, A_LETRAS, EMOJI, 
 enum class Modo { LETRAS, NUMEROS, SIMBOLOS, PIN, TELEFONO_SIMBOLOS }
 
 class Tecla(val tipo: Tipo, val texto: String = "", val ancho: Float = 1f, val sub: String = "") {
+    /** La letra en mayúscula ya calculada (no se crea un texto nuevo en cada dibujo) */
+    val textoMayus: String = texto.uppercase()
+    /** Índice de la letra para la predicción de toques (a–z = 0..25, ñ = 26, -1 = no es letra) */
+    val letra: Int = if (texto.length == 1) {
+        val c = texto[0]
+        if (c == 'ñ') 26 else if (c in 'a'..'z') c - 'a' else -1
+    } else -1
+    /** Esquinas de abajo más curvas (123 a la izquierda, intro a la derecha, siguiendo la pantalla) */
+    var curvaIzq = 0f
+    var curvaDer = 0f
     val rect = RectF()
     /** Forma con esquinas suaves (se calcula una vez) */
     val forma = Path()
@@ -50,7 +63,6 @@ class KeyboardView(
         fun abrirEmojis()
         fun retro(tipo: Tipo)
         fun moverCursor(pasos: Int)
-        fun dictar()
         /** Deslizar para escribir: el recorrido del dedo, en teclas */
         fun deslizar(puntos: List<FloatArray>, proporcion: Float, mayus: Boolean)
     }
@@ -72,14 +84,22 @@ class KeyboardView(
     private val formaPulso = Path()
     private val rectPulso = RectF()
 
-    var dictando = false
-        set(value) { field = value; invalidate() }
-
     // Al presionar: la tecla se tiñe de vidrio del color de la app (sin brillo)
     private val pulsos = HashMap<Tecla, Float>()
     private val animPulsos = HashMap<Tecla, ValueAnimator>()
 
     // ---------- Opciones que pone el servicio ----------
+
+    /**
+     * Qué tan probable es cada letra como la siguiente (lo calcula el servicio con el
+     * diccionario). Si tocas justo en el borde entre dos teclas, gana la letra que tiene
+     * sentido, como en el iPhone. null = solo cuenta dónde cayó el dedo.
+     */
+    var probLetras: FloatArray? = null
+
+    /** Radio de las esquinas de la pantalla y alto de la barra de navegación (para la curva de abajo) */
+    private var radioPantalla = 0f
+    private var navAbajo = 0f
 
     var soloNumeros = false
     var vistaPrevia = true
@@ -254,7 +274,7 @@ class KeyboardView(
 
     private fun colocar(t: Tecla, x: Float, w: Float, top: Float, sep: Float) {
         t.rect.set(x + sep, top + sepV, x + w - sep, top + altoFila - sepV)
-        Formas.suave(t.forma, t.rect.left, t.rect.top, t.rect.right, t.rect.bottom, radio)
+        Formas.suave(t.forma, t.rect.left, t.rect.top, t.rect.right, t.rect.bottom, radio, 0f, t.curvaDer, t.curvaIzq)
         // Filo del color de la app: intenso arriba y se va desvaneciendo hacia abajo (vidrio)
         t.shaderBorde = LinearGradient(0f, t.rect.top, 0f, t.rect.bottom,
             tema.borde, (tema.borde and 0x00FFFFFF) or ((Color.alpha(tema.borde) * 2 / 5) shl 24), Shader.TileMode.CLAMP)
@@ -263,9 +283,30 @@ class KeyboardView(
             tema.brillo, tema.brillo and 0x00FFFFFF, Shader.TileMode.CLAMP)
     }
 
+    /**
+     * 123 (abajo a la izquierda) e intro (abajo a la derecha) terminan en curva: su esquina
+     * de afuera sigue la curva de la pantalla, como en el iPhone.
+     */
+    private fun curvaExterior(t: Tecla, izquierda: Boolean): Float {
+        val alto = t.rect.height()
+        // Distancia de la tecla a la esquina de la pantalla
+        val dx = if (izquierda) t.rect.left else width - t.rect.right
+        val dy = (alto() - t.rect.bottom) + navAbajo
+        val concentrica = radioPantalla - maxOf(dx, dy)
+        return maxOf(concentrica, alto * 0.42f).coerceAtMost(alto * 0.5f)
+    }
+
     private fun acomodar() {
         if (width == 0) return
         val pad = esPad
+        for (fila in filas) for (t in fila) { t.curvaIzq = 0f; t.curvaDer = 0f }
+        if (!pad) {
+            val abajo = filas.last()
+            val primera = abajo.first()
+            val ultima = abajo.last()
+            if (primera.tipo == Tipo.A_NUMEROS || primera.tipo == Tipo.A_LETRAS) primera.curvaIzq = -1f
+            if (ultima.tipo == Tipo.ENTER) ultima.curvaDer = -1f
+        }
         val mano = !pad && !horizontal && unaMano != "no"
         areaAncho = if (mano) width * 0.86f else width.toFloat()
         areaX = if (mano && unaMano == "der") width - areaAncho else 0f
@@ -299,6 +340,14 @@ class KeyboardView(
                 x += w
             }
         }
+        // Con la posición ya puesta, se calcula la curva de afuera y se rehace su forma
+        for (t in filas.last()) {
+            if (t.curvaIzq < 0f || t.curvaDer < 0f) {
+                if (t.curvaIzq < 0f) t.curvaIzq = curvaExterior(t, true)
+                if (t.curvaDer < 0f) t.curvaDer = curvaExterior(t, false)
+                Formas.suave(t.forma, t.rect.left, t.rect.top, t.rect.right, t.rect.bottom, radio, 0f, t.curvaDer, t.curvaIzq)
+            }
+        }
         if (mano) {
             val izq = if (unaMano == "izq") areaAncho else 0f
             val der = if (unaMano == "izq") width.toFloat() else areaX
@@ -313,7 +362,29 @@ class KeyboardView(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
+        leerPantalla()
         acomodar()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (leerPantalla()) acomodar()
+    }
+
+    /** Lee la curva de las esquinas de la pantalla y la barra de navegación. true si cambió. */
+    private fun leerPantalla(): Boolean {
+        val ins = rootWindowInsets ?: return false
+        var r = 0f
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val a = ins.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT)?.radius ?: 0
+            val b = ins.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_RIGHT)?.radius ?: 0
+            r = maxOf(a, b).toFloat()
+        }
+        val nav = ins.getInsets(WindowInsets.Type.navigationBars()).bottom.toFloat()
+        if (r == radioPantalla && nav == navAbajo) return false
+        radioPantalla = r
+        navAbajo = nav
+        return true
     }
 
     /** Posición del dedo medida en teclas: x en anchos de tecla, y en filas (0 = primera fila) */
@@ -373,7 +444,7 @@ class KeyboardView(
     // ---------- Dibujo ----------
 
     private fun etiqueta(t: Tecla) =
-        if (modo == Modo.LETRAS && shift > 0) t.texto.uppercase() else t.texto
+        if (modo == Modo.LETRAS && shift > 0) t.textoMayus else t.texto
 
     override fun onDraw(canvas: Canvas) {
         for (fila in filas) for (t in fila) dibujar(canvas, t)
@@ -431,7 +502,7 @@ class KeyboardView(
         // Al presionar, la tecla apenas se hunde (no crece ni brilla)
         val r = if (f > 0f) rectPulso.apply { set(t.rect); inset(dp(0.6f) * f, dp(0.6f) * f) } else t.rect
         val forma = if (f > 0f) {
-            Formas.suave(formaPulso, r.left, r.top, r.right, r.bottom, radio)
+            Formas.suave(formaPulso, r.left, r.top, r.right, r.bottom, radio, 0f, t.curvaDer, t.curvaIzq)
             formaPulso
         } else t.forma
 
@@ -505,11 +576,18 @@ class KeyboardView(
         }
     }
 
+    /** Medidas de la letra reutilizadas (pedirlas crea un objeto nuevo cada vez) */
+    private val medidasLetra = Paint.FontMetrics()
+    private var tamMedido = -1f
+
     private fun texto(c: Canvas, s: String, cx: Float, cy: Float, tam: Float, color: Int) {
         pinturaTexto.textSize = tam
         pinturaTexto.color = color
-        val fm = pinturaTexto.fontMetrics
-        c.drawText(s, cx, cy - (fm.ascent + fm.descent) / 2f, pinturaTexto)
+        if (tam != tamMedido) {
+            pinturaTexto.getFontMetrics(medidasLetra)
+            tamMedido = tam
+        }
+        c.drawText(s, cx, cy - (medidasLetra.ascent + medidasLetra.descent) / 2f, pinturaTexto)
     }
 
     // ---------- Acentos ----------
@@ -561,7 +639,42 @@ class KeyboardView(
             }
             if (dx < distancia) { distancia = dx; mejor = t }
         }
+        val p = probLetras
+        if (p != null && mejor != null && mejor.letra >= 0 && modo == Modo.LETRAS) {
+            return conPrediccion(x, y, mejor, i, p)
+        }
         return mejor
+    }
+
+    /**
+     * Toque inteligente (como el iPhone): cerca del borde entre dos letras, gana la que
+     * tiene más sentido para la palabra que estás escribiendo. En el centro de la tecla
+     * manda siempre el dedo: solo cambia en una franja angosta junto al borde.
+     */
+    private fun conPrediccion(x: Float, y: Float, base: Tecla, fila: Int, p: FloatArray): Tecla {
+        var mejor = base
+        var mejorPuntaje = puntajeToque(base, x, y, p)
+        val zonaX = unidad * 0.2f
+        val zonaY = altoFila * 0.2f
+        for (f in maxOf(0, fila - 1)..minOf(filas.size - 1, fila + 1)) {
+            for (t in filas[f]) {
+                if (t === base || t.letra < 0) continue
+                val r = t.rect
+                if (x < r.left - zonaX || x > r.right + zonaX || y < r.top - zonaY || y > r.bottom + zonaY) continue
+                val s = puntajeToque(t, x, y, p)
+                if (s > mejorPuntaje) { mejorPuntaje = s; mejor = t }
+            }
+        }
+        return mejor
+    }
+
+    private fun puntajeToque(t: Tecla, x: Float, y: Float, p: FloatArray): Float {
+        val prob = p.getOrElse(t.letra) { 0f }
+        val dx = (x - t.rect.centerX()) / unidad
+        val dy = (y - t.rect.centerY()) / unidad
+        val d2 = dx * dx + dy * dy * 0.8f
+        // Distancia al centro (en anchos de tecla) contra lo probable de la letra
+        return Math.log(prob + 0.02).toFloat() * 0.35f - d2 / (2f * 0.33f * 0.33f)
     }
 
     private fun agregarPunto(x: Float, y: Float) {
@@ -694,6 +807,9 @@ class KeyboardView(
                     if (actual.tipo != Tipo.LETRA || esPad) continue
                     val t = teclaEn(x, y) ?: continue
                     if (t !== actual && t.tipo == Tipo.LETRA) {
+                        // Un temblor del dedo no cambia la tecla
+                        val p0 = puntosToque[id]
+                        if (p0 != null && Math.hypot((x - p0[0]).toDouble(), (y - p0[1]).toDouble()) < dp(9f)) continue
                         // Solo cambia de tecla si el dedo entró de verdad en la otra (no por rozar
                         // el borde al escribir rápido): así no salen letras vecinas por error
                         val m = dp(5f)
@@ -822,7 +938,7 @@ class KeyboardView(
             Tipo.A_SIMBOLOS -> modo = if (modo == Modo.PIN) Modo.TELEFONO_SIMBOLOS else Modo.SIMBOLOS
             Tipo.A_LETRAS -> modo = Modo.LETRAS
             Tipo.EMOJI -> acciones.abrirEmojis()
-            Tipo.MIC -> acciones.dictar()
+            Tipo.MIC -> {}
             Tipo.UNA_MANO -> {
                 // Volver al teclado completo, como la flecha del iPhone
                 unaMano = "no"

@@ -1,8 +1,7 @@
 package com.tecladoios
 
-import android.Manifest
-import android.content.Intent
-import android.content.pm.PackageManager
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -11,7 +10,6 @@ import android.inputmethodservice.InputMethodService
 import android.inputmethodservice.InputMethodService.Insets
 import android.media.AudioManager
 import android.os.Build
-import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
@@ -20,9 +18,6 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import android.text.InputType
 import android.view.KeyEvent
 import android.view.View
@@ -32,7 +27,6 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethod
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.Toast
 
 class TecladoService : InputMethodService(),
     KeyboardView.Acciones, EmojiPanel.Acciones, SuggestionBar.Acciones {
@@ -40,6 +34,10 @@ class TecladoService : InputMethodService(),
     companion object {
         /** Cuánto texto antes del cursor se guarda en la copia local */
         private const val MAX_ESPEJO = 300
+        /** Lo copiado se ofrece en la barra durante este tiempo (como en iPhone) */
+        private const val VIGENCIA_COPIADO = 3 * 60 * 1000L
+        /** Lo aprendido se guarda como mucho cada tantos milisegundos (menos escrituras = menos batería) */
+        private const val ESPERA_GUARDADO = 20_000L
     }
 
     private var barra: SuggestionBar? = null
@@ -73,6 +71,26 @@ class TecladoService : InputMethodService(),
     private var puntoDoble = true
     private var atajosActivos = true
     private var atajos: Map<String, String> = emptyMap()
+    /** Texto de las sustituciones ya leído (solo se vuelve a leer si cambiaste algo en Ajustes) */
+    private var atajosCrudo: String? = null
+
+    // ---------- Lo copiado (como en iPhone: aparece en la barra para pegarlo con un toque) ----------
+    private var portapapeles: ClipboardManager? = null
+    private var copiadoActivo = true
+    /** En este campo se puede ofrecer lo copiado (no en el teclado de PIN) */
+    private var copiadoPermitido = false
+    /** Campo de contraseña: lo copiado se muestra con puntos */
+    private var campoClave = false
+    /** Hora (del portapapeles) de lo último que pegaste o descartaste: no se vuelve a ofrecer */
+    private var copiadoUsado = 0L
+    private var copiadoHora = -1L
+    private var copiadoTexto: String? = null
+    private var copiadoSensible = false
+    private val alCambiarCopiado = ClipboardManager.OnPrimaryClipChangedListener {
+        copiadoHora = -1L
+        if (isInputViewShown) actualizar()
+    }
+    private val tareaGuardar = Runnable { try { diccionario.guardar() } catch (_: Throwable) { } }
 
     private var toqueFino: Boolean? = null
     private var ultimaCorreccion: Pair<String, String>? = null
@@ -93,10 +111,6 @@ class TecladoService : InputMethodService(),
     /** La última palabra escrita deslizando el dedo (y sus alternativas para la barra) */
     private class Deslizado(val insertado: String, val alternativas: List<Sugerencia?>)
     private var ultimoDeslizado: Deslizado? = null
-
-    // Dictado por voz (botón de micrófono)
-    private var reconocedor: SpeechRecognizer? = null
-    private var dictando = false
 
     /**
      * La barra y las mayúsculas se actualizan una sola vez por cuadro, aunque lleguen
@@ -152,6 +166,8 @@ class TecladoService : InputMethodService(),
             getSystemService(Vibrator::class.java)
         }
         audio = getSystemService(AudioManager::class.java)
+        portapapeles = getSystemService(ClipboardManager::class.java)
+        try { portapapeles?.addPrimaryClipChangedListener(alCambiarCopiado) } catch (_: Exception) { }
     }
 
     override fun onCreateInputView(): View = construir()
@@ -282,7 +298,12 @@ class TecladoService : InputMethodService(),
         sonido = Ajustes.sonido(this)
         puntoDoble = Ajustes.puntoDoble(this)
         atajosActivos = Ajustes.atajosActivos(this)
-        atajos = Ajustes.atajos(this).associate { it.first.lowercase() to it.second }
+        val crudo = Ajustes.prefs(this).getString("atajos", null)
+        if (crudo == null || crudo != atajosCrudo) {
+            atajos = Ajustes.atajos(this).associate { it.first.lowercase() to it.second }
+            atajosCrudo = Ajustes.prefs(this).getString("atajos", null)
+        }
+        copiadoActivo = Ajustes.portapapeles(this)
         enMotor { diccionario.recargarSiCambio() }
 
         // Copia local del texto: se lee una sola vez al abrir el teclado
@@ -320,9 +341,11 @@ class TecladoService : InputMethodService(),
         puntuacionActiva = Ajustes.puntuacionInteligente(this) && escribeTexto
         borrarDeslizadoActivo = Ajustes.borrarDeslizado(this)
         mayusPermitida = Ajustes.mayusculas(this) && escribeTexto
+        campoClave = esClave
 
         // Solo números: PIN, códigos, teléfonos y campos numéricos (como el teclado numérico del iPhone)
         val esPin = clase == InputType.TYPE_CLASS_NUMBER || clase == InputType.TYPE_CLASS_PHONE
+        copiadoPermitido = copiadoActivo && !esPin && clase != InputType.TYPE_NULL
         val esFecha = clase == InputType.TYPE_CLASS_DATETIME
         val accion = info.imeOptions and EditorInfo.IME_MASK_ACTION
         val sinAccion = (info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0
@@ -332,6 +355,7 @@ class TecladoService : InputMethodService(),
         )
 
         teclado?.apply {
+            probLetras = null
             vistaPrevia = Ajustes.vistaPrevia(this@TecladoService)
             bloqMayusPermitido = Ajustes.bloqMayus(this@TecladoService)
             soloNumeros = esFecha
@@ -376,9 +400,9 @@ class TecladoService : InputMethodService(),
 
     override fun onFinishInputView(finishingInput: Boolean) {
         manejador.removeCallbacks(tareaActualizar)
-        if (dictando) detenerDictado()
         teclado?.ocultarPreview()
-        enMotor { diccionario.guardar() }
+        teclado?.probLetras = null
+        programarGuardado()
         espejoValido = false
         toques.clear()
         super.onFinishInputView(finishingInput)
@@ -386,8 +410,8 @@ class TecladoService : InputMethodService(),
 
     override fun onDestroy() {
         manejador.removeCallbacksAndMessages(null)
-        reconocedor?.destroy()
-        reconocedor = null
+        try { portapapeles?.removePrimaryClipChangedListener(alCambiarCopiado) } catch (_: Exception) { }
+        motor.removeCallbacks(tareaGuardar)
         diccionario.interrumpir()
         motor.post { try { diccionario.guardar() } catch (_: Throwable) { } }
         hiloMotor.quitSafely()
@@ -422,6 +446,48 @@ class TecladoService : InputMethodService(),
 
     private fun enMotor(tarea: () -> Unit) {
         motor.post { try { tarea() } catch (_: Throwable) { } }
+    }
+
+    /**
+     * Guardar lo aprendido un ratito después de cerrar el teclado (si lo vuelves a abrir y
+     * cerrar varias veces seguidas, se guarda una sola vez): menos escrituras, menos batería.
+     */
+    private fun programarGuardado() {
+        motor.removeCallbacks(tareaGuardar)
+        motor.postDelayed(tareaGuardar, ESPERA_GUARDADO)
+    }
+
+    // ---------- Lo copiado ----------
+
+    /** Lo que copiaste hace poco (y que todavía no pegaste ni descartaste), o null */
+    private fun copiadoReciente(): String? {
+        if (!copiadoPermitido) return null
+        val cm = portapapeles ?: return null
+        val desc = try { cm.primaryClipDescription } catch (_: Exception) { null } ?: return null
+        val hora = desc.timestamp
+        if (hora <= 0L || hora <= copiadoUsado) return null
+        if (System.currentTimeMillis() - hora > VIGENCIA_COPIADO) return null
+        if (hora == copiadoHora) return copiadoTexto
+        // Solo se lee el contenido cuando cambió (leer el portapapeles es una consulta al sistema)
+        copiadoHora = hora
+        copiadoTexto = null
+        copiadoSensible = false
+        if (!desc.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) &&
+            !desc.hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML) &&
+            !desc.hasMimeType(ClipDescription.MIMETYPE_TEXT_URILIST)) return null
+        val texto = try {
+            cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+        } catch (_: Exception) { null }
+        if (texto.isNullOrBlank() || texto.length > 5000) return null
+        copiadoSensible = try { desc.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true } catch (_: Exception) { false }
+        copiadoTexto = texto
+        return texto
+    }
+
+    private fun sugerenciaCopiado(): Sugerencia? {
+        val t = copiadoReciente() ?: return null
+        val mostrar = if (copiadoSensible || campoClave) "•".repeat(minOf(t.length, 10)) else t
+        return Sugerencia(mostrar, portapapeles = true, pegar = t)
     }
 
     private fun leerEspejo() {
@@ -528,8 +594,10 @@ class TecladoService : InputMethodService(),
         val verdes = FloatArray(12)
         val azules = FloatArray(12)
         val hsv = FloatArray(3)
-        for (x in 0 until lado) for (y in 0 until lado) {
-            val p = bmp.getPixel(x, y)
+        // Todos los puntos de una sola vez (mucho más rápido que uno por uno)
+        val pixeles = IntArray(lado * lado)
+        bmp.getPixels(pixeles, 0, lado, 0, 0, lado, lado)
+        for (p in pixeles) {
             if (Color.alpha(p) < 200) continue
             Color.colorToHSV(p, hsv)
             if (hsv[1] < 0.35f || hsv[2] < 0.35f) continue
@@ -654,10 +722,19 @@ class TecladoService : InputMethodService(),
 
     private fun actualizarBarra(antes: String, inicio: Boolean) {
         val b = barra ?: return
-        if (dictando) return
         val enEmojis = emojis?.visibility == View.VISIBLE
         val modo = teclado?.modo
         val enPad = modo == Modo.PIN || modo == Modo.TELEFONO_SIMBOLOS
+        // Lo que copiaste hace poco aparece en la barra para pegarlo con un toque (como en iPhone):
+        // al abrir el teclado o con el campo vacío
+        if (!enEmojis && !enPad && (!escribiendo || antes.isBlank())) {
+            val clip = sugerenciaCopiado()
+            if (clip != null) {
+                b.visible(true)
+                b.mostrar(listOf(clip, null, null))
+                return
+            }
+        }
         // La barra aparece cuando empiezas a escribir (no al abrir el teclado) y se esconde
         // al enviar, al mover el cursor o al cerrar el teclado. Mientras escribes funciona
         // completa: sugerencias, predicción de la siguiente palabra y deshacer la autocorrección.
@@ -724,8 +801,16 @@ class TecladoService : InputMethodService(),
         val aplicar = autocorreccionActiva
         val linea = enLineaActiva
         val toq = toquesPara(p)
+        val enLetras = teclado?.modo == Modo.LETRAS
         motor.post {
             if (!diccionario.vigente(t)) return@post
+            // Primero las letras más probables: el teclado las usa en el siguiente toque
+            if (enLetras) {
+                val probs = try { diccionario.letrasProbables(p, t) } catch (_: Throwable) { null }
+                if (probs != null && diccionario.vigente(t)) {
+                    manejador.post { if (diccionario.vigente(t)) teclado?.probLetras = probs }
+                }
+            }
             var corr: String? = null
             var otras: List<String> = emptyList()
             var completa: String? = null
@@ -904,6 +989,7 @@ class TecladoService : InputMethodService(),
     }
 
     override fun texto(s: String, x: Float, y: Float) {
+        teclado?.probLetras = null
         escribiendo = true
         ultimaEscritura = SystemClock.uptimeMillis()
         if (currentInputConnection == null) return
@@ -946,6 +1032,7 @@ class TecladoService : InputMethodService(),
     }
 
     override fun espacio() {
+        teclado?.probLetras = null
         if (currentInputConnection == null) return
         val ahora = SystemClock.uptimeMillis()
         // Después de elegir una sugerencia o deslizar, el espacio ya está puesto (como Gboard)
@@ -971,6 +1058,7 @@ class TecladoService : InputMethodService(),
     }
 
     override fun borrar() {
+        teclado?.probLetras = null
         escribiendo = true
         ultimaEscritura = SystemClock.uptimeMillis()
         val ic = currentInputConnection ?: return
@@ -1113,9 +1201,22 @@ class TecladoService : InputMethodService(),
     }
 
     override fun elegir(s: Sugerencia) {
-        if (dictando) return
         if (currentInputConnection == null) return
         toques.clear()
+        if (s.portapapeles) {
+            // Pegar lo copiado, como al tocarlo en la barra del iPhone
+            copiadoUsado = maxOf(copiadoUsado, copiadoHora)
+            val texto = s.pegar ?: return
+            ultimaCorreccion = null
+            ultimaAprendida = null
+            ultimoDeslizado = null
+            espacioAutomatico = false
+            escribiendo = true
+            ultimaEscritura = SystemClock.uptimeMillis()
+            reemplazar(0, texto)
+            retro(Tipo.LETRA)
+            return
+        }
         if (s.revertir) {
             // Volver a lo que escribiste y aprenderlo para no corregirlo otra vez
             val uc = ultimaCorreccion ?: return
@@ -1172,7 +1273,13 @@ class TecladoService : InputMethodService(),
 
     /** Mantener presionada una sugerencia → Borrar: el teclado olvida esa palabra */
     override fun olvidar(s: Sugerencia) {
-        if (dictando) return
+        if (s.portapapeles) {
+            // Mantener presionado lo copiado: se quita de la barra
+            copiadoUsado = maxOf(copiadoUsado, copiadoHora)
+            retro(Tipo.BORRAR)
+            actualizarBarra()
+            return
+        }
         enMotor { diccionario.olvidar(s.texto) }
         retro(Tipo.BORRAR)
         actualizarBarra()
@@ -1221,87 +1328,6 @@ class TecladoService : InputMethodService(),
             w?.let { Sugerencia(it, destacada = it == mejor, reemplaza = insertado.length) }
         }
         ultimoDeslizado = Deslizado(insertado, alternativas)
-        actualizarBarra()
-    }
-
-    // ---------- Dictado ----------
-
-    override fun dictar() {
-        if (dictando) { detenerDictado(); return }
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            // Abre la app para pedir permiso del micrófono
-            startActivity(Intent(this, SettingsActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra("pedir_microfono", true))
-            return
-        }
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            Toast.makeText(this, "Este celular no tiene reconocimiento de voz", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val r = reconocedor ?: SpeechRecognizer.createSpeechRecognizer(this).also { reconocedor = it }
-        r.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {
-                barra?.visible(true)
-                barra?.mostrar(listOf(null, Sugerencia("Escuchando…", destacada = true), null))
-            }
-            override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(rmsdB: Float) {}
-            override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() {}
-            override fun onError(error: Int) { terminarDictado() }
-            override fun onPartialResults(partialResults: Bundle?) {
-                val t = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
-                if (!t.isNullOrBlank()) {
-                    barra?.visible(true)
-                    barra?.mostrar(listOf(null, Sugerencia(t, destacada = true), null))
-                }
-            }
-            override fun onResults(results: Bundle?) {
-                val t = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
-                if (!t.isNullOrBlank()) escribirDictado(t)
-                terminarDictado()
-            }
-            override fun onEvent(eventType: Int, params: Bundle?) {}
-        })
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Ajustes.idiomaDictado(this@TecladoService))
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            // Puntuación automática (Android 13 o más nuevo pone comas, puntos y signos)
-            if (Ajustes.puntuacionDictado(this@TecladoService) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                putExtra(RecognizerIntent.EXTRA_ENABLE_FORMATTING, RecognizerIntent.FORMATTING_OPTIMIZE_QUALITY)
-            }
-        }
-        try {
-            r.startListening(intent)
-            dictando = true
-            teclado?.dictando = true
-        } catch (_: Exception) {
-            terminarDictado()
-        }
-    }
-
-    private fun escribirDictado(texto: String) {
-        if (currentInputConnection == null) return
-        toques.clear()
-        ultimoDeslizado = null
-        val antes = antes(1)
-        val t = if (inicioDeOracion()) texto.replaceFirstChar { it.uppercase() } else texto
-        val prefijo = if (antes.isNotEmpty() && !antes.last().isWhitespace()) " " else ""
-        reemplazar(0, "$prefijo$t ")
-        ultimaCorreccion = null
-        espacioAutomatico = false
-    }
-
-    private fun detenerDictado() {
-        try { reconocedor?.stopListening() } catch (_: Exception) { }
-        terminarDictado()
-    }
-
-    private fun terminarDictado() {
-        dictando = false
-        teclado?.dictando = false
         actualizarBarra()
     }
 
