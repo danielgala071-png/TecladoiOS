@@ -70,6 +70,21 @@ class KeyboardView(
     private val d = Medidas.escala(context)
     private fun dp(v: Float) = v * d
 
+    /** Repinta solo el área de una tecla (más un margen para la sombra), no todo el teclado */
+    private fun invalidarTecla(t: Tecla) {
+        val r = t.rect
+        if (r.isEmpty) { invalidate(); return }
+        val m = dp(2f)
+        invalidate((r.left - m).toInt(), (r.top - m).toInt(),
+            (r.right + m).toInt() + 1, (r.bottom + m).toInt() + 1)
+    }
+
+    /** La primera tecla de ese tipo en el teclado actual (para repintar la shift, p. ej.) */
+    private fun teclaDe(tipo: Tipo): Tecla? {
+        for (fila in filas) for (t in fila) if (t.tipo == tipo) return t
+        return null
+    }
+
     private val horizontal = Medidas.horizontal(context)
     /** Tamaño elegido en Ajustes (1 = normal). Cambia el alto de las teclas y el tamaño de las letras. */
     private val factor = Ajustes.tamano(context) / 100f
@@ -470,7 +485,7 @@ class KeyboardView(
             addUpdateListener {
                 val v = it.animatedValue as Float
                 if (hasta == 0f && v <= 0f) pulsos.remove(t) else pulsos[t] = v
-                invalidate()
+                invalidarTecla(t)
             }
         }
         animPulsos[t] = anim
@@ -479,6 +494,10 @@ class KeyboardView(
 
     private fun dibujar(c: Canvas, t: Tecla) {
         if (t.tipo == Tipo.VACIO) return
+        // Redibujo parcial: si la tecla está fuera del área que se está repintando, se salta.
+        // Así, al animar o repintar una sola tecla, no se redibujan las demás con sus shaders.
+        val md = dp(2f)
+        if (c.quickReject(t.rect.left - md, t.rect.top - md, t.rect.right + md, t.rect.bottom + md)) return
         val presionada = presionadas.containsValue(t) && !modoCursor && !deslizando
         val f = if (!modoCursor) pulsos[t] ?: 0f else 0f
         val pad = esPad
@@ -919,7 +938,8 @@ class KeyboardView(
             }
             else -> {}
         }
-        invalidate()
+        // Al presionar una letra solo cambia esa tecla: se repinta sola (no todo el teclado)
+        if (t.tipo == Tipo.LETRA) invalidarTecla(t) else invalidate()
     }
 
     private fun soltar(t: Tecla, id: Int) {
@@ -950,7 +970,12 @@ class KeyboardView(
             }
             Tipo.SHIFT, Tipo.VACIO -> {}
         }
-        invalidate()
+        // Al soltar una letra solo cambia esa tecla (y quizá la shift, si se apagó la mayúscula):
+        // se repintan esas, no todo el teclado. Si cambió de modo, el cambio de 'modo' ya repintó todo.
+        if (t.tipo == Tipo.LETRA) {
+            invalidarTecla(t)
+            if (modo == Modo.LETRAS) teclaDe(Tipo.SHIFT)?.let { invalidarTecla(it) }
+        } else invalidate()
     }
 
     companion object {
