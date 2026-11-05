@@ -63,6 +63,8 @@ class KeyboardView(
         fun abrirEmojis()
         fun retro(tipo: Tipo)
         fun moverCursor(pasos: Int)
+        /** Cursor con la barra espaciadora hacia arriba o abajo (solo en textos de varias líneas) */
+        fun moverCursorVertical(pasos: Int)
         /** Deslizar para escribir: el recorrido del dedo, en teclas */
         fun deslizar(puntos: List<FloatArray>, proporcion: Float, mayus: Boolean)
     }
@@ -128,11 +130,45 @@ class KeyboardView(
 
     var modo = Modo.LETRAS
         set(value) {
+            val cambia = field != value
             field = value
             filas = crearFilas(value)
             acomodar()
-            invalidate()
+            // Al pasar de letras a 123 (y al revés) las letras nuevas aparecen suavemente
+            if (cambia) animarEtiquetas() else invalidate()
         }
+
+    // ---------- Transición suave de las letras (como iOS) ----------
+
+    /** 0 = letras invisibles, 1 = a la vista. Solo cambia por un instante al cambiar de teclado. */
+    private var aparicion = 1f
+    private var animAparicion: ValueAnimator? = null
+
+    private fun animarEtiquetas() {
+        animAparicion?.cancel()
+        // Sin animación si el teclado no se ve (al abrirlo, por ejemplo): no gasta nada
+        if (!isShown || width == 0) {
+            aparicion = 1f
+            invalidate()
+            return
+        }
+        animAparicion = ValueAnimator.ofFloat(0.25f, 1f).apply {
+            duration = 110
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                aparicion = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    /** El color con la transparencia de la transición aplicada */
+    private fun conAparicion(color: Int): Int {
+        if (aparicion >= 1f) return color
+        val a = (Color.alpha(color) * aparicion).toInt().coerceIn(0, 255)
+        return (color and 0x00FFFFFF) or (a shl 24)
+    }
 
     private val esPad get() = modo == Modo.PIN || modo == Modo.TELEFONO_SIMBOLOS
 
@@ -160,10 +196,19 @@ class KeyboardView(
     private var teclaLarga: Tecla? = null
     private var punteroVariantes = -1
 
-    // Cursor con la barra espaciadora
+    // Cursor con la barra espaciadora (como el trackpad del iPhone: a los lados y arriba/abajo)
     private var punteroEspacio = -1
     private var modoCursor = false
     private var xCursor = 0f
+    private var yCursor = 0f
+
+    // Deslizar desde 123 (o ABC, #+=): eliges un número o signo sin soltar el dedo,
+    // se escribe y vuelve solo al teclado de antes, como en iPhone
+    private var punteroCambio = -1
+    private var cambioDeslizado = false
+    private var modoAntesCambio = Modo.LETRAS
+    private var x0Cambio = 0f
+    private var y0Cambio = 0f
 
     // Deslizar para escribir
     private var punteroTrazo = -1
@@ -440,6 +485,8 @@ class KeyboardView(
         teclaLarga = null
         punteroEspacio = -1
         modoCursor = false
+        punteroCambio = -1
+        cambioDeslizado = false
         punteroTrazo = -1
         deslizando = false
         trazo.clear()
@@ -453,6 +500,8 @@ class KeyboardView(
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        animAparicion?.cancel()
+        aparicion = 1f
         ocultarPreview()
     }
 
@@ -556,11 +605,11 @@ class KeyboardView(
 
         val cx = t.rect.centerX()
         val cy = t.rect.centerY()
-        val contenido = when {
+        val contenido = conAparicion(when {
             t.tipo == Tipo.ENTER && enterAccion && !presionada -> tema.textoAcento
             t.tipo == Tipo.SHIFT && shift > 0 -> tema.textoActivo
             else -> tema.texto
-        }
+        })
         pinturaIcono.color = contenido
 
         when (t.tipo) {
@@ -758,6 +807,12 @@ class KeyboardView(
                     punteroEspacio = -1
                     modoCursor = false
                 }
+                // Otro dedo mientras deslizabas desde 123: se deja de deslizar y se sigue
+                // escribiendo normal (el teclado nuevo se queda)
+                if (punteroCambio != -1) {
+                    punteroCambio = -1
+                    cambioDeslizado = false
+                }
                 val t = teclaEn(x, y) ?: return true
                 // Escritura con dos dedos: la letra del otro dedo se escribe ya (así no se
                 // pierde el orden), pero su animación sigue hasta que ese dedo se levante
@@ -796,13 +851,25 @@ class KeyboardView(
                                 acciones.moverCursor(n)
                                 xCursor += n * paso
                             }
+                            // Arriba y abajo: una línea por cada fila de teclas que subes o bajas
+                            val pasoY = altoFila * 0.85f
+                            val m = ((y - yCursor) / pasoY).toInt()
+                            if (m != 0) {
+                                acciones.moverCursorVertical(m)
+                                yCursor += m * pasoY
+                            }
                         } else if (Math.abs(x - xCursor) > dp(16f)) {
                             manejador.removeCallbacks(activarCursor)
                             modoCursor = true
                             xCursor = x
+                            yCursor = y
                             acciones.retro(Tipo.ESPACIO)
                             invalidate()
                         }
+                        continue
+                    }
+                    if (id == punteroCambio) {
+                        moverDesdeCambio(id, x, y)
                         continue
                     }
                     if (id == punteroTrazo) {
@@ -847,6 +914,14 @@ class KeyboardView(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 val id = e.getPointerId(e.actionIndex)
+                if (id == punteroCambio) {
+                    punteroCambio = -1
+                    if (cambioDeslizado) {
+                        cambioDeslizado = false
+                        soltarDesdeCambio(id)
+                        return true
+                    }
+                }
                 if (id == punteroTrazo && deslizando) {
                     terminarDeslizado()
                     return true
@@ -896,6 +971,64 @@ class KeyboardView(
         return true
     }
 
+    /** A qué teclado lleva cada tecla de cambio (lo mismo que al tocarla y soltarla) */
+    private fun destinoDe(t: Tecla): Modo = when (t.tipo) {
+        Tipo.A_NUMEROS -> Modo.NUMEROS
+        Tipo.A_SIMBOLOS -> Modo.SIMBOLOS
+        else -> Modo.LETRAS
+    }
+
+    /** Deslizando desde 123: al salir de la tecla cambia el teclado y se marca la tecla bajo el dedo */
+    private fun moverDesdeCambio(id: Int, x: Float, y: Float) {
+        if (!cambioDeslizado) {
+            val actual = presionadas[id] ?: return
+            if (Math.hypot((x - x0Cambio).toDouble(), (y - y0Cambio).toDouble()) < unidad * 0.6f) return
+            // Salió de la tecla: el teclado cambia ya, sin soltar
+            cambioDeslizado = true
+            modoAntesCambio = modo
+            animPulsos.remove(actual)?.cancel()
+            pulsos.remove(actual)
+            modo = destinoDe(actual)
+            presionadas.remove(id)
+        }
+        val t = teclaEn(x, y)
+        if (t === presionadas[id]) return
+        if (t == null || t.tipo == Tipo.VACIO || t.tipo == Tipo.UNA_MANO) {
+            presionadas.remove(id)
+            burbujas.quitar(id)
+        } else {
+            presionadas[id] = t
+            if (t.tipo == Tipo.LETRA && vistaPrevia) burbujas.mostrar(id, t.rect, etiqueta(t), tema, deslizando = true)
+            else burbujas.quitar(id)
+        }
+        invalidate()
+    }
+
+    /** Soltaste después de deslizar desde 123: se escribe lo que quedó bajo el dedo */
+    private fun soltarDesdeCambio(id: Int) {
+        val t = presionadas.remove(id)
+        escritas.remove(id)
+        puntosToque.remove(id)
+        burbujas.soltar(id)
+        if (t == null) {
+            invalidate()
+            return
+        }
+        when (t.tipo) {
+            Tipo.LETRA -> {
+                acciones.retro(Tipo.LETRA)
+                acciones.texto(etiqueta(t), -1f, -1f)
+                if (shift == 1 && modo == Modo.LETRAS) shift = 0
+                // Vuelve solo al teclado de antes
+                if (!soloNumeros) modo = modoAntesCambio
+            }
+            Tipo.BORRAR -> { acciones.retro(Tipo.BORRAR); acciones.borrar() }
+            Tipo.VACIO, Tipo.UNA_MANO, Tipo.SHIFT -> {}
+            else -> { acciones.retro(t.tipo); soltar(t, id) }
+        }
+        invalidate()
+    }
+
     private fun presionar(t: Tecla, id: Int, x: Float, y: Float) {
         if (t.tipo == Tipo.VACIO) return
         acciones.retro(t.tipo)
@@ -924,7 +1057,17 @@ class KeyboardView(
             Tipo.ESPACIO -> {
                 punteroEspacio = id
                 xCursor = x
+                yCursor = y
                 manejador.postDelayed(activarCursor, 450)
+            }
+            Tipo.A_NUMEROS, Tipo.A_SIMBOLOS, Tipo.A_LETRAS -> {
+                // Puede que deslices hasta un signo sin soltar (se ve en ACTION_MOVE)
+                if (!esPad && presionadas.size == 1) {
+                    punteroCambio = id
+                    cambioDeslizado = false
+                    x0Cambio = x
+                    y0Cambio = y
+                }
             }
             Tipo.SHIFT -> {
                 val ahora = SystemClock.uptimeMillis()
@@ -935,6 +1078,8 @@ class KeyboardView(
                     else -> 1
                 }
                 ultimoShift = ahora
+                // Mayúsculas ↔ minúsculas con una transición corta, como en iPhone
+                if (modo == Modo.LETRAS) animarEtiquetas()
             }
             else -> {}
         }

@@ -2,6 +2,7 @@ package com.tecladoios
 
 import android.content.Context
 import java.io.File
+import java.lang.ref.WeakReference
 import java.text.Normalizer
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -107,6 +108,7 @@ class Diccionario(context: Context) {
 
     init {
         cargar()
+        activo = WeakReference(this)
         val app = context.applicationContext
         Thread({
             try { indice = construir(app) } catch (_: Throwable) { }
@@ -117,7 +119,106 @@ class Diccionario(context: Context) {
         }
     }
 
+    /** La parte pesada del índice (las palabras ya ordenadas), que se guarda armada en un archivo */
+    private class Base(
+        val palabras: Array<String>,
+        val normal: Array<String>,
+        val orden: IntArray,
+        val ordenTop: IntArray,
+        val grupos: HashMap<Char, Grupo>,
+    )
+
+    /**
+     * Arma el índice. Las palabras ordenadas se leen ya listas de un archivo guardado la
+     * primera vez (así, cuando Android reinicia el teclado, las sugerencias están listas casi
+     * al instante y se gasta mucha menos batería). Solo se vuelve a armar al actualizar la app.
+     */
     private fun construir(c: Context): Indice {
+        val archivoIndice = File(c.applicationContext.filesDir, CACHE)
+        val version = versionApp(c)
+        val base = leerIndice(archivoIndice, version) ?: armarBase(c).also {
+            if (it.palabras.size > 1000) escribirIndice(archivoIndice, version, it)
+        }
+        val (pares, trios) = armarPredicciones(c)
+        return Indice(base.palabras, base.normal, base.orden, base.ordenTop, base.grupos, pares, trios)
+    }
+
+    /** Cambia con cada instalación: así el índice guardado nunca queda viejo */
+    private fun versionApp(c: Context): Long = try {
+        val info = c.packageManager.getPackageInfo(c.packageName, 0)
+        info.longVersionCode * 1_000_003L + info.lastUpdateTime
+    } catch (_: Exception) { -1L }
+
+    private fun escribirIndice(f: File, version: Long, b: Base) {
+        if (version == -1L) return
+        try {
+            val tmp = File(f.parentFile, "$CACHE.tmp")
+            java.io.DataOutputStream(java.io.BufferedOutputStream(java.io.FileOutputStream(tmp), 1 shl 16)).use { o ->
+                o.writeInt(MAGIA_INDICE)
+                o.writeLong(version)
+                o.writeInt(b.palabras.size)
+                for (i in b.palabras.indices) {
+                    o.writeUTF(b.palabras[i])
+                    // Si la forma sin tildes es igual, no se repite (archivo más chico)
+                    o.writeUTF(if (b.normal[i] == b.palabras[i]) "" else b.normal[i])
+                }
+                fun enteros(a: IntArray) { o.writeInt(a.size); for (v in a) o.writeInt(v) }
+                enteros(b.orden)
+                enteros(b.ordenTop)
+                o.writeInt(b.grupos.size)
+                for ((k, g) in b.grupos) {
+                    o.writeChar(k.code)
+                    enteros(g.idx)
+                    enteros(g.desde)
+                }
+                o.writeInt(MAGIA_INDICE)
+            }
+            if (!tmp.renameTo(f)) {
+                f.delete()
+                tmp.renameTo(f)
+            }
+        } catch (_: Throwable) {
+            try { f.delete() } catch (_: Exception) { }
+        }
+    }
+
+    private fun leerIndice(f: File, version: Long): Base? {
+        if (version == -1L || !f.exists()) return null
+        return try {
+            java.io.DataInputStream(java.io.BufferedInputStream(java.io.FileInputStream(f), 1 shl 16)).use { e ->
+                if (e.readInt() != MAGIA_INDICE || e.readLong() != version) return null
+                val n = e.readInt()
+                if (n <= 0 || n > 1_000_000) return null
+                val palabras = arrayOfNulls<String>(n)
+                val normal = arrayOfNulls<String>(n)
+                for (i in 0 until n) {
+                    val p = e.readUTF()
+                    val q = e.readUTF()
+                    palabras[i] = p
+                    normal[i] = if (q.isEmpty()) p else q
+                }
+                fun enteros(): IntArray {
+                    val m = e.readInt()
+                    if (m < 0 || m > 2_000_000) throw java.io.IOException("índice dañado")
+                    return IntArray(m) { e.readInt() }
+                }
+                val orden = enteros()
+                val ordenTop = enteros()
+                val nGrupos = e.readInt()
+                val grupos = HashMap<Char, Grupo>(nGrupos * 2)
+                repeat(nGrupos) {
+                    val k = e.readChar()
+                    val idx = enteros()
+                    val desde = enteros()
+                    grupos[k] = Grupo(idx, desde)
+                }
+                if (e.readInt() != MAGIA_INDICE) return null
+                Base(palabras.requireNoNulls(), normal.requireNoNulls(), orden, ordenTop, grupos)
+            }
+        } catch (_: Throwable) { null }
+    }
+
+    private fun armarBase(c: Context): Base {
         val vistos = HashSet<String>(140_000)
         val lista = ArrayList<String>(130_000)
         fun sumar(p: String) { if (p.isNotEmpty() && vistos.add(p)) lista.add(p) }
@@ -172,8 +273,11 @@ class Diccionario(context: Context) {
             }
             grupos[k] = Grupo(idx, desde)
         }
+        return Base(palabras, normal, orden, ordenTop, grupos)
+    }
 
-        // Predicciones: las del código y las del archivo bigramas.txt
+    /** Predicciones: las del código y las del archivo bigramas.txt (es poco, se arma siempre) */
+    private fun armarPredicciones(c: Context): Pair<HashMap<String, List<String>>, HashMap<String, List<String>>> {
         val paresFijos = HashMap<String, List<String>>(PARES_BASE.size * 2)
         for ((k, v) in PARES_BASE) paresFijos[k] = v
         val triosFijos = HashMap<String, List<String>>()
@@ -197,7 +301,14 @@ class Diccionario(context: Context) {
                 }
             }
         } catch (_: Exception) { }
-        return Indice(palabras, normal, orden, ordenTop, grupos, paresFijos, triosFijos)
+        // También sin tildes: "como estas" encuentra lo de "cómo estás" (escribir sin tildes es lo normal en el chat)
+        for (mapa in listOf(paresFijos, triosFijos)) {
+            for (k in mapa.keys.toList()) {
+                val n = normal(k)
+                if (n != k && !mapa.containsKey(n)) mapa[n] = mapa[k] ?: continue
+            }
+        }
+        return paresFijos to triosFijos
     }
 
     private fun normal(s: String) = sinTildes(s)
@@ -554,7 +665,8 @@ class Diccionario(context: Context) {
         if (previa2.isNotEmpty() && l.isNotEmpty()) {
             val clave = previa2.lowercase() + " " + l
             trios[clave]?.forEach { (w, c) -> if (!bloqueada(w)) res[w] = c * 30 }
-            indice?.trios?.get(clave)?.forEachIndexed { i, w ->
+            val ixTrios = indice?.trios
+            (ixTrios?.get(clave) ?: ixTrios?.get(normal(clave)))?.forEachIndexed { i, w ->
                 if (!bloqueada(w)) res[w] = (res[w] ?: 0) + (12 - i).coerceAtLeast(2)
             }
         }
@@ -1127,6 +1239,9 @@ class Diccionario(context: Context) {
     companion object {
         /** Archivo con lo que el teclado aprendió de ti */
         private const val ARCHIVO = "aprendido.txt"
+        /** El índice de palabras ya armado (se rehace solo al actualizar la app) */
+        private const val CACHE = "indice.bin"
+        private const val MAGIA_INDICE = 0x54454331
         private const val VERSION_ARCHIVO = "tecladoios-aprendido-2"
         /** Las palabras más comunes (para prefijos cortos y letras probables) */
         private const val TOP = 20000
@@ -1139,6 +1254,110 @@ class Diccionario(context: Context) {
         /** Borra todo lo aprendido (Restablecer diccionario en los ajustes) */
         fun borrarDatos(c: Context) {
             try { File(c.applicationContext.filesDir, ARCHIVO).delete() } catch (_: Exception) { }
+        }
+
+        /** El diccionario que está usando el teclado ahora (si el teclado está abierto en memoria) */
+        @Volatile private var activo: WeakReference<Diccionario>? = null
+
+        /** Guarda ya lo aprendido que el teclado tenga pendiente (antes de exportar o listar) */
+        fun guardarAhora() {
+            try { activo?.get()?.guardar() } catch (_: Throwable) { }
+        }
+
+        /** Todo lo aprendido tal cual está en el archivo (para la copia de seguridad) */
+        fun leerDatos(c: Context): String? {
+            guardarAhora()
+            return try {
+                val f = File(c.applicationContext.filesDir, ARCHIVO)
+                if (f.exists()) f.readText(Charsets.UTF_8) else null
+            } catch (_: Exception) { null }
+        }
+
+        /** ¿Es un archivo de lo aprendido válido? (para no importar cualquier cosa) */
+        fun datosValidos(texto: String) = texto.startsWith("tecladoios-aprendido-")
+
+        /**
+         * Reemplaza lo aprendido por [texto] (al importar una copia de seguridad) y avisa al
+         * teclado para que lo vuelva a leer.
+         */
+        fun escribirDatos(c: Context, texto: String) {
+            val dir = c.applicationContext.filesDir
+            val tmp = File(dir, "$ARCHIVO.tmp")
+            tmp.writeText(texto, Charsets.UTF_8)
+            val f = File(dir, ARCHIVO)
+            if (!tmp.renameTo(f)) {
+                f.delete()
+                tmp.renameTo(f)
+            }
+            avisarCambio(c)
+        }
+
+        /** El teclado vuelve a leer el archivo la próxima vez que se abra */
+        private fun avisarCambio(c: Context) {
+            val p = Ajustes.prefs(c)
+            p.edit()
+                .remove("aprendidas").remove("pares").remove("trios")
+                .remove("rechazos").remove("bloqueadas").remove("nombres")
+                .putInt("aprendidas_rev", p.getInt("aprendidas_rev", 0) + 1)
+                .commit()
+        }
+
+        /** Las palabras que aprendió de ti, de la más usada a la menos usada: (palabra, veces) */
+        fun palabrasAprendidas(c: Context): List<Pair<String, Int>> {
+            val texto = leerDatos(c) ?: return emptyList()
+            val lista = ArrayList<Pair<String, Int>>()
+            var seccion = ' '
+            for (linea in texto.lineSequence()) {
+                if (linea.isEmpty()) continue
+                if (linea[0] == '#' && linea.length == 2) { seccion = linea[1]; continue }
+                if (seccion != 'a') continue
+                val partes = linea.split('\t')
+                val n = partes.getOrNull(1)?.toIntOrNull() ?: continue
+                if (partes[0].isNotEmpty()) lista.add(partes[0] to n)
+            }
+            return lista.sortedWith(compareByDescending<Pair<String, Int>> { it.second }.thenBy { it.first })
+        }
+
+        /** Olvidar una palabra desde los ajustes (igual que mantener presionada la sugerencia → Borrar) */
+        fun olvidarPalabra(c: Context, palabra: String) {
+            val l = palabra.lowercase()
+            val vivo = activo?.get()
+            if (vivo != null) {
+                try {
+                    // Por si importaste o restableciste algo antes: primero se pone al día
+                    vivo.recargarSiCambio()
+                    vivo.olvidar(l)
+                    return
+                } catch (_: Throwable) { }
+            }
+            // El teclado no está en memoria: se edita el archivo directamente
+            val texto = leerDatos(c) ?: return
+            val sb = StringBuilder(texto.length)
+            var seccion = ' '
+            var bloqueadaPuesta = false
+            for (linea in texto.lineSequence()) {
+                if (linea.isEmpty()) continue
+                if (linea[0] == '#' && linea.length == 2) {
+                    if (seccion == 'b' && !bloqueadaPuesta) { sb.append(l).append('\n'); bloqueadaPuesta = true }
+                    seccion = linea[1]
+                    sb.append(linea).append('\n')
+                    continue
+                }
+                val partes = linea.split('\t')
+                val quitar = when (seccion) {
+                    'a', 'n' -> partes[0] == l
+                    'p' -> partes[0] == l || partes.getOrNull(1) == l
+                    't' -> partes[0].split(' ').contains(l) || partes.getOrNull(1) == l
+                    'b' -> linea == l
+                    else -> false
+                }
+                if (!quitar) sb.append(linea).append('\n')
+            }
+            if (!bloqueadaPuesta) {
+                if (seccion != 'b') sb.append("#b\n")
+                sb.append(l).append('\n')
+            }
+            try { escribirDatos(c, sb.toString()) } catch (_: Exception) { }
         }
 
         private val MARCAS = Regex("\\p{Mn}+")

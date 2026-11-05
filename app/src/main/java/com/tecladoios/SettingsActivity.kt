@@ -157,6 +157,8 @@ class SettingsActivity : Activity() {
             "atajos" -> paginaAtajos()
             "teclados" -> paginaTeclados()
             "una_mano" -> paginaUnaMano()
+            "palabras" -> paginaPalabras()
+            "gestos" -> paginaGestos()
             else -> paginaPrincipal()
         }
     }
@@ -450,16 +452,22 @@ class SettingsActivity : Activity() {
             filaInterruptor("Texto predictivo", "sugerencias", true),
             filaInterruptor("Mostrar predicciones en línea", "en_linea", false),
             filaInterruptor("Puntuación inteligente", "puntuacion", true),
+            filaInterruptor("Signos de apertura ¿ ¡", "apertura", true),
+            filaInterruptor("Sugerir emojis", "emojis_barra", true),
             filaInterruptor("Deslizar para escribir", "deslizar", true),
             filaInterruptor("Borrar con Deslizar para escribir por palabra", "borrar_deslizado", true),
             filaInterruptor("Previsualización de caracteres", "vista_previa", true),
             filaInterruptor("Atajo con “.”", "punto_doble", true),
-        ), pie = "Pulsar dos veces la barra espaciadora insertará un punto seguido de un espacio.")
+        ), pie = "Pulsar dos veces la barra espaciadora insertará un punto seguido de un espacio. " +
+                "Con “Signos de apertura”, al terminar con ? o ! se pone ¿ o ¡ donde empieza la " +
+                "pregunta (también después de una coma: “Hola, ¿cómo estás?”).")
 
         grupo("Portapapeles", listOf(
             filaInterruptor("Mostrar lo copiado", "portapapeles", true),
+            filaInterruptor("Borrar contraseñas copiadas", "limpiar_claves", true),
         ), pie = "Lo que copias aparece unos minutos en la barra de sugerencias para pegarlo con un " +
-                "toque. Mantenlo presionado para quitarlo. Las contraseñas se muestran con puntos.")
+                "toque. Mantenlo presionado para quitarlo. Las contraseñas se muestran con puntos y, " +
+                "si las pegas con el teclado, se borran solas del portapapeles al minuto.")
 
         grupo("Respuesta del teclado", listOf(
             filaInterruptor("Sonido", "sonido", false),
@@ -477,6 +485,18 @@ class SettingsActivity : Activity() {
         ), pie = "Quita el ícono de TecladoiOS del menú de apps. El teclado sigue funcionando. Para " +
                 "volver a estos ajustes, entra a los ajustes del teléfono, busca la sección de " +
                 "teclados y toca TecladoiOS.")
+
+        grupo(null, listOf(
+            filaAccion("Gestos y trucos") { irA("gestos") },
+        ))
+
+        grupo("Diccionario", listOf(
+            filaAccion("Palabras aprendidas") { irA("palabras") },
+            filaAccion("Exportar copia de seguridad", azul, derecha = null) { exportar() },
+            filaAccion("Importar copia de seguridad", azul, derecha = null) { importar() },
+        ), pie = "La copia guarda lo que el teclado aprendió de ti, tus sustituciones de texto, tus " +
+                "emojis recientes y los tonos de piel. Guárdala antes de desinstalar o para pasarla a " +
+                "otro celular.")
 
         grupo(null, listOf(
             filaAccion("Restablecer diccionario del teclado", rojo, derecha = null) {
@@ -505,13 +525,182 @@ class SettingsActivity : Activity() {
             packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
         } catch (_: Exception) { "?" }
         contenedor.addView(TextView(this).apply {
-            text = "TecladoiOS versión $version · AMOLED v3"
+            text = "TecladoiOS versión $version · AMOLED v5"
             Fuentes.aplicar(this, 400)
             textSize = 13f
             setTextColor(gris)
             gravity = Gravity.CENTER
             setPadding(0, dp(24), 0, 0)
         })
+    }
+
+    // ---------- Palabras aprendidas ----------
+
+    private fun paginaPalabras() {
+        volver()
+        tituloGrande("Palabras aprendidas")
+        val todas = try { Diccionario.palabrasAprendidas(this) } catch (_: Throwable) { emptyList() }
+        if (todas.isEmpty()) {
+            grupo(null, listOf(filaAccion("Todavía no aprendió palabras", gris, derecha = null) {}),
+                pie = "A medida que escribes, el teclado aprende las palabras que usas y cómo las usas.")
+            return
+        }
+        // Las más usadas primero (mostrar miles de filas haría lenta la pantalla)
+        val maximo = 300
+        val filas = todas.take(maximo).map { (palabra, veces) ->
+            filaAccion(palabra, derecha = "$veces") { confirmarOlvido(palabra) }
+        }
+        grupo(null, filas, pie = "Toca una palabra para que el teclado la olvide: no la volverá a " +
+                "sugerir ni a usar para corregir. " +
+                (if (todas.size > maximo) "Se muestran las $maximo más usadas de ${todas.size}." else "${todas.size} palabras."))
+    }
+
+    private fun confirmarOlvido(palabra: String) {
+        AlertDialog.Builder(this)
+            .setMessage("¿Olvidar “$palabra”? El teclado no la volverá a sugerir.")
+            .setPositiveButton("Olvidar") { _, _ ->
+                try { Diccionario.olvidarPalabra(this, palabra) } catch (_: Throwable) { }
+                Toast.makeText(this, "“$palabra” olvidada", Toast.LENGTH_SHORT).show()
+                dibujar()
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    // ---------- Gestos y trucos ----------
+
+    private fun filaInfo(titulo: String, detalle: String): View {
+        val caja = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+        }
+        caja.addView(textoFila(titulo))
+        caja.addView(TextView(this).apply {
+            text = detalle
+            Fuentes.aplicar(this, 400)
+            textSize = 14f
+            setTextColor(gris)
+            setPadding(0, dp(2), 0, 0)
+        })
+        return caja
+    }
+
+    private fun paginaGestos() {
+        volver()
+        tituloGrande("Gestos y trucos")
+        grupo("Escribir", listOf(
+            filaInfo("Mover el cursor", "Mantén presionada la barra espaciadora y desliza: a los lados mueve el cursor letra por letra; arriba y abajo cambia de línea en textos largos."),
+            filaInfo("Números sin cambiar de teclado", "Pon el dedo en 123, deslízalo hasta el número o signo y suelta: se escribe y vuelves solo a las letras."),
+            filaInfo("Acentos y ñ", "Mantén presionada una letra (a, e, n…) o un signo (? ! $ \" -) para ver sus variantes."),
+            filaInfo("Bloq Mayús", "Toca dos veces la tecla de mayúsculas."),
+            filaInfo("Punto rápido", "Toca dos veces la barra espaciadora para poner punto y espacio."),
+            filaInfo("Deslizar para escribir", "Desliza el dedo de letra en letra sin soltar y suelta al final de la palabra."),
+        ))
+        grupo("Borrar", listOf(
+            filaInfo("Borrar rápido", "Mantén presionada la tecla borrar: primero va letra por letra y luego palabra por palabra."),
+            filaInfo("Deshacer la autocorrección", "Si el teclado cambió una palabra que no querías, toca borrar justo después y vuelve lo que escribiste."),
+            filaInfo("Olvidar una palabra", "Mantén presionada una sugerencia y toca Borrar."),
+        ))
+        grupo("Emojis", listOf(
+            filaInfo("Tonos de piel", "En el panel de emojis, mantén presionado un emoji de manos o personas y elige el tono. Se recuerda para la próxima vez."),
+            filaInfo("Emojis en la barra", "Escribe palabras como jaja, corazón o cumpleaños y el emoji aparece a la derecha de la barra."),
+        ))
+        grupo("Portapapeles", listOf(
+            filaInfo("Pegar con un toque", "Lo que copias aparece en la barra al abrir el teclado. Mantenlo presionado para quitarlo."),
+        ))
+    }
+
+    // ---------- Copia de seguridad ----------
+
+    private fun exportar() {
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TITLE, "TecladoiOS-respaldo.txt")
+        }
+        try {
+            startActivityForResult(intent, PEDIDO_EXPORTAR)
+        } catch (_: Exception) {
+            Toast.makeText(this, "No se encontró dónde guardar el archivo", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun importar() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        try {
+            startActivityForResult(intent, PEDIDO_IMPORTAR)
+        } catch (_: Exception) {
+            Toast.makeText(this, "No se encontró el selector de archivos", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Todo en un solo archivo de texto: encabezado, sustituciones, recientes, tonos y lo aprendido */
+    private fun armarRespaldo(): String {
+        val sb = StringBuilder()
+        sb.append(RESPALDO).append('\n')
+        sb.append("#atajos\n").append(prefs.getString("atajos", "") ?: "").append('\n')
+        sb.append("#recientes\n").append(prefs.getString("recientes", "") ?: "").append('\n')
+        sb.append("#tonos\n").append(prefs.getString("tonos", "") ?: "").append('\n')
+        sb.append("#aprendido\n").append(Diccionario.leerDatos(this) ?: "")
+        return sb.toString()
+    }
+
+    private fun aplicarRespaldo(texto: String): Boolean {
+        val lineas = texto.replace("\r\n", "\n").split('\n')
+        if (lineas.firstOrNull()?.trim() != RESPALDO) return false
+        fun valor(clave: String): String? {
+            val i = lineas.indexOf(clave)
+            return if (i >= 0 && i + 1 < lineas.size) lineas[i + 1] else null
+        }
+        val editor = prefs.edit()
+        valor("#atajos")?.takeIf { it.isNotBlank() }?.let { json ->
+            // Solo si se puede leer (un archivo dañado no borra tus sustituciones)
+            try { org.json.JSONArray(json); editor.putString("atajos", json).putBoolean("atajos_v5", true) } catch (_: Exception) { }
+        }
+        valor("#recientes")?.takeIf { it.isNotBlank() }?.let { editor.putString("recientes", it) }
+        valor("#tonos")?.let { editor.putString("tonos", it) }
+        editor.commit()
+        val i = lineas.indexOf("#aprendido")
+        if (i >= 0) {
+            val aprendido = lineas.drop(i + 1).joinToString("\n")
+            if (Diccionario.datosValidos(aprendido)) Diccionario.escribirDatos(this, aprendido)
+        }
+        return true
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        val uri = data?.data
+        if (resultCode != RESULT_OK || uri == null) return
+        when (requestCode) {
+            PEDIDO_EXPORTAR -> {
+                val ok = try {
+                    contentResolver.openOutputStream(uri, "wt")?.use { it.write(armarRespaldo().toByteArray(Charsets.UTF_8)) } != null
+                } catch (_: Exception) { false }
+                Toast.makeText(this, if (ok) "Copia de seguridad guardada" else "No se pudo guardar la copia",
+                    Toast.LENGTH_SHORT).show()
+            }
+            PEDIDO_IMPORTAR -> {
+                val ok = try {
+                    val texto = contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                    texto != null && aplicarRespaldo(texto)
+                } catch (_: Exception) { false }
+                Toast.makeText(this,
+                    if (ok) "Copia importada. El teclado ya usa tus palabras." else "Ese archivo no es una copia de TecladoiOS",
+                    Toast.LENGTH_LONG).show()
+                if (ok) dibujar()
+            }
+        }
+    }
+
+    private companion object {
+        const val PEDIDO_EXPORTAR = 41
+        const val PEDIDO_IMPORTAR = 42
+        const val RESPALDO = "tecladoios-respaldo-1"
     }
 
     // ---------- Teclados ----------

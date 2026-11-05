@@ -52,7 +52,7 @@ class TecladoService : InputMethodService(),
     private var firmaTamano = ""
 
     // Color de acento de cada app (sale de su ícono), para teñir el teclado con la app
-    private val coloresApps = HashMap<String, Int?>()
+    private val coloresApps = LinkedHashMap<String, Int?>()
     private var appActual: String? = null
     private lateinit var diccionario: Diccionario
     private var vibrador: Vibrator? = null
@@ -70,6 +70,12 @@ class TecladoService : InputMethodService(),
     private var mayusPermitida = true
     private var puntoDoble = true
     private var atajosActivos = true
+    /** ¿ y ¡ al inicio de la oración cuando la cierras con ? o ! */
+    private var aperturaActiva = true
+    /** Emojis en la barra según la palabra ("jaja" → 😂) */
+    private var emojisBarraActivo = true
+    /** El campo acepta varias líneas (el cursor puede subir y bajar con la barra espaciadora) */
+    private var multilinea = false
     private var atajos: Map<String, String> = emptyMap()
     /** Texto de las sustituciones ya leído (solo se vuelve a leer si cambiaste algo en Ajustes) */
     private var atajosCrudo: String? = null
@@ -86,6 +92,23 @@ class TecladoService : InputMethodService(),
     private var copiadoHora = -1L
     private var copiadoTexto: String? = null
     private var copiadoSensible = false
+    /** Las contraseñas copiadas se borran solas del portapapeles */
+    private var limpiarClaves = true
+    /** Hora (del portapapeles) de la contraseña copiada que se va a borrar */
+    private var horaALimpiar = -1L
+    private val tareaLimpiar = Runnable {
+        try {
+            val cm = portapapeles ?: return@Runnable
+            val hora = cm.primaryClipDescription?.timestamp ?: return@Runnable
+            // Solo si sigue siendo la misma (si copiaste otra cosa, no se toca)
+            if (hora == horaALimpiar) {
+                cm.clearPrimaryClip()
+                copiadoTexto = null
+                copiadoHora = -1L
+            }
+        } catch (_: Exception) { }
+        horaALimpiar = -1L
+    }
     private val alCambiarCopiado = ClipboardManager.OnPrimaryClipChangedListener {
         copiadoHora = -1L
         if (isInputViewShown) actualizar()
@@ -304,6 +327,10 @@ class TecladoService : InputMethodService(),
             atajosCrudo = Ajustes.prefs(this).getString("atajos", null)
         }
         copiadoActivo = Ajustes.portapapeles(this)
+        limpiarClaves = Ajustes.limpiarClaves(this)
+        aperturaActiva = Ajustes.apertura(this)
+        emojisBarraActivo = Ajustes.emojisBarra(this)
+        multilinea = (info.inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0
         enMotor { diccionario.recargarSiCambio() }
 
         // Copia local del texto: se lee una sola vez al abrir el teclado
@@ -401,6 +428,7 @@ class TecladoService : InputMethodService(),
     override fun onFinishInputView(finishingInput: Boolean) {
         manejador.removeCallbacks(tareaActualizar)
         teclado?.ocultarPreview()
+        emojis?.cerrarTonos()
         teclado?.probLetras = null
         programarGuardado()
         espejoValido = false
@@ -481,7 +509,16 @@ class TecladoService : InputMethodService(),
         if (texto.isNullOrBlank() || texto.length > 5000) return null
         copiadoSensible = try { desc.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true } catch (_: Exception) { false }
         copiadoTexto = texto
+        if (copiadoSensible) programarLimpieza(hora)
         return texto
+    }
+
+    /** En un minuto se borra la contraseña del portapapeles (para que no quede ahí olvidada) */
+    private fun programarLimpieza(hora: Long) {
+        if (!limpiarClaves || hora <= 0L) return
+        horaALimpiar = hora
+        manejador.removeCallbacks(tareaLimpiar)
+        manejador.postDelayed(tareaLimpiar, 60_000L)
     }
 
     private fun sugerenciaCopiado(): Sugerencia? {
@@ -577,10 +614,38 @@ class TecladoService : InputMethodService(),
     /** Color principal del ícono de la app (verde en WhatsApp, rosado en Instagram, etc.) */
     private fun colorDeApp(paquete: String?): Int? {
         if (paquete == null || paquete == packageName) return null
+        if (!coloresLeidos) leerColores()
         if (coloresApps.containsKey(paquete)) return coloresApps[paquete]
         val color = try { calcularColor(paquete) } catch (_: Exception) { null }
         coloresApps[paquete] = color
+        guardarColores()
         return color
+    }
+
+    /**
+     * El color de cada app se recuerda entre reinicios del teclado: sacarlo del ícono cuesta
+     * (hay que dibujarlo), así que se calcula una sola vez por app. "-" = la app no tiene color.
+     */
+    private var coloresLeidos = false
+
+    private fun leerColores() {
+        coloresLeidos = true
+        val crudo = Ajustes.prefs(this).getString("colores_apps", null) ?: return
+        for (par in crudo.split('|')) {
+            val i = par.lastIndexOf('=')
+            if (i <= 0) continue
+            val v = par.substring(i + 1)
+            coloresApps[par.substring(0, i)] = if (v == "-") null else (v.toLongOrNull(16)?.toInt() ?: continue)
+        }
+    }
+
+    private fun guardarColores() {
+        // Como mucho 120 apps (las más nuevas reemplazan a las viejas)
+        val entradas = coloresApps.entries.toList().takeLast(120)
+        val texto = entradas.joinToString("|") { (k, v) ->
+            k + "=" + (v?.let { java.lang.Long.toHexString(it.toLong() and 0xFFFFFFFFL) } ?: "-")
+        }
+        Ajustes.prefs(this).edit().putString("colores_apps", texto).apply()
     }
 
     private fun calcularColor(paquete: String): Int? {
@@ -777,6 +842,8 @@ class TecladoService : InputMethodService(),
             val prev2 = if (inicio) "" else previa2De(antes)
             val uc = ultimaCorreccion
             val deshacer = if (uc != null && antes.endsWith(uc.second)) Sugerencia(uc.first.trim(), literal = true, revertir = true) else null
+            // La palabra que acabas de escribir pide un emoji ("jaja " → 😂), como en iPhone
+            val emo = if (emojisBarraActivo && antes.endsWith(" ")) EmojiPalabras.para(previa) else null
             motor.post {
                 if (!diccionario.vigente(t)) return@post
                 val sig = try {
@@ -784,10 +851,11 @@ class TecladoService : InputMethodService(),
                 } catch (_: Throwable) { emptyList() }
                 manejador.post {
                     if (!diccionario.vigente(t)) return@post
+                    val derecha = (if (deshacer != null) sig.getOrNull(1) else sig.getOrNull(2))?.let { Sugerencia(it) }
                     b.mostrar(listOf(
                         deshacer ?: sig.getOrNull(1)?.let { Sugerencia(it) },
                         sig.getOrNull(0)?.let { Sugerencia(it) },
-                        (if (deshacer != null) sig.getOrNull(1) else sig.getOrNull(2))?.let { Sugerencia(it) },
+                        emo?.let { Sugerencia(it, emoji = true) } ?: derecha,
                     ))
                 }
             }
@@ -802,6 +870,7 @@ class TecladoService : InputMethodService(),
         val linea = enLineaActiva
         val toq = toquesPara(p)
         val enLetras = teclado?.modo == Modo.LETRAS
+        val emojisBarra = emojisBarraActivo
         motor.post {
             if (!diccionario.vigente(t)) return@post
             // Primero las letras más probables: el teclado las usa en el siguiente toque
@@ -844,7 +913,10 @@ class TecladoService : InputMethodService(),
                 // Con Autocorrección la corrección va resaltada al centro (se pone sola al dar espacio);
                 // solo con Revisar ortografía aparece como sugerencia para tocarla
                 val centro = c?.let { Sugerencia(it, destacada = aplicar) } ?: lista.getOrNull(0)?.let { Sugerencia(it) }
-                val derecha = (if (c != null) lista.getOrNull(0) else lista.getOrNull(1))?.let { Sugerencia(it) }
+                // Emoji de la palabra (o de su corrección) a la derecha: "corazon" → ❤️
+                val emo = if (emojisBarra) EmojiPalabras.para(p) ?: EmojiPalabras.para(c) else null
+                val derecha = emo?.let { Sugerencia(it, emoji = true) }
+                    ?: (if (c != null) lista.getOrNull(0) else lista.getOrNull(1))?.let { Sugerencia(it) }
                 b.mostrar(listOf(Sugerencia(p, literal = true), centro, derecha))
             }
         }
@@ -980,6 +1052,99 @@ class TecladoService : InputMethodService(),
         reemplazar(antes.length - desde, conTilde + resto)
     }
 
+    /**
+     * Signos de apertura, como se escribe en español: al cerrar con ? o ! se pone ¿ o ¡
+     * donde empieza la pregunta. "que haces?" → "¿qué haces?" y si la pregunta va después
+     * de una coma: "Hola, como estas?" → "Hola, ¿cómo estás?".
+     */
+    private fun abrirSigno(cierre: Char) {
+        if (currentInputConnection == null) return
+        val apertura = if (cierre == '?') '¿' else '¡'
+        val antes = antes(200)
+        if (antes.isEmpty()) return
+        // "??" o "!!": es énfasis, ya se abrió con el primero
+        if (antes.last() == '?' || antes.last() == '!') return
+        var i = antes.length
+        while (i > 0 && antes[i - 1] !in ".!?¿¡\n…") i--
+        // Ya tiene su signo de apertura
+        if (i > 0 && (antes[i - 1] == '¿' || antes[i - 1] == '¡')) return
+        // Si no se ve dónde empieza la oración (texto muy largo), mejor no tocar nada
+        if (i == 0 && !espejoCompleto) return
+        val oracion = antes.substring(i)
+        if (oracion.none { it.isLetter() }) return
+        // Enlaces, correos y usuarios: no
+        if (oracion.contains("://") || oracion.contains('@') || oracion.contains("www.")) return
+        var a = 0
+        while (a < oracion.length && (oracion[a].isWhitespace() || oracion[a] in "\"'“‘«(")) a++
+        if (a >= oracion.length) return
+
+        // ¿La pregunta empieza después de una coma? ("Oye, cuándo vienes?")
+        var desde = a
+        val coma = oracion.lastIndexOf(',')
+        if (coma > a) {
+            var b = coma + 1
+            while (b < oracion.length && oracion[b].isWhitespace()) b++
+            var e = b
+            while (e < oracion.length && oracion[e].isLetter()) e++
+            if (e > b) {
+                val w = sinMarcas(oracion.substring(b, e))
+                // "por" solo cuenta si sigue "que": "Oye, por qué no vienes?"
+                val porQue = w == "por" && sinMarcas(oracion.substring(e).trimStart().takeWhile { it.isLetter() }) == "que"
+                if (w in PREGUNTAS || porQue) desde = b
+            }
+        }
+        if (desde >= oracion.length) return
+        var resto = oracion.substring(desde)
+        // La palabra de pregunta después de la coma también lleva tilde: "como" → "cómo"
+        // (al inicio de una pregunta ya la puso acentuarPregunta)
+        if (autocorreccionActiva && (desde != a || cierre == '!')) {
+            var b = 0
+            // "por que" → la tilde va en "que"
+            if (sinMarcas(resto.takeWhile { it.isLetter() }) == "por") {
+                b = resto.indexOfFirst { !it.isLetter() }.let { if (it < 0) resto.length else it }
+                while (b < resto.length && resto[b].isWhitespace()) b++
+            }
+            var e = b
+            while (e < resto.length && resto[e].isLetter()) e++
+            // En las exclamaciones solo "qué" y "cuánto": "¡qué bueno!", "¡cuánto tiempo!"
+            val vale = cierre == '?' || sinMarcas(resto.substring(b, e)) in EXCLAMATIVAS
+            if (e > b && vale) {
+                diccionario.interrumpir()
+                val conTilde = try { diccionario.interrogativa(resto.substring(b, e)) } catch (_: Throwable) { null }
+                if (conTilde != null) resto = resto.substring(0, b) + conTilde + resto.substring(e)
+            }
+        }
+        reemplazar(oracion.length - desde, apertura + resto)
+    }
+
+    private fun sinMarcas(w: String): String =
+        java.text.Normalizer.normalize(w.lowercase(), java.text.Normalizer.Form.NFD)
+            .filter { Character.getType(it) != Character.NON_SPACING_MARK.toInt() }
+
+    private val EXCLAMATIVAS = setOf("que", "cuanto", "cuanta", "cuantos", "cuantas")
+
+    private val PREGUNTAS = setOf(
+        "que", "como", "cuando", "donde", "adonde", "quien", "quienes", "cual", "cuales",
+        "cuanto", "cuanta", "cuantos", "cuantas", "acaso", "verdad", "no",
+    )
+
+    /** Elegiste el emoji de la barra: se escribe después de la palabra ("jaja 😂 ") */
+    private fun elegirEmoji(e: String) {
+        val p = palabrasDe(antes(60)).second
+        // Si estabas a mitad de palabra, primero se cierra (con su autocorrección)
+        if (p.isNotEmpty()) cerrarPalabra(" ")
+        else if (antes(1).let { it.isNotEmpty() && !it[0].isWhitespace() }) reemplazar(0, " ")
+        reemplazar(0, "$e ")
+        ultimaCorreccion = null
+        ultimaAprendida = null
+        ultimoDeslizado = null
+        espacioAutomatico = true
+        escribiendo = true
+        ultimaEscritura = SystemClock.uptimeMillis()
+        EmojiPanel.sumarReciente(this, e)
+        retro(Tipo.LETRA)
+    }
+
     // ---------- Acciones de las teclas ----------
 
     /** Comilla de apertura o de cierre según lo que hay antes (Puntuación inteligente) */
@@ -1016,6 +1181,7 @@ class TecladoService : InputMethodService(),
             }
         }
         if (c == "?") acentuarPregunta()
+        if ((c == "?" || c == "!") && puntuacionActiva && aperturaActiva) abrirSigno(c[0])
         if (c.length == 1 && c[0] in ".,;:!?") {
             // Después de elegir una sugerencia, la puntuación se pega a la palabra: "hola, "
             if (espacioAutomatico && antes(1) == " ") {
@@ -1153,6 +1319,20 @@ class TecladoService : InputMethodService(),
         olvidarEspejo()
     }
 
+    override fun moverCursorVertical(pasos: Int) {
+        // En un campo de una sola línea, arriba/abajo movería el foco a otra parte de la app
+        if (!multilinea || pasos == 0) return
+        espacioAutomatico = false
+        ultimaAprendida = null
+        ultimaCorreccion = null
+        ultimoDeslizado = null
+        calculada = null
+        toques.clear()
+        val tecla = if (pasos > 0) KeyEvent.KEYCODE_DPAD_DOWN else KeyEvent.KEYCODE_DPAD_UP
+        repeat(Math.abs(pasos)) { sendDownUpKeyEvents(tecla) }
+        olvidarEspejo()
+    }
+
     override fun enter() {
         val ic = currentInputConnection ?: return
         val info = currentInputEditorInfo ?: return
@@ -1182,14 +1362,25 @@ class TecladoService : InputMethodService(),
         teclado?.ocultarPreview()
         emojis?.refrescar()
         teclado?.visibility = View.INVISIBLE
-        emojis?.visibility = View.VISIBLE
+        emojis?.let { aparecer(it) }
         actualizarBarra()
     }
 
     override fun volverABC() {
+        emojis?.cerrarTonos()
+        val estabaEnEmojis = emojis?.visibility == View.VISIBLE
+        emojis?.animate()?.cancel()
         emojis?.visibility = View.GONE
-        teclado?.visibility = View.VISIBLE
+        teclado?.let { if (estabaEnEmojis) aparecer(it) else { it.animate().cancel(); it.alpha = 1f; it.visibility = View.VISIBLE } }
         actualizarBarra()
+    }
+
+    /** Muestra una vista con un fundido rápido (cambio entre letras y emojis, como en iOS) */
+    private fun aparecer(v: View) {
+        v.animate().cancel()
+        v.alpha = 0f
+        v.visibility = View.VISIBLE
+        v.animate().alpha(1f).setDuration(130).start()
     }
 
     override fun emoji(s: String) {
@@ -1215,7 +1406,13 @@ class TecladoService : InputMethodService(),
             escribiendo = true
             ultimaEscritura = SystemClock.uptimeMillis()
             reemplazar(0, texto)
+            // Pegaste una contraseña: se borra del portapapeles al minuto
+            if (campoClave || copiadoSensible) programarLimpieza(copiadoHora)
             retro(Tipo.LETRA)
+            return
+        }
+        if (s.emoji) {
+            elegirEmoji(s.texto)
             return
         }
         if (s.revertir) {

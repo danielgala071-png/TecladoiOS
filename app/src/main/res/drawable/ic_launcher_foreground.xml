@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ícono de TecladoiOS: teclado negro AMOLED con teclas de vidrio y filo de color -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Cuerpo del teclado -->
+    <path
+        android:fillColor="#FF0B0B0D"
+        android:strokeWidth="2.2"
+        android:pathData="M32.00,35.00 h44.00 a7,7 0 0 1 7,7 v24.00 a7,7 0 0 1 -7,7 h-44.00 a7,7 0 0 1 -7,-7 v-24.00 a7,7 0 0 1 7,-7 z">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="25" android:startY="35"
+                android:endX="83" android:endY="73">
+                <item android:offset="0" android:color="#FF5AC8FA" />
+                <item android:offset="0.5" android:color="#FF0A84FF" />
+                <item android:offset="1" android:color="#FFBF5AF2" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Teclas de vidrio -->
+    <path
+        android:fillColor="#40FFFFFF"
+        android:strokeColor="#B30A84FF"
+        android:strokeWidth="0.8"
+        android:pathData="M32.00,40.50 h4.00 a2,2 0 0 1 2,2 v3.50 a2,2 0 0 1 -2,2 h-4.00 a2,2 0 0 1 -2,-2 v-3.50 a2,2 0 0 1 2,-2 z M42.00,40.50 h4.00 a2,2 0 0 1 2,2 v3.50 a2,2 0 0 1 -2,2 h-4.00 a2,2 0 0 1 -2,-2 v-3.50 a2,2 0 0 1 2,-2 z M52.00,40.50 h4.00 a2,2 0 0 1 2,2 v3.50 a2,2 0 0 1 -2,2 h-4.00 a2,2 0 0 1 -2,-2 v-3.50 a2,2 0 0 1 2,-2 z M62.00,40.50 h4.00 a2,2 0 0 1 2,2 v3.50 a2,2 0 0 1 -2,2 h-4.00 a2,2 0 0 1 -2,-2 v-3.50 a2,2 0 0 1 2,-2 z M72.00,40.50 h4.00 a2,2 0 0 1 2,2 v3.50 a2,2 0 0 1 -2,2 h-4.00 a2,2 0 0 1 -2,-2 v-3.50 a2,2 0 0 1 2,-2 z M37.00,51.00 h4.00 a2,2 0 0 1 2,2 v3.50 a2,2 0 0 1 -2,2 h-4.00 a2,2 0 0 1 -2,-2 v-3.50 a2,2 0 0 1 2,-2 z M47.00,51.00 h4.00 a2,2 0 0 1 2,2 v3.50 a2,2 0 0 1 -2,2 h-4.00 a2,2 0 0 1 -2,-2 v-3.50 a2,2 0 0 1 2,-2 z M57.00,51.00 h4.00 a2,2 0 0 1 2,2 v3.50 a2,2 0 0 1 -2,2 h-4.00 a2,2 0 0 1 -2,-2 v-3.50 a2,2 0 0 1 2,-2 z M67.00,51.00 h4.00 a2,2 0 0 1 2,2 v3.50 a2,2 0 0 1 -2,2 h-4.00 a2,2 0 0 1 -2,-2 v-3.50 a2,2 0 0 1 2,-2 z M32.00,61.50 h2.00 a2,2 0 0 1 2,2 v3.50 a2,2 0 0 1 -2,2 h-2.00 a2,2 0 0 1 -2,-2 v-3.50 a2,2 0 0 1 2,-2 z M74.00,61.50 h2.00 a2,2 0 0 1 2,2 v3.50 a2,2 0 0 1 -2,2 h-2.00 a2,2 0 0 1 -2,-2 v-3.50 a2,2 0 0 1 2,-2 z M40.00,61.50 h28.00 a2,2 0 0 1 2,2 v3.50 a2,2 0 0 1 -2,2 h-28.00 a2,2 0 0 1 -2,-2 v-3.50 a2,2 0 0 1 2,-2 z" />
+</vector>

@@ -141,7 +141,9 @@ class EmojiPanel(
     private val d = Medidas.escala(context)
     private fun dp(v: Float) = (v * d).toInt()
     private val prefs = Ajustes.prefs(context)
-    private val grilla = EmojiGrid(context, tema) { elegido(it) }
+    private val grilla = EmojiGrid(context, tema) { elegido(it) }.apply {
+        alAbrirTonos = { acciones.retro(Tipo.LETRA) }
+    }
     private val scroll = HorizontalScrollView(context)
     private val categorias = BarraCategorias(context, tema) { i ->
         acciones.retro(Tipo.A_LETRAS)
@@ -185,11 +187,7 @@ class EmojiPanel(
         refrescar()
     }
 
-    private fun recientes(): List<String> {
-        val guardados = prefs.getString("recientes", null)
-        return if (guardados.isNullOrBlank()) lista("😂 ❤️ 😍 🙏 😭 👍 😊 🔥 🥰 😅 🤣 💀 😘 🥺 😁 ✨ 😎 🤔 😢 👀")
-        else guardados.split(" ").filter { it.isNotBlank() }.take(30)
-    }
+    private fun recientes(): List<String> = recientesDe(prefs)
 
     /** Se llama al abrir el panel: actualiza "Usados frecuentemente" y vuelve al inicio */
     fun refrescar() {
@@ -202,11 +200,28 @@ class EmojiPanel(
     private fun elegido(e: String) {
         acciones.retro(Tipo.LETRA)
         acciones.emoji(e)
-        val nuevos = recientes().toMutableList()
-        nuevos.remove(e)
-        nuevos.add(0, e)
-        // Como en iPhone: hasta 30 (6 columnas de 5)
-        prefs.edit().putString("recientes", nuevos.take(30).joinToString(" ")).apply()
+        sumarReciente(context, e)
+    }
+
+    /** Al cerrar el panel: se cierra la ventanita de tonos si quedó abierta */
+    fun cerrarTonos() = grilla.cerrarTonos()
+
+    companion object {
+        private fun recientesDe(prefs: android.content.SharedPreferences): List<String> {
+            val guardados = prefs.getString("recientes", null)
+            return if (guardados.isNullOrBlank()) lista("😂 ❤️ 😍 🙏 😭 👍 😊 🔥 🥰 😅 🤣 💀 😘 🥺 😁 ✨ 😎 🤔 😢 👀")
+            else guardados.split(" ").filter { it.isNotBlank() }.take(30)
+        }
+
+        /** Suma un emoji a "Usados frecuentemente" (también los que eliges en la barra de sugerencias) */
+        fun sumarReciente(c: Context, e: String) {
+            val prefs = Ajustes.prefs(c)
+            val nuevos = recientesDe(prefs).toMutableList()
+            nuevos.remove(e)
+            nuevos.add(0, e)
+            // Como en iPhone: hasta 30 (6 columnas de 5)
+            prefs.edit().putString("recientes", nuevos.take(30).joinToString(" ")).apply()
+        }
     }
 }
 
@@ -313,6 +328,66 @@ class EmojiGrid(
     private var y0 = 0f
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
 
+    // ---------- Tonos de piel (mantener presionado, como en iPhone) ----------
+
+    /** Avisa al abrir los tonos (para vibrar) */
+    var alAbrirTonos: (() -> Unit)? = null
+    private val prefsTonos = Ajustes.prefs(context)
+    /** Tono elegido para cada emoji: 👍 → 👍🏽 (se recuerda y se ve así en el panel) */
+    private val tonos: HashMap<String, String> = HashMap<String, String>().apply {
+        for (par in (prefsTonos.getString("tonos", "") ?: "").split('|')) {
+            val i = par.indexOf('=')
+            if (i > 0 && i < par.length - 1) put(par.substring(0, i), par.substring(i + 1))
+        }
+    }
+    private var popupTonos: VariantesPopup? = null
+    private var tonosAbiertos = false
+    /** El emoji base (sin tono) de la ventanita abierta */
+    private var baseTonos = ""
+    private val abrirTonos = Runnable { mostrarTonos() }
+    private val manejadorTonos = Handler(Looper.getMainLooper())
+    private val rectTonos = android.graphics.RectF()
+    private val pinturaPrueba = Paint()
+
+    /** Lo que se dibuja y se escribe para [e]: con el tono que elegiste, si elegiste uno */
+    private fun conTono(e: String) = tonos[e] ?: e
+
+    private fun mostrarTonos() {
+        val p = presionado ?: return
+        val visto = conTono(secciones.getOrNull(p.first)?.emojis?.getOrNull(p.second) ?: return)
+        val base = sinTono(visto)
+        val opciones = listOf(base) + TONOS.map { conModificador(base, it) }.filter { pinturaPrueba.hasGlyph(it) }
+        if (opciones.size <= 1) return
+        val ancla = parent as? View ?: return
+        val col = p.second / filas
+        val fila = p.second % filas
+        val x = (inicios.getOrElse(p.first) { 0f }) + col * anchoCelda - desplazamiento
+        val y = altoTitulo + fila * altoCelda
+        rectTonos.set(x, y, x + anchoCelda, y + altoCelda)
+        val popup = popupTonos ?: VariantesPopup(ancla).also { popupTonos = it }
+        popup.mostrar(rectTonos, opciones, ancla.width.toFloat(), tema.oscuro, tema.azul)
+        baseTonos = base
+        tonosAbiertos = true
+        presionado = null
+        // El panel no se desliza mientras eliges el tono
+        parent?.requestDisallowInterceptTouchEvent(true)
+        alAbrirTonos?.invoke()
+        invalidate()
+    }
+
+    fun cerrarTonos() {
+        manejadorTonos.removeCallbacks(abrirTonos)
+        popupTonos?.cerrar()
+        tonosAbiertos = false
+    }
+
+    private fun guardarTono(base: String, elegido: String) {
+        // Se recuerda para el emoji base y para cualquier versión con tono que aparezca en el panel
+        if (elegido == base) tonos.remove(base) else tonos[base] = elegido
+        prefsTonos.edit().putString("tonos", tonos.entries.joinToString("|") { "${it.key}=${it.value}" }).apply()
+        invalidate()
+    }
+
     init {
         val m = resources.displayMetrics
         val columnasVisibles = if (Medidas.horizontal(context)) 14.5f else 8.5f
@@ -391,7 +466,7 @@ class EmojiGrid(
                         val r = 9f * d
                         c.drawRoundRect(x + 2f * d, y + 1f * d, x + anchoCelda - 2f * d, y + altoCelda - 1f * d, r, r, fondo)
                     }
-                    c.drawText(s.emojis[j], x + anchoCelda / 2f, y + altoCelda / 2f + centroY, pintura)
+                    c.drawText(conTono(s.emojis[j]), x + anchoCelda / 2f, y + altoCelda / 2f + centroY, pintura)
                 }
             }
         }
@@ -416,31 +491,72 @@ class EmojiGrid(
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                cerrarTonos()
                 x0 = e.x; y0 = e.y
                 presionado = buscar(e.x, e.y)
+                if (presionado != null) manejadorTonos.postDelayed(abrirTonos, 420)
                 invalidate()
             }
             MotionEvent.ACTION_MOVE -> {
+                if (tonosAbiertos) {
+                    popupTonos?.mover(e.x - desplazamiento)
+                    return true
+                }
                 // Al deslizar ya no es un toque: se quita el resaltado
                 if (presionado != null && (Math.abs(e.x - x0) > slop || Math.abs(e.y - y0) > slop)) {
+                    manejadorTonos.removeCallbacks(abrirTonos)
                     presionado = null
                     invalidate()
                 }
             }
             MotionEvent.ACTION_UP -> {
+                manejadorTonos.removeCallbacks(abrirTonos)
+                if (tonosAbiertos) {
+                    val elegido = popupTonos?.elegido()
+                    cerrarTonos()
+                    if (elegido != null) {
+                        guardarTono(baseTonos, elegido)
+                        alElegir(elegido)
+                    }
+                    return true
+                }
                 val p = presionado
                 presionado = null
                 invalidate()
                 val quieto = Math.abs(e.x - x0) < slop && Math.abs(e.y - y0) < slop
-                if (p != null && quieto) alElegir(secciones[p.first].emojis[p.second])
+                if (p != null && quieto) alElegir(conTono(secciones[p.first].emojis[p.second]))
             }
             MotionEvent.ACTION_CANCEL -> {
+                // Si los tonos estaban abiertos, se cierran sin elegir nada
+                cerrarTonos()
                 presionado = null
                 invalidate()
             }
         }
         return true
     }
+}
+
+/** Los cinco tonos de piel (claro → oscuro) */
+private val TONOS = listOf("\uD83C\uDFFB", "\uD83C\uDFFC", "\uD83C\uDFFD", "\uD83C\uDFFE", "\uD83C\uDFFF")
+
+/** El emoji sin tono de piel: 👍🏽 → 👍 */
+private fun sinTono(e: String): String {
+    var r = e
+    for (t in TONOS) r = r.replace(t, "")
+    return r
+}
+
+/**
+ * El emoji con el tono [tono]: va justo después del primer carácter (y sin el selector
+ * de variante que algunos traen): ✌️ → ✌🏽, 🧑‍💻 → 🧑🏽‍💻, 🏃‍♀️ → 🏃🏽‍♀️.
+ */
+private fun conModificador(base: String, tono: String): String {
+    if (base.isEmpty()) return base
+    val primero = Character.charCount(base.codePointAt(0))
+    var resto = base.substring(primero)
+    if (resto.startsWith("\uFE0F")) resto = resto.substring(1)
+    return base.substring(0, primero) + tono + resto
 }
 
 @SuppressLint("ViewConstructor")

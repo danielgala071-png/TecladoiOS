@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fondo del ícono: negro AMOLED como el teclado -->
+    <color name="fondo_icono">#FF000000</color>
+</resources>

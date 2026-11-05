@@ -26,6 +26,12 @@ object Ajustes {
     fun puntoDoble(c: Context) = si(c, "punto_doble", true)
     /** Lo copiado aparece en la barra de sugerencias para pegarlo con un toque */
     fun portapapeles(c: Context) = si(c, "portapapeles", true)
+    /** Las contraseñas que copias se borran solas del portapapeles al minuto */
+    fun limpiarClaves(c: Context) = si(c, "limpiar_claves", true)
+    /** Al cerrar con ? o ! se pone el signo de apertura (¿ ¡) al inicio, como se escribe en español */
+    fun apertura(c: Context) = si(c, "apertura", true)
+    /** Emojis en la barra de sugerencias según lo que escribes ("jaja" → 😂) */
+    fun emojisBarra(c: Context) = si(c, "emojis_barra", true)
 
     // Teclado con una mano: "no", "izq" o "der"
     fun unaMano(c: Context) = prefs(c).getString("una_mano", "no") ?: "no"

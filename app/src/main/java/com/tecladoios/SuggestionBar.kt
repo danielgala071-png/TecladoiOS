@@ -30,6 +30,8 @@ data class Sugerencia(
     val portapapeles: Boolean = false,
     /** Lo que se pega de verdad (puede ser distinto a lo que se ve, p. ej. una clave con puntos) */
     val pegar: String? = null,
+    /** Emoji sugerido por la palabra ("jaja" → 😂): se agrega después de la palabra */
+    val emoji: Boolean = false,
 )
 
 /**
