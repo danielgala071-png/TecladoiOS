@@ -37,7 +37,10 @@ jobs:
               curl -fsSL -o "$DESTINO" "https://github.com/google/fonts/raw/main/ofl/inter/Inter%5Bopsz,wght%5D.ttf" || true
             fi
           fi
-          [ -s "$DESTINO" ] || rm -f "$DESTINO"
+          if [ ! -s "$DESTINO" ]; then
+            rm -f "$DESTINO"
+            echo "::warning::No se pudo descargar la fuente Inter: este APK usará la fuente del sistema"
+          fi
           ls -la app/src/main/assets
 
       - name: Compilar el APK
