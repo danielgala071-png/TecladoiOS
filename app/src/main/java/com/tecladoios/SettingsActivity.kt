@@ -120,6 +120,25 @@ class SettingsActivity : Activity() {
         })
     }
 
+    /** Los errores que el teclado anotó, para copiarlos y enviarlos */
+    private fun verRegistro() {
+        val texto = Registro.leer(this).ifBlank { "No hay errores anotados." }
+        AlertDialog.Builder(this)
+            .setTitle("Registro de errores")
+            .setMessage(texto)
+            .setPositiveButton("Copiar") { _, _ ->
+                getSystemService(ClipboardManager::class.java)
+                    ?.setPrimaryClip(ClipData.newPlainText("errores", texto))
+                Toast.makeText(this, "Registro copiado", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Borrar") { _, _ ->
+                Registro.borrar(this)
+                recreate()
+            }
+            .setNeutralButton("Cerrar", null)
+            .show()
+    }
+
     // ---------- Estructura ----------
 
     private fun construirPantalla() {
@@ -489,6 +508,13 @@ class SettingsActivity : Activity() {
         grupo(null, listOf(
             filaAccion("Gestos y trucos") { irA("gestos") },
         ))
+
+        // Errores que el teclado anotó sin cerrarse (solo aparece si hay alguno)
+        if (Registro.leer(this).isNotBlank()) {
+            grupo(null, listOf(
+                filaAccion("Registro de errores") { verRegistro() },
+            ))
+        }
 
         grupo("Diccionario", listOf(
             filaAccion("Palabras aprendidas") { irA("palabras") },

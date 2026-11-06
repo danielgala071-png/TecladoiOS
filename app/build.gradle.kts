@@ -17,17 +17,31 @@ android {
         versionName = "5.$compilacion"
     }
 
+    // Firma fija: antes cada compilación de GitHub usaba una llave nueva y Android no dejaba
+    // instalar la versión nueva encima (había que desinstalar y se perdía lo aprendido).
+    // Con esta llave siempre igual, cada APK nuevo se instala como actualización.
+    signingConfigs {
+        create("fija") {
+            storeFile = file("firma.jks")
+            storePassword = "tecladoios"
+            keyAlias = "tecladoios"
+            keyPassword = "tecladoios"
+        }
+    }
+
     buildTypes {
         // GitHub compila la versión "debug": se deja optimizada igual que una versión final
         // (sin modo depuración y con R8), así el teclado va más rápido y gasta menos batería.
-        // Se firma igual que antes.
+        // Se firma siempre con la misma llave (firma.jks).
         debug {
             isDebuggable = false
             isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("fija")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         release {
             isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("fija")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

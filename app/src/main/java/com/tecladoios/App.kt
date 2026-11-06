@@ -8,6 +8,7 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         Fuentes.iniciar(this)
+        Registro.iniciar(this)
         val previo = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { hilo, error ->
             try {

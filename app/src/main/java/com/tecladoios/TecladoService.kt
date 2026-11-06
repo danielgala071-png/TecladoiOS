@@ -113,7 +113,7 @@ class TecladoService : InputMethodService(),
         copiadoHora = -1L
         if (isInputViewShown) actualizar()
     }
-    private val tareaGuardar = Runnable { try { diccionario.guardar() } catch (_: Throwable) { } }
+    private val tareaGuardar = Runnable { try { diccionario.guardar() } catch (e: Throwable) { Registro.anotar("guardar", e) } }
 
     private var toqueFino: Boolean? = null
     private var ultimaCorreccion: Pair<String, String>? = null
@@ -177,6 +177,7 @@ class TecladoService : InputMethodService(),
     override fun onCreate() {
         super.onCreate()
         Fuentes.iniciar(this)
+        Registro.iniciar(this)
         diccionario = Diccionario(this)
         // Revisa en segundo plano qué emojis puede dibujar el celular (el panel abre al instante)
         Thread({ try { CATEGORIAS.forEach { it.emojis } } catch (_: Throwable) { } }, "emojis").apply {
@@ -473,7 +474,7 @@ class TecladoService : InputMethodService(),
     // ---------- Copia local del texto ----------
 
     private fun enMotor(tarea: () -> Unit) {
-        motor.post { try { tarea() } catch (_: Throwable) { } }
+        motor.post { try { tarea() } catch (e: Throwable) { Registro.anotar("sugerencias", e) } }
     }
 
     /**
@@ -848,7 +849,7 @@ class TecladoService : InputMethodService(),
                 if (!diccionario.vigente(t)) return@post
                 val sig = try {
                     diccionario.siguientes(prev, 3, prev2).map { if (inicio) it.replaceFirstChar { c -> c.uppercase() } else it }
-                } catch (_: Throwable) { emptyList() }
+                } catch (e: Throwable) { Registro.anotar("predicción", e); emptyList() }
                 manejador.post {
                     if (!diccionario.vigente(t)) return@post
                     val derecha = (if (deshacer != null) sig.getOrNull(1) else sig.getOrNull(2))?.let { Sugerencia(it) }
@@ -894,7 +895,7 @@ class TecladoService : InputMethodService(),
                         top.substring(0, p.length).equals(p, ignoreCase = true) && !diccionario.conocida(p)
                     ) completa = top
                 }
-            } catch (_: Throwable) { return@post }
+            } catch (e: Throwable) { Registro.anotar("sugerencias", e); return@post }
             if (!diccionario.vigente(t)) return@post
             val c = corr
             val comp = completa
@@ -927,7 +928,7 @@ class TecladoService : InputMethodService(),
         val c = calculada
         if (c != null && c.palabra == palabra && c.previa == previa && c.previa2 == previa2) return c.correccion
         diccionario.interrumpir()
-        return try { diccionario.corregir(palabra, previa, previa2, diccionario.turno(), toq) } catch (_: Throwable) { null }
+        return try { diccionario.corregir(palabra, previa, previa2, diccionario.turno(), toq) } catch (e: Throwable) { Registro.anotar("autocorrección", e); null }
     }
 
     /** Predicción en línea aceptada con espacio */
