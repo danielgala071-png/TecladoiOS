@@ -43,8 +43,34 @@ jobs:
           fi
           ls -la app/src/main/assets
 
+      - name: Poner la llave de firma (desde los secretos de GitHub)
+        env:
+          FIRMA_BASE64: ${{ secrets.FIRMA_BASE64 }}
+        run: |
+          if [ -n "$FIRMA_BASE64" ]; then
+            echo "$FIRMA_BASE64" | tr -d " \r\n" | base64 -d > app/firma.jks
+            echo "Llave puesta desde los secretos"
+          elif [ -f app/firma.jks ]; then
+            echo "::warning::La llave sigue dentro del repositorio. Pásala a los secretos (FIRMA_BASE64) y borra app/firma.jks"
+          else
+            echo "::error::Falta la llave: crea el secreto FIRMA_BASE64 en Settings > Secrets and variables > Actions"
+            exit 1
+          fi
+
+      - name: Probar el cerebro y la autocorrección
+        run: gradle testDebugUnitTest --stacktrace
+
       - name: Compilar el APK
+        env:
+          FIRMA_CLAVE: ${{ secrets.FIRMA_CLAVE }}
         run: gradle assembleDebug --stacktrace
+
+      - name: Subir el resultado de las pruebas (si algo falló)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultado-pruebas
+          path: app/build/reports/tests/
 
       - name: Subir el APK
         uses: actions/upload-artifact@v4
