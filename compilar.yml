@@ -1,0 +1,63 @@
+name: Compilar APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  compilar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Instalar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Instalar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Descargar la fuente estilo iPhone (Inter)
+        run: |
+          DESTINO=app/src/main/assets/inter.ttf
+          mkdir -p app/src/main/assets
+          if [ ! -f "$DESTINO" ]; then
+            if curl -fsSL -o inter.zip https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip; then
+              unzip -q -o inter.zip -d inter
+              cp "$(find inter -name 'InterVariable.ttf' | head -1)" "$DESTINO" || true
+            fi
+            if [ ! -s "$DESTINO" ]; then
+              curl -fsSL -o "$DESTINO" "https://github.com/google/fonts/raw/main/ofl/inter/Inter%5Bopsz,wght%5D.ttf" || true
+            fi
+          fi
+          if [ ! -s "$DESTINO" ]; then
+            rm -f "$DESTINO"
+            echo "::warning::No se pudo descargar la fuente Inter: este APK usará la fuente del sistema"
+          fi
+          ls -la app/src/main/assets
+
+      - name: Ampliar el diccionario con el español que se usa de verdad
+        run: |
+          # Lista de las 50 000 palabras más usadas en el español conversado (subtítulos).
+          # Se agregan las que faltan en el lugar que les toca; sin internet no cambia nada.
+          if curl -fsSL -o frecuencias.txt https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/es/es_50k.txt; then
+            python3 herramientas/ampliar_diccionario.py app/src/main/assets/diccionario.txt frecuencias.txt 50000
+          else
+            echo "::warning::No se pudo descargar la lista de palabras: se usa el diccionario sin ampliar"
+          fi
+
+      - name: Compilar el APK
+        run: gradle assembleDebug --stacktrace
+
+      - name: Subir el APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TecladoiOS
+          path: app/build/outputs/apk/debug/*.apk
