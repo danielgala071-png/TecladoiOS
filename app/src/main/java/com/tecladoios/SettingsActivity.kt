@@ -544,7 +544,18 @@ class SettingsActivity : Activity() {
                     .setNegativeButton("Cancelar", null)
                     .show()
             },
-        ))
+            filaAccion("Restablecer ajuste de toque", rojo, derecha = null) {
+                AlertDialog.Builder(this)
+                    .setMessage("El teclado olvidará cómo tocas las teclas y volverá a aprenderlo desde cero.")
+                    .setPositiveButton("Restablecer") { _, _ ->
+                        ModeloToque.restablecer(this)
+                        Toast.makeText(this, "Ajuste de toque restablecido", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("Cancelar", null)
+                    .show()
+            },
+        ), pie = "El teclado aprende solo cómo tocas cada letra (un poco más abajo, más a un lado) " +
+                "y ajusta las teclas a tu dedo para que se confundan menos.")
 
         // Número de versión: sirve para comprobar que se instaló la última compilación
         val version = try {
@@ -616,6 +627,8 @@ class SettingsActivity : Activity() {
         tituloGrande("Gestos y trucos")
         grupo("Escribir", listOf(
             filaInfo("Mover el cursor", "Mantén presionada la barra espaciadora y desliza: a los lados mueve el cursor letra por letra; arriba y abajo cambia de línea en textos largos."),
+            filaInfo("Barra de edición", "Al mover el cursor con la barra espaciadora, o al marcar texto, la barra muestra Seleccionar todo, Seleccionar, Cortar, Copiar y Pegar. Con Seleccionar encendido, mover el cursor va marcando el texto. Al volver a escribir, regresan las sugerencias."),
+            filaInfo("Ir a los ajustes", "Mantén presionada la tecla de emojis."),
             filaInfo("Números sin cambiar de teclado", "Pon el dedo en 123, deslízalo hasta el número o signo y suelta: se escribe y vuelves solo a las letras."),
             filaInfo("Acentos y ñ", "Mantén presionada una letra (a, e, n…) o un signo (? ! $ \" -) para ver sus variantes."),
             filaInfo("Bloq Mayús", "Toca dos veces la tecla de mayúsculas."),
@@ -670,6 +683,8 @@ class SettingsActivity : Activity() {
         sb.append("#atajos\n").append(prefs.getString("atajos", "") ?: "").append('\n')
         sb.append("#recientes\n").append(prefs.getString("recientes", "") ?: "").append('\n')
         sb.append("#tonos\n").append(prefs.getString("tonos", "") ?: "").append('\n')
+        // El cerebro va antes de lo aprendido (lo aprendido siempre es lo último del archivo)
+        Diccionario.leerCerebro(this)?.let { sb.append("#cerebro\n").append(it.trimEnd()).append('\n') }
         sb.append("#aprendido\n").append(Diccionario.leerDatos(this) ?: "")
         return sb.toString()
     }
@@ -690,6 +705,11 @@ class SettingsActivity : Activity() {
         valor("#tonos")?.let { editor.putString("tonos", it) }
         editor.commit()
         val i = lineas.indexOf("#aprendido")
+        val ic = lineas.indexOf("#cerebro")
+        if (ic >= 0 && i > ic) {
+            val cerebro = lineas.subList(ic + 1, i).joinToString("\n")
+            try { Diccionario.escribirCerebro(this, cerebro) } catch (e: Exception) { Registro.anotar("importar el cerebro", e) }
+        }
         if (i >= 0) {
             val aprendido = lineas.drop(i + 1).joinToString("\n")
             if (Diccionario.datosValidos(aprendido)) Diccionario.escribirDatos(this, aprendido)

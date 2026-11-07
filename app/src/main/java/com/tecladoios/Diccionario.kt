@@ -39,7 +39,7 @@ class Diccionario(context: Context) {
     /** Palabras que pediste olvidar: no se sugieren ni se usan para corregir */
     private val bloqueadas = HashSet<String>()
     /** Cuántas veces escribiste la palabra con mayúscula a mitad de oración (nombres) */
-    private val nombres = HashMap<String, Int>()
+    private val nombres = java.util.concurrent.ConcurrentHashMap<String, Int>()
     /** Último día (desde 1970) en que usaste cada palabra aprendida */
     private val usadas = HashMap<String, Int>()
     /** Tres palabras seguidas: "nos vemos" → {"mañana": 4, "luego": 2} */
@@ -59,6 +59,13 @@ class Diccionario(context: Context) {
     /** Modo incógnito: no se aprende nada (lo pide la app, como Chrome incógnito) */
     @Volatile var pausado = false
 
+    /** El cerebro: tu modelo de lenguaje personal (frases, apps, errores de siempre) */
+    private val cerebro = Cerebro(File(context.applicationContext.filesDir, Cerebro.ARCHIVO))
+    /** La app donde estás escribiendo (el cerebro aprende cómo escribes en cada una) */
+    @Volatile var app = ""
+    /** Las últimas predicciones que se mostraron (para saber cuáles ignoras) */
+    private var ultimasPredichas: Pair<String, List<String>>? = null
+
     /**
      * Turnos: el teclado calcula las sugerencias en un hilo aparte. Cuando llega una letra
      * nueva, el cálculo anterior ya no sirve y se corta al instante (así nunca se acumula
@@ -69,7 +76,9 @@ class Diccionario(context: Context) {
     fun interrumpir() { turnoGlobal.incrementAndGet() }
     fun turno() = turnoGlobal.get()
     fun vigente(t: Int) = turnoGlobal.get() == t
-    private fun cortado() = turnoGlobal.get() != miTurno
+    private fun cortado() = !sinCorte && turnoGlobal.get() != miTurno
+    /** La corrección al dar espacio no se corta aunque sigas escribiendo (ya se necesita sí o sí) */
+    private var sinCorte = false
     private var revision = -1
     @Volatile private var cambios = false
     private var sinGuardar = 0
@@ -125,6 +134,7 @@ class Diccionario(context: Context) {
         activo = WeakReference(this)
         val app = context.applicationContext
         Thread({
+            try { cerebro.cargar() } catch (e: Throwable) { Registro.anotar("cargar el cerebro", e) }
             try { indice = construir(app) } catch (e: Throwable) { Registro.anotar("armar el diccionario", e) }
         }, "diccionario").apply {
             priority = Thread.NORM_PRIORITY - 1
@@ -543,6 +553,13 @@ class Diccionario(context: Context) {
 
     /** Puntos extra si sueles escribir [w] después de [previa] (y de [previa2] antes de esa) */
     private fun contexto(previa: String, w: String, previa2: String = ""): Float {
+        val base = contextoFijo(previa, w, previa2)
+        // El cerebro sabe qué escribes tú después de esas palabras (hasta tres antes y en esta app)
+        val c = cerebro.prob(previa, previa2, w, app)
+        return if (c < 0.03f) base else maxOf(base, minOf(0.95f, 0.3f + c))
+    }
+
+    private fun contextoFijo(previa: String, w: String, previa2: String): Float {
         if (previa.isEmpty()) return 0f
         val l = previa.lowercase()
         val lw = w.lowercase()
@@ -631,9 +648,11 @@ class Diccionario(context: Context) {
                 np.length <= 5 -> 0.7f
                 else -> 1.1f
             }
+            var vistas = 0
             for (ch in iniciales(np)) {
                 if (cortado()) return emptyList()
                 recorrer(ix, ch, np.length - 2, MAX_LARGO) { i ->
+                    if ((++vistas and 255) == 0 && cortado()) return emptyList()
                     val p = ix.palabras[i]
                     if (!res.containsKey(p) && !p.equals(lp, ignoreCase = true) && !bloqueada(p)) {
                         val n = ix.normal[i]
@@ -650,6 +669,14 @@ class Diccionario(context: Context) {
                 val n = normalDe(p)
                 val d = minOf(distancia(np, n, np.length, lim), distancia(np, n, n.length, lim))
                 if (d <= lim) res[p] = (minOf(c, 50) * 40 * (1f - d / (lim + 0.6f))).toInt()
+            }
+        }
+        // El cerebro: lo que tú sueles escribir aquí (por la frase y la app) sube arriba
+        if (!cortado()) {
+            for ((w, pr) in cerebro.candidatos(previa, previa2, app, np, 12)) {
+                // Solo palabras de verdad (del diccionario o ya tuyas), nunca un error que se coló
+                if (w == lp || bloqueada(w) || (ix != null && !conoce(ix, w))) continue
+                res[w] = (res[w] ?: 0) + (pr * 1600f).toInt()
             }
         }
         return res.entries.sortedByDescending { it.value }
@@ -720,6 +747,19 @@ class Diccionario(context: Context) {
         pares[l]?.forEach { (w, c) -> if (!bloqueada(w)) res[w] = (res[w] ?: 0) + c * 10 + recencia(w) / 10 }
         val fijas = if (l.isEmpty()) INICIO else paresFijos(l)
         fijas?.forEachIndexed { i, w -> if (!bloqueada(w)) res[w] = (res[w] ?: 0) + (8 - i).coerceAtLeast(1) }
+        // El cerebro: tu manera de seguir esta frase (hasta tres palabras atrás, y en esta app)
+        val ixC = indice
+        for ((w, pr) in cerebro.candidatos(previa, previa2, app, "", 8)) {
+            if (bloqueada(w) || (ixC != null && !conoce(ixC, w))) continue
+            res[w] = (res[w] ?: 0) + (pr * 160f).toInt()
+        }
+        // Las que siempre ignoras después de esta palabra bajan
+        if (res.isNotEmpty()) {
+            for (k in res.keys.toList()) {
+                val f = cerebro.factorIgnorada(l, k)
+                if (f < 1f) res[k] = ((res[k] ?: 0) * f).toInt()
+            }
+        }
         // Siempre 3 opciones, como en iPhone: si no hay nada para esa palabra, las más comunes
         if (res.size < max) {
             val generales = if (l.isEmpty()) INICIO else GENERALES
@@ -728,8 +768,9 @@ class Diccionario(context: Context) {
                 if (!res.containsKey(w) && w != l && !bloqueada(w)) res[w] = 0
             }
         }
-        return res.entries.sortedByDescending { it.value }.take(max)
-            .map { if (esNombre(it.key)) it.key.replaceFirstChar { c -> c.uppercase() } else it.key }
+        val lista = res.entries.sortedByDescending { it.value }.take(max).map { it.key }
+        ultimasPredichas = l to lista
+        return lista.map { if (esNombre(it)) it.replaceFirstChar { c -> c.uppercase() } else it }
     }
 
     // ---------- Autocorrección ----------
@@ -738,11 +779,12 @@ class Diccionario(context: Context) {
     @Synchronized
     fun corregir(
         p: String, previa: String = "", previa2: String = "", t: Int = turno(),
-        toques: Array<FloatArray>? = null,
+        toques: Array<FloatArray>? = null, cortable: Boolean = true,
     ): String? {
         miTurno = t
         toq = toques
-        val encontrada: String? = try { corregirSinFiltro(p, previa, previa2) } finally { toq = null }
+        sinCorte = !cortable
+        val encontrada: String? = try { corregirSinFiltro(p, previa, previa2) } finally { toq = null; sinCorte = false }
         val r = encontrada ?: return null
         if (cortado()) return null
         // Una corrección que ya deshiciste no se vuelve a hacer
@@ -759,9 +801,12 @@ class Diccionario(context: Context) {
     ): String? {
         var mejor: String? = null
         var mejorTotal = Float.MAX_VALUE
+        var vistas = 0
         for (ch in iniciales(np)) {
             if (cortado()) return null
             recorrer(ix, ch, np.length - 2, np.length + 2) { i ->
+                // Si ya llegó otra letra, se deja de buscar al toque (no se hace esperar a nadie)
+                if ((++vistas and 255) == 0 && cortado()) return null
                 if (maxRango < 0 || i <= maxRango) {
                     val c = ix.palabras[i]
                     if (!bloqueada(c)) {
@@ -886,6 +931,11 @@ class Diccionario(context: Context) {
             return null
         }
 
+        // 0) Tu error de siempre (el cerebro lo vio varias veces): "qje" → "que"
+        cerebro.errorTipico(l)?.let { e ->
+            if (!bloqueada(e)) return igualarMayus(e, p).takeIf { c -> c != p }
+        }
+
         // 1) Solo faltan tildes: "tambien" → "también"
         var mejor: String? = null
         var puntaje = -1
@@ -923,7 +973,7 @@ class Diccionario(context: Context) {
      * "como estas" → "cómo estás", "todo esta bien" → "todo está".
      * Devuelve (anterior, actual) corregidas, o null si no hay nada que cambiar.
      */
-    @Synchronized
+    // Sin @Synchronized: solo lee tablas fijas, así el espacio nunca espera a las sugerencias
     fun corregirPar(previa: String, palabra: String): Pair<String, String>? {
         if (previa.isEmpty() || palabra.isEmpty()) return null
         val par = PARES_TILDE[normal(previa) + " " + normal(palabra)] ?: return null
@@ -933,7 +983,6 @@ class Diccionario(context: Context) {
     }
 
     /** Palabra de pregunta con tilde: "que" → "qué", "como" → "cómo" */
-    @Synchronized
     fun interrogativa(w: String): String? =
         INTERROGATIVAS[normal(w)]?.let { igualarMayus(it, w) }?.takeIf { it != w }
 
@@ -1091,6 +1140,13 @@ class Diccionario(context: Context) {
     @Synchronized
     fun aprenderPar(previa: String, palabra: String, previa2: String = "") {
         if (pausado || !valida(palabra) || (previa.isNotEmpty() && !valida(previa))) return
+        val p2 = if (previa2.isNotEmpty() && valida(previa2)) previa2 else ""
+        cerebro.aprender(previa, palabra, p2, app)
+        // ¿Escribiste una de las predicciones que se mostraron? (si no, se anotan como ignoradas)
+        ultimasPredichas?.let { (ctx, lista) ->
+            if (ctx == previa.lowercase()) cerebro.observarPredicciones(previa, lista, palabra)
+        }
+        ultimasPredichas = null
         val mapa = pares.getOrPut(previa.lowercase()) { HashMap() }
         val w = palabra.lowercase()
         mapa[w] = (mapa[w] ?: 0) + 1
@@ -1107,6 +1163,7 @@ class Diccionario(context: Context) {
     @Synchronized
     fun desaprender(palabra: String, previa: String, previa2: String = "") {
         val l = palabra.lowercase()
+        cerebro.desaprender(previa, palabra, previa2, app)
         aprendidas[l]?.let { n -> if (n <= 1) { aprendidas.remove(l); usadas.remove(l) } else aprendidas[l] = n - 1 }
         val mapa = pares[previa.lowercase()]
         mapa?.get(l)?.let { n -> if (n <= 1) mapa.remove(l) else mapa[l] = n - 1 }
@@ -1117,12 +1174,25 @@ class Diccionario(context: Context) {
         cambios = true
     }
 
+    /**
+     * [escrito] terminó como [final] (la autocorrección o una sugerencia que tocaste).
+     * El cerebro lo anota como uno de tus errores de siempre; si lo deshaces, se resta.
+     */
+    @Synchronized
+    fun notarCorreccion(escrito: String, final: String, peso: Float = 1f) {
+        if (pausado) return
+        val f = final.trim().trimEnd { !it.isLetterOrDigit() }
+        cerebro.aprenderError(escrito.trim(), f, peso)
+        cambios = true
+    }
+
     /** Deshiciste la corrección de [original] a [corregido]: a la segunda vez ya no se vuelve a hacer */
     @Synchronized
     fun rechazarCorreccion(original: String, corregido: String) {
         val o = original.trim().lowercase()
         val c = corregido.trim().trimEnd { !it.isLetterOrDigit() }.lowercase()
         if (pausado || o.isEmpty() || c.isEmpty() || o.contains(' ') || o == c) return
+        cerebro.rechazarError(o, c)
         val clave = "$o>$c"
         // La primera vez solo se anota; la segunda vez ya no se vuelve a corregir
         if (clave in rechazos) return
@@ -1149,6 +1219,7 @@ class Diccionario(context: Context) {
     @Synchronized
     fun olvidar(p: String) {
         val l = p.lowercase()
+        cerebro.olvidar(l)
         aprendidas.remove(l)
         usadas.remove(l)
         nombres.remove(l)
@@ -1194,6 +1265,7 @@ class Diccionario(context: Context) {
      */
     fun guardar() {
         val texto: String
+        val textoCerebro: String?
         val numero: Long
         val quitarViejo: Boolean
         synchronized(this) {
@@ -1222,6 +1294,7 @@ class Diccionario(context: Context) {
             sb.append("#n\n")
             for ((k, v) in nombres) sb.append(k).append('\t').append(v).append('\n')
             texto = sb.toString()
+            textoCerebro = if (cerebro.listo && cerebro.hayCambios()) cerebro.instantanea() else null
             numero = ++copiaNumero
             quitarViejo = migrar
             cambios = false
@@ -1239,6 +1312,12 @@ class Diccionario(context: Context) {
                     if (!tmp.renameTo(archivo)) throw java.io.IOException("no se pudo reemplazar $ARCHIVO")
                 }
                 ultimaEscrita = numero
+                if (textoCerebro != null) {
+                    try { cerebro.escribir(textoCerebro) } catch (e: Exception) {
+                        cerebro.marcarCambios()
+                        Registro.anotar("guardar el cerebro", e)
+                    }
+                }
                 if (quitarViejo) {
                     migrar = false
                     prefs.edit().remove("aprendidas").remove("pares").remove("trios").remove("rechazos")
@@ -1265,7 +1344,9 @@ class Diccionario(context: Context) {
             nombres.clear()
             normales.clear()
             clases.clear()
+            ultimasPredichas = null
             cargar()
+            cerebro.cargar()
         }
     }
 
@@ -1389,6 +1470,29 @@ class Diccionario(context: Context) {
         /** Borra todo lo aprendido (Restablecer diccionario en los ajustes) */
         fun borrarDatos(c: Context) {
             try { File(c.applicationContext.filesDir, ARCHIVO).delete() } catch (_: Exception) { }
+            try { File(c.applicationContext.filesDir, Cerebro.ARCHIVO).delete() } catch (_: Exception) { }
+        }
+
+        /** Lo que aprendió el cerebro, tal cual está en el archivo (para la copia de seguridad) */
+        fun leerCerebro(c: Context): String? {
+            guardarAhora()
+            return try {
+                val f = File(c.applicationContext.filesDir, Cerebro.ARCHIVO)
+                if (f.exists()) f.readText(Charsets.UTF_8) else null
+            } catch (_: Exception) { null }
+        }
+
+        /** Pone el cerebro de una copia de seguridad (se lee de nuevo al abrir el teclado) */
+        fun escribirCerebro(c: Context, texto: String) {
+            if (!texto.startsWith("tecladoios-cerebro-")) return
+            val dir = c.applicationContext.filesDir
+            val tmp = File(dir, Cerebro.ARCHIVO + ".tmp")
+            tmp.writeText(texto, Charsets.UTF_8)
+            val f = File(dir, Cerebro.ARCHIVO)
+            if (!tmp.renameTo(f)) {
+                f.delete()
+                tmp.renameTo(f)
+            }
         }
 
         /** El diccionario que está usando el teclado ahora (si el teclado está abierto en memoria) */

@@ -32,6 +32,8 @@ data class Sugerencia(
     val pegar: String? = null,
     /** Emoji sugerido por la palabra ("jaja" → 😂): se agrega después de la palabra */
     val emoji: Boolean = false,
+    /** Botón de la barra de edición (Cortar, Copiar, Pegar...); 0 = es una palabra */
+    val accion: Int = 0,
 )
 
 /**
@@ -93,7 +95,7 @@ class SuggestionBar(
     }
 
     private fun sePuedeOlvidar(s: Sugerencia) =
-        !s.portapapeles && !s.revertir && s.reemplaza < 0 && !s.texto.contains(' ') && s.texto.length >= 2 &&
+        s.accion == 0 && !s.portapapeles && !s.revertir && s.reemplaza < 0 && !s.texto.contains(' ') && s.texto.length >= 2 &&
                 s.texto.all { it.isLetter() }
 
     // Una pintura por grosor de letra: cambiar el grosor en cada dibujo es lento

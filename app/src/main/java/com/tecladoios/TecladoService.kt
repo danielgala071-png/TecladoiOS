@@ -1,6 +1,7 @@
 package com.tecladoios
 
 import android.content.ClipDescription
+import android.content.Intent
 import android.content.ClipboardManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -36,6 +37,12 @@ class TecladoService : InputMethodService(),
         private const val MAX_ESPEJO = 300
         /** Lo copiado se ofrece en la barra durante este tiempo (como en iPhone) */
         private const val VIGENCIA_COPIADO = 3 * 60 * 1000L
+        // Botones de la barra de edición
+        private const val ED_TODO = 1
+        private const val ED_SELECCIONAR = 2
+        private const val ED_CORTAR = 3
+        private const val ED_COPIAR = 4
+        private const val ED_PEGAR = 5
         /** Lo aprendido se guarda como mucho cada tantos milisegundos (menos escrituras = menos batería) */
         private const val ESPERA_GUARDADO = 20_000L
     }
@@ -160,6 +167,24 @@ class TecladoService : InputMethodService(),
         val correccion: String?, val completa: String?,
     )
     @Volatile private var calculada: Calculada? = null
+
+    /**
+     * Corrección pendiente: diste espacio antes de que el motor terminara de revisar la palabra.
+     * El espacio se escribe al instante (no se traba la escritura rápida) y la corrección se
+     * pone unos milisegundos después, aunque ya hayas seguido escribiendo.
+     */
+    private class Diferida(
+        val palabra: String, val sufijo: String, val previa: String, val previa2: String,
+        /** Posición del cursor justo después de palabra + sufijo */
+        var fin: Int,
+    )
+    private val diferidas = ArrayList<Diferida>()
+
+    // ---------- Barra de edición ----------
+    /** Estás moviendo el cursor con la barra espaciadora: la barra muestra Cortar, Copiar, Pegar... */
+    private var editando = false
+    /** Modo seleccionar: mover el cursor con la barra espaciadora va marcando el texto */
+    private var seleccionando = false
 
     /**
      * Copia local del texto antes del cursor. El teclado lleva la cuenta por su cuenta y
@@ -312,6 +337,8 @@ class TecladoService : InputMethodService(),
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         appActual = info.packageName
+        // El cerebro aprende cómo escribes en cada app (WhatsApp, Instagram, correo...)
+        diccionario.app = (info.packageName ?: "").filter { it.isLetterOrDigit() || it == '.' || it == '_' }
         if (Tema.desde(this, false, colorDeApp(appActual)) != tema || firma() != firmaTamano) {
             setInputView(construir())
         }
@@ -428,6 +455,9 @@ class TecladoService : InputMethodService(),
 
     override fun onFinishInputView(finishingInput: Boolean) {
         manejador.removeCallbacks(tareaActualizar)
+        diferidas.clear()
+        editando = false
+        seleccionando = false
         teclado?.ocultarPreview()
         emojis?.cerrarTonos()
         teclado?.probLetras = null
@@ -791,6 +821,13 @@ class TecladoService : InputMethodService(),
         val enEmojis = emojis?.visibility == View.VISIBLE
         val modo = teclado?.modo
         val enPad = modo == Modo.PIN || modo == Modo.TELEFONO_SIMBOLOS
+        // Barra de edición: con texto marcado, o mientras mueves el cursor con la barra espaciadora
+        val conSeleccion = selIni >= 0 && selIni != selFin
+        if (!enEmojis && !enPad && !campoClave && (conSeleccion || editando || seleccionando)) {
+            b.visible(true)
+            b.mostrar(barraEdicion(conSeleccion))
+            return
+        }
         // Lo que copiaste hace poco aparece en la barra para pegarlo con un toque (como en iPhone):
         // al abrir el teclado o con el campo vacío
         if (!enEmojis && !enPad && (!escribiendo || antes.isBlank())) {
@@ -923,12 +960,62 @@ class TecladoService : InputMethodService(),
         }
     }
 
-    /** La corrección de [palabra]: la ya calculada en segundo plano, o se calcula ahora (pocas veces) */
-    private fun correccionDe(palabra: String, previa: String, previa2: String, toq: Array<FloatArray>?): String? {
-        val c = calculada
-        if (c != null && c.palabra == palabra && c.previa == previa && c.previa2 == previa2) return c.correccion
+    /** Calcula en el motor la corrección de una palabra ya cerrada y la pone apenas esté */
+    private fun corregirDespues(d: Diferida, toq: Array<FloatArray>?) {
+        diferidas.add(d)
         diccionario.interrumpir()
-        return try { diccionario.corregir(palabra, previa, previa2, diccionario.turno(), toq) } catch (e: Throwable) { Registro.anotar("autocorrección", e); null }
+        // Adelante de todo: es lo primero que hace el motor (y no se corta aunque sigas escribiendo)
+        motor.postAtFrontOfQueue {
+            val corr = try {
+                diccionario.corregir(d.palabra, d.previa, d.previa2, diccionario.turno(), toq, cortable = false)
+            } catch (e: Throwable) { Registro.anotar("autocorrección", e); null }
+            manejador.post { aplicarDiferida(d, corr) }
+        }
+    }
+
+    private fun aplicarDiferida(d: Diferida, corr: String?) {
+        if (!diferidas.remove(d)) return
+        val orig = d.palabra + d.sufijo
+        // Lo que escribiste después del espacio (se vuelve a poner igual detrás de la corrección)
+        val extra = if (selIni >= 0 && selIni == selFin && espejoValido) selIni - d.fin else -1
+        var final = d.palabra
+        if (corr != null && corr != d.palabra && autocorreccionActiva && currentInputConnection != null &&
+            extra in 0..80
+        ) {
+            val tramo = antes(extra + orig.length)
+            if (tramo.length == extra + orig.length && tramo.startsWith(orig)) {
+                val resto = tramo.substring(orig.length)
+                val nuevo = corr + d.sufijo
+                val guardados = ArrayList(toques)
+                val calc = calculada
+                reemplazar(tramo.length, nuevo + resto)
+                // La palabra que estás escribiendo ahora no cambió: se conservan sus toques
+                toques.clear()
+                toques.addAll(guardados)
+                if (extra > 0) calculada = calc
+                // Las otras pendientes que están más adelante se corren
+                val delta = nuevo.length - orig.length
+                for (o in diferidas) if (o.fin > d.fin - orig.length) o.fin += delta
+                if (extra == 0) ultimaCorreccion = Pair(d.palabra, nuevo)
+                final = corr
+                val escrito = d.palabra
+                enMotor { diccionario.notarCorreccion(escrito, corr) }
+            }
+        }
+        aprenderCerrada(final, d.previa, d.previa2, d.sufijo, alFinal = extra == 0)
+    }
+
+    /** Aprende la palabra que se acaba de cerrar (en segundo plano) */
+    private fun aprenderCerrada(palabra: String, previa: String, previa2: String, sufijo: String, alFinal: Boolean) {
+        if (!sugerenciasActivas && !autocorreccionActiva) return
+        val aMitad = previa.isNotEmpty()
+        enMotor {
+            diccionario.aprender(palabra)
+            diccionario.aprenderPar(previa, palabra, previa2)
+            diccionario.notarMayuscula(palabra, aMitad)
+        }
+        // Si borras el espacio enseguida, se deshace lo aprendido (era un error)
+        if (alFinal && sufijo == " ") ultimaAprendida = Aprendida(previa2, previa, palabra, palabra + sufijo)
     }
 
     /** Predicción en línea aceptada con espacio */
@@ -976,11 +1063,20 @@ class TecladoService : InputMethodService(),
             return
         }
 
-        // 2) Autocorrección de la palabra (con la posición exacta de cada toque, como Gboard)
+        // 2) Autocorrección de la palabra (con la posición exacta de cada toque, como Gboard).
+        //    Si el motor ya la calculó se usa al instante; si no (escribes muy rápido), el
+        //    espacio se escribe ya y la corrección llega enseguida: el toque nunca espera.
         var nuevaPalabra = palabra
-        val corr = if (autocorreccionActiva) correccionDe(palabra, previa, previa2, toquesPara(palabra, misToques)) else null
-        if (corr != null) nuevaPalabra = corr
-        else if (enLineaActiva && sufijo == " ") completadaDe(palabra, previa)?.let { nuevaPalabra = it }
+        val hecha = calculada
+        val yaCalculada = hecha != null && hecha.palabra == palabra && hecha.previa == previa && hecha.previa2 == previa2
+        val corr = if (autocorreccionActiva && yaCalculada) hecha!!.correccion else null
+        var diferir = autocorreccionActiva && !yaCalculada
+        if (corr != null) {
+            nuevaPalabra = corr
+            // El cerebro anota este error tuyo (si lo deshaces, se resta)
+            enMotor { diccionario.notarCorreccion(palabra, corr) }
+        }
+        else if (enLineaActiva && sufijo == " ") completadaDe(palabra, previa)?.let { nuevaPalabra = it; diferir = false }
 
         // 3) Tildes que dependen de la palabra anterior ("que tal" → "qué tal")
         var nuevaPrevia = previa
@@ -990,6 +1086,21 @@ class TecladoService : InputMethodService(),
                 nuevaPrevia = a
                 nuevaPalabra = b
             }
+        }
+
+        // Las tildes por la palabra anterior ya la cambiaron: es una palabra conocida
+        if (nuevaPalabra != palabra || nuevaPrevia != previa) diferir = false
+
+        if (diferir) {
+            // Se escribe tal cual ya; lo aprendido y el deshacer se anotan cuando llegue la corrección
+            reemplazar(0, sufijo)
+            ultimaCorreccion = null
+            if (selIni >= 0 && selIni == selFin && espejoValido) {
+                corregirDespues(Diferida(palabra, sufijo, previa, previa2, selIni), toquesPara(palabra, misToques))
+            } else {
+                aprenderCerrada(palabra, previa, previa2, sufijo, alFinal = true)
+            }
+            return
         }
 
         if (sugerenciasActivas || autocorreccionActiva) {
@@ -1155,6 +1266,7 @@ class TecladoService : InputMethodService(),
     }
 
     override fun texto(s: String, x: Float, y: Float) {
+        salirDeEdicion()
         teclado?.probLetras = null
         escribiendo = true
         ultimaEscritura = SystemClock.uptimeMillis()
@@ -1200,6 +1312,7 @@ class TecladoService : InputMethodService(),
     }
 
     override fun espacio() {
+        salirDeEdicion()
         teclado?.probLetras = null
         if (currentInputConnection == null) return
         val ahora = SystemClock.uptimeMillis()
@@ -1226,6 +1339,7 @@ class TecladoService : InputMethodService(),
     }
 
     override fun borrar() {
+        salirDeEdicion()
         teclado?.probLetras = null
         escribiendo = true
         ultimaEscritura = SystemClock.uptimeMillis()
@@ -1316,8 +1430,27 @@ class TecladoService : InputMethodService(),
         calculada = null
         toques.clear()
         val tecla = if (pasos > 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
-        repeat(Math.abs(pasos)) { sendDownUpKeyEvents(tecla) }
+        moverConTecla(tecla, Math.abs(pasos))
         olvidarEspejo()
+        if (!editando) {
+            editando = true
+            actualizarBarra()
+        }
+    }
+
+    /** Mueve el cursor; en modo Seleccionar va marcando el texto (Mayús + flecha) */
+    private fun moverConTecla(tecla: Int, veces: Int) {
+        if (!seleccionando) {
+            repeat(veces) { sendDownUpKeyEvents(tecla) }
+            return
+        }
+        val ic = currentInputConnection ?: return
+        val meta = KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
+        repeat(veces) {
+            val t = SystemClock.uptimeMillis()
+            ic.sendKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, tecla, 0, meta))
+            ic.sendKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_UP, tecla, 0, meta))
+        }
     }
 
     override fun moverCursorVertical(pasos: Int) {
@@ -1330,11 +1463,16 @@ class TecladoService : InputMethodService(),
         calculada = null
         toques.clear()
         val tecla = if (pasos > 0) KeyEvent.KEYCODE_DPAD_DOWN else KeyEvent.KEYCODE_DPAD_UP
-        repeat(Math.abs(pasos)) { sendDownUpKeyEvents(tecla) }
+        moverConTecla(tecla, Math.abs(pasos))
         olvidarEspejo()
+        if (!editando) {
+            editando = true
+            actualizarBarra()
+        }
     }
 
     override fun enter() {
+        salirDeEdicion()
         val ic = currentInputConnection ?: return
         val info = currentInputEditorInfo ?: return
         ultimaCorreccion = null
@@ -1367,6 +1505,69 @@ class TecladoService : InputMethodService(),
         actualizarBarra()
     }
 
+    /** Mantener presionada la tecla de emojis: se abren los ajustes del teclado */
+    override fun abrirAjustes() {
+        try {
+            requestHideSelf(0)
+            startActivity(Intent(this, SettingsActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            })
+        } catch (e: Exception) { Registro.anotar("abrir los ajustes", e) }
+    }
+
+    private fun puedePegar(): Boolean = try { portapapeles?.hasPrimaryClip() == true } catch (_: Exception) { false }
+
+    /** Los tres botones de la barra de edición, según haya texto marcado o no */
+    private fun barraEdicion(conSeleccion: Boolean): List<Sugerencia?> {
+        val pegar = if (puedePegar()) Sugerencia("Pegar", accion = ED_PEGAR) else null
+        return if (conSeleccion) listOf(
+            Sugerencia("Cortar", accion = ED_CORTAR),
+            Sugerencia("Copiar", accion = ED_COPIAR),
+            pegar,
+        ) else listOf(
+            Sugerencia("Seleccionar todo", accion = ED_TODO),
+            // Encendido: mover el cursor marca el texto (se ve resaltado, como un interruptor)
+            Sugerencia(if (seleccionando) "Marcando…" else "Seleccionar", accion = ED_SELECCIONAR, destacada = seleccionando),
+            pegar,
+        )
+    }
+
+    private fun editar(accion: Int) {
+        val ic = currentInputConnection ?: return
+        toques.clear()
+        calculada = null
+        ultimaCorreccion = null
+        ultimaAprendida = null
+        ultimoDeslizado = null
+        espacioAutomatico = false
+        when (accion) {
+            ED_TODO -> { ic.performContextMenuAction(android.R.id.selectAll); editando = true }
+            ED_SELECCIONAR -> { seleccionando = !seleccionando; editando = true }
+            ED_CORTAR -> { ic.performContextMenuAction(android.R.id.cut); seleccionando = false }
+            ED_COPIAR -> {
+                ic.performContextMenuAction(android.R.id.copy)
+                seleccionando = false
+                // Lo que acabas de copiar no se vuelve a ofrecer en la barra
+                copiadoUsado = maxOf(copiadoUsado, System.currentTimeMillis() + 3000L)
+            }
+            ED_PEGAR -> {
+                ic.performContextMenuAction(android.R.id.paste)
+                seleccionando = false
+                copiadoUsado = maxOf(copiadoUsado, copiadoHora)
+            }
+        }
+        olvidarEspejo()
+        retro(Tipo.LETRA)
+        actualizarBarra()
+    }
+
+    /** Al escribir de nuevo se cierra la barra de edición */
+    private fun salirDeEdicion() {
+        if (!editando && !seleccionando) return
+        editando = false
+        seleccionando = false
+    }
+
     override fun volverABC() {
         emojis?.cerrarTonos()
         val estabaEnEmojis = emojis?.visibility == View.VISIBLE
@@ -1395,6 +1596,10 @@ class TecladoService : InputMethodService(),
 
     override fun elegir(s: Sugerencia) {
         if (currentInputConnection == null) return
+        if (s.accion != 0) {
+            editar(s.accion)
+            return
+        }
         toques.clear()
         if (s.portapapeles) {
             // Pegar lo copiado, como al tocarlo en la barra del iPhone
@@ -1452,6 +1657,11 @@ class TecladoService : InputMethodService(),
         // Elegir una sugerencia a propósito enseña más que escribirla (sobre todo la que está "entre comillas")
         val pv = previa
         val pv2 = previa2
+        // Tocaste una palabra distinta a lo que escribías (no solo la completaste): es un error tuyo
+        val escrito = palabra
+        val esCorreccion = !s.literal && escrito.length >= 2 && s.reemplaza < 0 && !s.texto.contains(' ') &&
+            !Cerebro.sinTildes(s.texto.lowercase()).startsWith(Cerebro.sinTildes(escrito.lowercase()))
+        if (esCorreccion) enMotor { diccionario.notarCorreccion(escrito, s.texto, 2f) }
         enMotor {
             diccionario.aprender(s.texto, if (s.literal) 3 else 2)
             diccionario.aprenderPar(pv, s.texto, pv2)

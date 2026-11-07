@@ -61,6 +61,8 @@ class KeyboardView(
         fun espacio()
         fun enter()
         fun abrirEmojis()
+        /** Mantener presionada la tecla de emojis: abre los ajustes del teclado */
+        fun abrirAjustes()
         fun retro(tipo: Tipo)
         fun moverCursor(pasos: Int)
         /** Cursor con la barra espaciadora hacia arriba o abajo (solo en textos de varias líneas) */
@@ -113,6 +115,26 @@ class KeyboardView(
      * sentido, como en el iPhone. null = solo cuenta dónde cayó el dedo.
      */
     var probLetras: FloatArray? = null
+
+    /** Tu manera de tocar: cuánto se corre tu dedo en cada letra (se aprende solo) */
+    private val modelo = ModeloToque(context)
+
+    // Mantener presionada la tecla de emojis abre los ajustes
+    private var punteroEmoji = -1
+    private var emojiLargo = false
+    private val abrirAjustesTarea = Runnable {
+        if (punteroEmoji != -1) {
+            emojiLargo = true
+            acciones.retro(Tipo.EMOJI)
+            acciones.abrirAjustes()
+        }
+    }
+
+    // Para descartar toques involuntarios: el último toque de letra (rebote del dedo)
+    private var ultimoToqueMs = 0L
+    private var ultimoToqueX = 0f
+    private var ultimoToqueY = 0f
+    private var ultimaTeclaToque: Tecla? = null
 
     /** Radio de las esquinas de la pantalla y alto de la barra de navegación (para la curva de abajo) */
     private var radioPantalla = 0f
@@ -307,7 +329,7 @@ class KeyboardView(
         )
         Modo.NUMEROS -> listOf(
             letras("1234567890"),
-            simbolos("- / : ; ( ) $ & @ \""),
+            simbolos("- / : ; ( ) S/ & @ \""),
             listOf(Tecla(Tipo.A_SIMBOLOS, "#+=", 1.4f)) + simbolos(". , ? ! '", 1.36f) + Tecla(Tipo.BORRAR, ancho = 1.4f),
             filaInferior(Tipo.A_LETRAS, "ABC"),
         )
@@ -428,6 +450,7 @@ class KeyboardView(
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        modelo.revisar()
         if (leerPantalla()) acomodar()
     }
 
@@ -478,6 +501,8 @@ class KeyboardView(
         manejador.removeCallbacks(repetirBorrar)
         manejador.removeCallbacks(abrirVariantes)
         manejador.removeCallbacks(activarCursor)
+        manejador.removeCallbacks(abrirAjustesTarea)
+        punteroEmoji = -1
         burbujas.limpiar()
         variantes.cerrar()
         punteroVariantes = -1
@@ -500,6 +525,7 @@ class KeyboardView(
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        modelo.guardar()
         animAparicion?.cancel()
         aparicion = 1f
         ocultarPreview()
@@ -696,7 +722,9 @@ class KeyboardView(
         if (!teclaUnaMano.rect.isEmpty && x >= teclaUnaMano.rect.left && x <= teclaUnaMano.rect.right) {
             return teclaUnaMano
         }
-        val i = ((y - margenArriba) / altoFila).toInt().coerceIn(0, filas.size - 1)
+        // Si sueles tocar un poquito más abajo (o arriba) de las teclas, la fila se elige con eso
+        val yAjustada = if (modo == Modo.LETRAS) y - modelo.dyGeneral * altoFila else y
+        val i = ((yAjustada - margenArriba) / altoFila).toInt().coerceIn(0, filas.size - 1)
         var mejor: Tecla? = null
         var distancia = Float.MAX_VALUE
         for (t in filas[i]) {
@@ -707,9 +735,29 @@ class KeyboardView(
             }
             if (dx < distancia) { distancia = dx; mejor = t }
         }
+        if (mejor != null && mejor.letra >= 0 && modo == Modo.LETRAS) mejor = ajustarATuToque(x, mejor, i)
         val p = probLetras
         if (p != null && mejor != null && mejor.letra >= 0 && modo == Modo.LETRAS) {
             return conPrediccion(x, y, mejor, i, p)
+        }
+        return mejor
+    }
+
+    /**
+     * Entre letras vecinas de la misma fila gana la que tenga su centro (corrido a tu
+     * manera de tocar) más cerca del dedo. Solo cambia cerca del borde: nunca elige una
+     * tecla que esté a más de un cuarto de tecla del dedo.
+     */
+    private fun ajustarATuToque(x: Float, base: Tecla, fila: Int): Tecla {
+        var mejor = base
+        var menor = Math.abs(x - (base.rect.centerX() + modelo.offX(base.letra) * unidad))
+        for (t in filas[fila]) {
+            if (t === base || t.letra < 0) continue
+            val r = t.rect
+            val fuera = if (x < r.left) r.left - x else if (x > r.right) x - r.right else 0f
+            if (fuera > unidad * 0.25f) continue
+            val d = Math.abs(x - (r.centerX() + modelo.offX(t.letra) * unidad))
+            if (d < menor) { menor = d; mejor = t }
         }
         return mejor
     }
@@ -738,8 +786,9 @@ class KeyboardView(
 
     private fun puntajeToque(t: Tecla, x: Float, y: Float, p: FloatArray): Float {
         val prob = p.getOrElse(t.letra) { 0f }
-        val dx = (x - t.rect.centerX()) / unidad
-        val dy = (y - t.rect.centerY()) / unidad
+        // Distancia al centro de la tecla corrido a tu manera de tocar
+        val dx = (x - t.rect.centerX() - modelo.offX(t.letra) * unidad) / unidad
+        val dy = (y - t.rect.centerY() - modelo.offY(t.letra) * altoFila) / unidad
         val d2 = dx * dx + dy * dy * 0.8f
         // Distancia al centro (en anchos de tecla) contra lo probable de la letra
         return Math.log(prob + 0.02).toFloat() * 0.35f - d2 / (2f * 0.33f * 0.33f)
@@ -781,6 +830,9 @@ class KeyboardView(
                 val id = e.getPointerId(i)
                 val x = e.getX(i)
                 val y = e.getY(i)
+                // Toque involuntario: la palma o el costado de la mano (contacto enorme)
+                val contacto = e.getTouchMajor(i)
+                if (contacto > maxOf(dp(75f), unidad * 2.6f) && contacto < width) return true
                 // Otro dedo mientras deslizas: la palabra deslizada se escribe ya
                 if (deslizando) terminarDeslizado()
                 else if (punteroTrazo != -1) { punteroTrazo = -1; trazo.clear() }
@@ -814,6 +866,17 @@ class KeyboardView(
                     cambioDeslizado = false
                 }
                 val t = teclaEn(x, y) ?: return true
+                // Rebote: la misma letra otra vez casi en el mismo punto en menos de 45 ms
+                // (el dedo "rebota" o roza dos veces). Nadie escribe así de rápido a propósito.
+                if (t.tipo == Tipo.LETRA) {
+                    if (t === ultimaTeclaToque && e.eventTime - ultimoToqueMs < 45 &&
+                        Math.hypot((x - ultimoToqueX).toDouble(), (y - ultimoToqueY).toDouble()) < unidad * 0.35f
+                    ) return true
+                    ultimaTeclaToque = t
+                    ultimoToqueMs = e.eventTime
+                    ultimoToqueX = x
+                    ultimoToqueY = y
+                }
                 // Escritura con dos dedos: la letra del otro dedo se escribe ya (así no se
                 // pierde el orden), pero su animación sigue hasta que ese dedo se levante
                 for ((k, previa) in presionadas.toList()) {
@@ -1069,6 +1132,11 @@ class KeyboardView(
                     y0Cambio = y
                 }
             }
+            Tipo.EMOJI -> {
+                punteroEmoji = id
+                emojiLargo = false
+                manejador.postDelayed(abrirAjustesTarea, 500)
+            }
             Tipo.SHIFT -> {
                 val ahora = SystemClock.uptimeMillis()
                 shift = when {
@@ -1092,6 +1160,13 @@ class KeyboardView(
             Tipo.LETRA -> {
                 val p = puntosToque.remove(id)
                 val k = if (p != null && modo == Modo.LETRAS) enTeclas(p[0], p[1]) else null
+                // Aprender tu manera de tocar (solo con toques que cayeron en esa misma tecla)
+                if (p != null && modo == Modo.LETRAS && t.letra >= 0) {
+                    val r = t.rect
+                    if (p[0] >= r.left - sepH && p[0] <= r.right + sepH && p[1] >= r.top - sepV && p[1] <= r.bottom + sepV) {
+                        modelo.aprender(t.letra, (p[0] - r.centerX()) / unidad, (p[1] - r.centerY()) / altoFila)
+                    }
+                }
                 acciones.texto(etiqueta(t), k?.get(0) ?: -1f, k?.get(1) ?: -1f)
                 if (shift == 1 && modo == Modo.LETRAS) shift = 0
                 if ((modo == Modo.NUMEROS || modo == Modo.SIMBOLOS) && t.texto == "'" && !soloNumeros) modo = Modo.LETRAS
@@ -1105,7 +1180,14 @@ class KeyboardView(
             Tipo.A_NUMEROS -> modo = if (modo == Modo.TELEFONO_SIMBOLOS) Modo.PIN else Modo.NUMEROS
             Tipo.A_SIMBOLOS -> modo = if (modo == Modo.PIN) Modo.TELEFONO_SIMBOLOS else Modo.SIMBOLOS
             Tipo.A_LETRAS -> modo = Modo.LETRAS
-            Tipo.EMOJI -> acciones.abrirEmojis()
+            Tipo.EMOJI -> {
+                manejador.removeCallbacks(abrirAjustesTarea)
+                val largo = emojiLargo
+                emojiLargo = false
+                punteroEmoji = -1
+                // Si se mantuvo presionada ya se abrieron los ajustes: no se abren los emojis
+                if (!largo) acciones.abrirEmojis()
+            }
             Tipo.MIC -> {}
             Tipo.UNA_MANO -> {
                 // Volver al teclado completo, como la flecha del iPhone
@@ -1126,21 +1208,27 @@ class KeyboardView(
     companion object {
         /** Lo que aparece al mantener presionada cada tecla */
         private val VARIANTES = mapOf(
-            "a" to listOf("á", "à", "â", "ä", "æ", "ã", "å", "ā", "ª"),
-            "e" to listOf("é", "è", "ê", "ë", "ē", "ė", "ę"),
-            "i" to listOf("í", "ì", "î", "ï", "į", "ī"),
-            "o" to listOf("ó", "ò", "ô", "ö", "õ", "ø", "œ", "ō", "º"),
-            "u" to listOf("ú", "ù", "û", "ü", "ū"),
-            "n" to listOf("ñ", "ń"),
-            "c" to listOf("ç", "ć", "č"),
-            "s" to listOf("ß", "ś", "š"),
-            "y" to listOf("ÿ"),
-            "z" to listOf("ž", "ź", "ż"),
-            "l" to listOf("ł"),
+            // Lo del español primero; al final el número (como en Gboard: mantén la tecla)
+            "q" to listOf("1"),
+            "w" to listOf("2"),
+            "e" to listOf("é", "è", "ë", "ê", "3"),
+            "r" to listOf("4"),
+            "t" to listOf("5"),
+            "y" to listOf("6"),
+            "u" to listOf("ú", "ü", "ù", "û", "7"),
+            "i" to listOf("í", "ï", "ì", "î", "8"),
+            "o" to listOf("ó", "ö", "ò", "ô", "º", "9"),
+            "p" to listOf("0"),
+            "a" to listOf("á", "à", "ä", "â", "ª"),
+            "n" to listOf("ñ"),
+            "c" to listOf("ç"),
+            "s" to listOf("ß"),
+            "z" to listOf("ž"),
             "0" to listOf("°"),
             "-" to listOf("–", "—", "•"),
             "/" to listOf("\\"),
-            "$" to listOf("S/", "€", "£", "¥", "₩", "₽"),
+            // Soles primero (Perú) y las otras monedas al mantener presionado
+            "S/" to listOf("$", "US$", "€", "£", "¥", "¢"),
             "&" to listOf("§"),
             "\"" to listOf("“", "”", "„", "«", "»"),
             "." to listOf("…"),
