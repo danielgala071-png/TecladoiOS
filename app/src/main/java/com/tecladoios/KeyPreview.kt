@@ -3,6 +3,9 @@ package com.tecladoios
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Matrix
+import android.graphics.Shader
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -158,6 +161,13 @@ class KeyPreviewOverlay(private val anchor: View) {
         private val texto = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = Paint.Align.CENTER
         }.also { Fuentes.aplicar(it, 400) }
+        /**
+         * Reflejo de vidrio arriba de la burbuja (igual que en las teclas). El degradado se arma
+         * una sola vez y en cada cuadro solo se estira a la medida: no crea nada nuevo.
+         */
+        private val degradadoBrillo = LinearGradient(0f, 0f, 0f, 1f, 0x26FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
+        private val matrizBrillo = Matrix()
+        private val brillo = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = degradadoBrillo }
 
         private fun ahora() = SystemClock.uptimeMillis()
 
@@ -264,6 +274,10 @@ class KeyPreviewOverlay(private val anchor: View) {
             c.restore()
             cuerpo.color = colorCuerpo
             c.drawPath(path, cuerpo)
+            matrizBrillo.setScale(1f, maxOf(1f, bh * 0.6f))
+            matrizBrillo.postTranslate(0f, top)
+            degradadoBrillo.setLocalMatrix(matrizBrillo)
+            c.drawPath(path, brillo)
             borde.color = colorBorde
             c.drawPath(path, borde)
 

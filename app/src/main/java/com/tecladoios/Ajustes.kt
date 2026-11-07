@@ -32,6 +32,14 @@ object Ajustes {
     fun apertura(c: Context) = si(c, "apertura", true)
     /** Emojis en la barra de sugerencias según lo que escribes ("jaja" → 😂) */
     fun emojisBarra(c: Context) = si(c, "emojis_barra", true)
+    /** Fila de números siempre a la vista arriba de las letras (como Gboard) */
+    fun filaNumeros(c: Context) = si(c, "fila_numeros", false)
+    /** Guarda lo último que copiaste (hasta 10) para pegarlo desde el panel de emojis */
+    fun historialPortapapeles(c: Context) = si(c, "historial_portapapeles", true)
+    /** Aprender los nombres de tus contactos (no los corrige y los escribe con mayúscula) */
+    fun nombresContactos(c: Context) = si(c, "contactos", false)
+    /** Ícono de la app donde escribes, muy tenue en la barra espaciadora */
+    fun iconoEspacio(c: Context) = si(c, "icono_espacio", true)
 
     // Teclado con una mano: "no", "izq" o "der"
     fun unaMano(c: Context) = prefs(c).getString("una_mano", "no") ?: "no"

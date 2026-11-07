@@ -477,6 +477,8 @@ class SettingsActivity : Activity() {
             filaInterruptor("Borrar con Deslizar para escribir por palabra", "borrar_deslizado", true),
             filaInterruptor("Previsualización de caracteres", "vista_previa", true),
             filaInterruptor("Atajo con “.”", "punto_doble", true),
+            filaInterruptor("Fila de números", "fila_numeros", false),
+            filaInterruptor("Ícono de la app en la barra espaciadora", "icono_espacio", true),
         ), pie = "Pulsar dos veces la barra espaciadora insertará un punto seguido de un espacio. " +
                 "Con “Signos de apertura”, al terminar con ? o ! se pone ¿ o ¡ donde empieza la " +
                 "pregunta (también después de una coma: “Hola, ¿cómo estás?”).")
@@ -484,9 +486,13 @@ class SettingsActivity : Activity() {
         grupo("Portapapeles", listOf(
             filaInterruptor("Mostrar lo copiado", "portapapeles", true),
             filaInterruptor("Borrar contraseñas copiadas", "limpiar_claves", true),
+            filaInterruptor("Historial del portapapeles", "historial_portapapeles", true) { activo ->
+                if (!activo) prefs.edit().remove("historial_copiado").apply()
+            },
         ), pie = "Lo que copias aparece unos minutos en la barra de sugerencias para pegarlo con un " +
                 "toque. Mantenlo presionado para quitarlo. Las contraseñas se muestran con puntos y, " +
-                "si las pegas con el teclado, se borran solas del portapapeles al minuto.")
+                "si las pegas con el teclado, se borran solas del portapapeles al minuto. El historial " +
+                "guarda lo último que copiaste (botón 📋 en el panel de emojis); las contraseñas nunca se guardan.")
 
         grupo("Respuesta del teclado", listOf(
             filaInterruptor("Sonido", "sonido", false),
@@ -517,6 +523,11 @@ class SettingsActivity : Activity() {
         }
 
         grupo("Diccionario", listOf(
+            filaInterruptor("Nombres de tus contactos", "contactos", false) { activo ->
+                if (activo && checkSelfPermission(android.Manifest.permission.READ_CONTACTS) !=
+                    PackageManager.PERMISSION_GRANTED
+                ) requestPermissions(arrayOf(android.Manifest.permission.READ_CONTACTS), PEDIR_CONTACTOS)
+            },
             filaAccion("Palabras aprendidas") { irA("palabras") },
             filaAccion("Exportar copia de seguridad", azul, derecha = null) { exportar() },
             filaAccion("Importar copia de seguridad", azul, derecha = null) { importar() },
@@ -725,6 +736,18 @@ class SettingsActivity : Activity() {
     }
 
     @Deprecated("Deprecated in Java")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != PEDIR_CONTACTOS) return
+        val ok = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+        if (!ok) {
+            // Sin permiso no se puede: el interruptor vuelve a apagado
+            prefs.edit().putBoolean("contactos", false).apply()
+            Toast.makeText(this, "Sin permiso, el teclado no puede leer los nombres", Toast.LENGTH_SHORT).show()
+        }
+        dibujar()
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         val uri = data?.data
@@ -753,6 +776,7 @@ class SettingsActivity : Activity() {
     private companion object {
         const val PEDIDO_EXPORTAR = 41
         const val PEDIDO_IMPORTAR = 42
+        const val PEDIR_CONTACTOS = 43
         const val RESPALDO = "tecladoios-respaldo-1"
     }
 

@@ -41,6 +41,11 @@ class Diccionario(context: Context) {
      * pone lento. Se mantiene al día en cada lugar donde cambia [aprendidas].
      */
     private val indiceAprendidas = java.util.TreeSet<String>()
+    /**
+     * Palabras de los nombres de tus contactos (minúscula → sin tildes). Solo cuentan las que no
+     * están en el diccionario ("Yesenia" sí, "Rosa" no, para no ponerle mayúscula a la flor).
+     */
+    @Volatile private var contactos: Map<String, String> = emptyMap()
     private val pares = HashMap<String, HashMap<String, Int>>()
     /** Palabras que pediste olvidar: no se sugieren ni se usan para corregir */
     private val bloqueadas = HashSet<String>()
@@ -395,7 +400,8 @@ class Diccionario(context: Context) {
     }
 
     private fun conoce(ix: Indice, p: String): Boolean =
-        rango(ix, p) >= 0 || propia(p.lowercase(), aprendidas[p.lowercase()] ?: 0)
+        rango(ix, p) >= 0 || propia(p.lowercase(), aprendidas[p.lowercase()] ?: 0) ||
+            esContacto(p.lowercase()) || p.lowercase() in INGLES
 
     /**
      * ¿Una palabra aprendida ya es "tuya" (se sugiere con fuerza y no se corrige)?
@@ -434,7 +440,25 @@ class Diccionario(context: Context) {
         else -> c
     }
 
-    private fun esNombre(c: String) = (nombres[c.lowercase()] ?: 0) >= 2
+    private fun esNombre(c: String) = (nombres[c.lowercase()] ?: 0) >= 2 || esContacto(c.lowercase())
+
+    private fun esContacto(l: String): Boolean {
+        if (contactos.isEmpty() || !contactos.containsKey(l)) return false
+        val ix = indice ?: return true
+        return rango(ix, l) < 0
+    }
+
+    /** Nombres de tus contactos (los lee el servicio, si lo activaste en Ajustes) */
+    @Synchronized
+    fun ponerContactos(lista: List<String>) {
+        val m = HashMap<String, String>()
+        for (nombre in lista) for (w in nombre.split(ESPACIOS)) {
+            val l = w.trim().lowercase()
+            if (l.length < 2 || l.length > 20 || !l.all { it.isLetter() }) continue
+            m[l] = normal(l)
+        }
+        contactos = m
+    }
 
     private fun hoy() = (System.currentTimeMillis() / 86_400_000L).toInt()
 
@@ -713,10 +737,19 @@ class Diccionario(context: Context) {
                 if (w == lp || bloqueada(w) || (ix != null && !conoce(ix, w))) continue
                 res[w] = (res[w] ?: 0) + (pr * 700f).toInt()
             }
+            // Nombres de tus contactos
+            val agenda = contactos
+            if (agenda.isNotEmpty()) for ((w, nw) in agenda) {
+                if (w == lp || !nw.startsWith(np) || bloqueada(w) || !esContacto(w)) continue
+                res[w] = (res[w] ?: 0) + 520
+            }
         }
         return res.entries.sortedByDescending { it.value }
             .take(max)
-            .map { igualarMayus(it.key, prefijo) }
+            .map {
+                val s = igualarMayus(it.key, prefijo)
+                if (esContacto(it.key.lowercase())) s.replaceFirstChar { c -> c.uppercase() } else s
+            }
     }
 
     /**
@@ -948,6 +981,10 @@ class Diccionario(context: Context) {
     private fun corregirSinFiltro(p: String, previa: String, previa2: String): String? {
         if (p.length < 2) return null
         val l = p.lowercase()
+        // Palabras en inglés que se usan en el chat ("ok", "link", "story"): no se tocan
+        if (l in INGLES) return null
+        // Nombres de tus contactos: nunca se corrigen, solo se les pone mayúscula
+        if (esContacto(l)) return if (p[0].isLowerCase()) p.replaceFirstChar { it.uppercase() } else null
         // Errores comunes al escribir rápido o de oído: "aser" → "hacer", "nesecito" → "necesito"
         if (!propia(l, aprendidas[l] ?: 0)) {
             ERRORES_COMUNES[l]?.let { if (!bloqueada(it)) return igualarMayus(it, p).takeIf { c -> c != p } }
@@ -1659,6 +1696,26 @@ class Diccionario(context: Context) {
 
         private val MARCAS = Regex("\\p{Mn}+")
         private val ESPACIOS = Regex("\\s+")
+
+        /**
+         * Inglés de todos los días en el chat: no se corrige al español. Se dejaron fuera las
+         * que son errores típicos de una palabra en español ("hot" por "hoy", "team" por "tema").
+         */
+        private val INGLES = hashSetOf(
+            "ok", "okay", "link", "links", "like", "likes", "love", "baby", "babe", "please", "sorry",
+            "thanks", "thank", "you", "yes", "yeah", "nope", "wifi", "online", "offline", "story",
+            "stories", "post", "posts", "selfie", "meme", "memes", "crush", "random", "cool", "nice",
+            "bro", "happy", "birthday", "weekend", "show", "live", "delivery", "feedback", "meeting",
+            "email", "mail", "password", "login", "app", "apps", "update", "reel", "reels", "tiktok",
+            "stream", "streamer", "gamer", "full", "premium", "style", "look", "outfit", "match",
+            "chill", "vibe", "vibes", "hater", "haters", "friend", "friends", "cute", "fashion",
+            "fitness", "gym", "coach", "crack", "fail", "zoom", "sticker", "stickers", "fans", "fake",
+            "check", "smart", "delete", "download", "upload", "playlist", "remix", "feat", "trend",
+            "trending", "influencer", "follow", "followers", "unfollow", "spoiler", "girl", "boy",
+            "bestie", "besties", "honey", "darling", "omg", "lol", "btw", "idk", "asap", "cringe",
+            "flow", "swag", "drip", "flex", "ghosting", "dating", "single", "party", "brunch", "snack",
+            "burger", "cheesecake", "brownie", "cupcake", "coffee", "bye", "hello", "hey", "guys",
+        )
 
         private fun sinTildes(s: String) =
             Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).replace(MARCAS, "")

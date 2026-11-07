@@ -3,8 +3,11 @@ package com.tecladoios
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
@@ -75,6 +78,11 @@ class KeyboardView(
         fun moverCursorVertical(pasos: Int)
         /** Deslizar para escribir: el recorrido del dedo, en teclas */
         fun deslizar(puntos: List<FloatArray>, proporcion: Float, mayus: Boolean)
+        /**
+         * El dedo acaba de tocar la letra [s] (todavía no la suelta): el servicio empieza a
+         * calcular las sugerencias de ya, así al soltarla la barra está lista al instante.
+         */
+        fun anticipar(s: String, x: Float, y: Float)
     }
 
     private val d = Medidas.escala(context)
@@ -100,7 +108,16 @@ class KeyboardView(
     private val factor = Ajustes.tamano(context) / 100f
     /** Medida de letras e íconos: crece y se achica junto con el teclado */
     private fun tx(v: Float) = v * d * factor
-    private val altoFila = (if (horizontal) dp(40f) else dp(54f)) * factor
+    /** Alto de una fila normal de letras */
+    private val altoBase = (if (horizontal) dp(40f) else dp(54f)) * factor
+    /** Fila de números arriba de las letras (ajuste): el teclado tiene una fila más */
+    private val filaNumeros = Ajustes.filaNumeros(context)
+    private val filasTotal = if (filaNumeros) 5 else 4
+    /**
+     * Alto de cada fila del teclado actual. El teclado mide siempre lo mismo: con la fila de
+     * números, los teclados de 4 filas (123, #+=, PIN) usan teclas un poco más altas.
+     */
+    private var altoFila = altoBase
     private val margenArriba = dp(8f)
     private val margenAbajo = dp(6f)
     private val sepH = dp(3f)
@@ -153,6 +170,15 @@ class KeyboardView(
     var pinTipo = "pin"
     private var unaMano = "no"
     private var deslizarActivo = true
+
+    /** Ícono de la app donde escribes, muy tenue en la barra espaciadora (null = sin ícono) */
+    var iconoApp: Bitmap? = null
+        set(value) { if (field !== value) { field = value; invalidate() } }
+    private val pinturaIconoApp = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+        // En gris y transparente: se nota sin distraer
+        colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0.15f) })
+    }
+    private val rectIcono = RectF()
 
     private var filas: List<List<Tecla>> = crearFilas(Modo.LETRAS)
 
@@ -298,6 +324,7 @@ class KeyboardView(
     private var capaAparicion = -1f
     private var capaAncho = -1
     private var capaAlto = -1
+    private var capaIcono: Bitmap? = null
 
     private val pinturaTrazo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -330,7 +357,10 @@ class KeyboardView(
         }
     }
 
-    fun alto(): Int = (margenArriba + altoFila * 4 + margenAbajo).toInt()
+    fun alto(): Int = (margenArriba + altoBase * filasTotal + margenAbajo).toInt()
+
+    /** Filas que hay arriba de las letras (la de números) para medir los toques como siempre */
+    private val desfaseFilas get() = if (filaNumeros && modo == Modo.LETRAS) 1 else 0
 
     // ---------- Distribución ----------
 
@@ -355,7 +385,7 @@ class KeyboardView(
     }
 
     private fun crearFilas(m: Modo): List<List<Tecla>> = when (m) {
-        Modo.LETRAS -> listOf(
+        Modo.LETRAS -> (if (filaNumeros) listOf(letras("1234567890")) else emptyList()) + listOf(
             letras("qwertyuiop"),
             letras("asdfghjklñ"),
             listOf(Tecla(Tipo.SHIFT, ancho = 1.4f)) + letras("zxcvbnm") + Tecla(Tipo.BORRAR, ancho = 1.4f),
@@ -429,6 +459,7 @@ class KeyboardView(
     private fun acomodar() {
         // Cambió la distribución: la capa fija se vuelve a grabar en el próximo dibujo
         versionDistribucion++
+        if (filas.isNotEmpty()) altoFila = altoBase * filasTotal / filas.size
         if (width == 0) return
         val pad = esPad
         for (fila in filas) for (t in fila) { t.curvaIzq = 0f; t.curvaDer = 0f }
@@ -448,7 +479,7 @@ class KeyboardView(
             val top = margenArriba + i * altoFila
             val ladoIzq = fila.first()
             val ladoDer = fila.last()
-            if (!pad && i == 2 && fila.size >= 3 && ladoIzq.tipo != Tipo.LETRA && ladoDer.tipo == Tipo.BORRAR) {
+            if (!pad && i == filas.size - 2 && fila.size >= 3 && ladoIzq.tipo != Tipo.LETRA && ladoDer.tipo == Tipo.BORRAR) {
                 // Tercera fila como en iPhone: mayúsculas y borrar pegados a los bordes,
                 // las letras centradas debajo de las de arriba y un espacio libre entre ellas
                 val lado = 1.3f * unidad
@@ -483,7 +514,7 @@ class KeyboardView(
         if (mano) {
             val izq = if (unaMano == "izq") areaAncho else 0f
             val der = if (unaMano == "izq") width.toFloat() else areaX
-            teclaUnaMano.rect.set(izq, margenArriba, der, margenArriba + 4 * altoFila)
+            teclaUnaMano.rect.set(izq, margenArriba, der, margenArriba + filas.size * altoFila)
         } else teclaUnaMano.rect.setEmpty()
         burbujas.altoTecla = altoFila - sepV * 2
     }
@@ -522,7 +553,7 @@ class KeyboardView(
 
     /** Posición del dedo medida en teclas: x en anchos de tecla, y en filas (0 = primera fila) */
     private fun enTeclas(x: Float, y: Float): FloatArray =
-        floatArrayOf((x - areaX) / unidad, (y - margenArriba) / altoFila - 0.5f)
+        floatArrayOf((x - areaX) / unidad, (y - margenArriba) / altoFila - 0.5f - desfaseFilas)
 
     // ---------- Lo que controla el servicio ----------
 
@@ -598,7 +629,8 @@ class KeyboardView(
         val h = height
         if (capaVersion == versionDistribucion && capaModo == modo && capaShift == shift &&
             capaEnter == etiquetaEnter && capaAccion == enterAccion && capaCursor == modoCursor &&
-            capaAparicion == aparicion && capaAncho == w && capaAlto == h && capaFija.hasDisplayList()
+            capaAparicion == aparicion && capaAncho == w && capaAlto == h && capaIcono === iconoApp &&
+            capaFija.hasDisplayList()
         ) return
         capaFija.setPosition(0, 0, w, h)
         val rc = capaFija.beginRecording(w, h)
@@ -616,6 +648,7 @@ class KeyboardView(
         capaAparicion = aparicion
         capaAncho = w
         capaAlto = h
+        capaIcono = iconoApp
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -709,7 +742,8 @@ class KeyboardView(
             c.drawPath(forma, pintura)
             // Vidrio (no en mayúsculas activadas ni en el enter de color): reflejo arriba y
             // volumen abajo. La pintura va opaca para que el degradado tenga su propia intensidad.
-            val vidrio = !modoCursor && Color.alpha(color) < 0xC0
+            // El intro de color (enviar, buscar) también lleva vidrio: reflejo y volumen
+            val vidrio = !modoCursor && (Color.alpha(color) < 0xC0 || (t.tipo == Tipo.ENTER && enterAccion))
             if (vidrio) {
                 pintura.color = Color.BLACK
                 pintura.shader = t.shaderBrillo
@@ -761,7 +795,23 @@ class KeyboardView(
             Tipo.MIC -> {}
             Tipo.ENTER -> if (pad) Iconos.visto(c, cx, cy, tx(22f), pinturaIcono)
                 else texto(c, etiquetaEnter, cx, cy, tx(16f), contenido)
-            Tipo.ESPACIO -> texto(c, t.texto, cx, cy, tx(16f), contenido)
+            Tipo.ESPACIO -> {
+                val icono = iconoApp
+                if (icono == null || presionada || t.rect.width() < tx(120f)) {
+                    texto(c, t.texto, cx, cy, tx(16f), contenido)
+                } else {
+                    // Ícono de la app a la izquierda de "espacio", todo centrado
+                    pinturaTexto.textSize = tx(16f)
+                    val ancho = pinturaTexto.measureText(t.texto)
+                    val lado = tx(15f)
+                    val hueco = tx(7f)
+                    val izq = cx - (lado + hueco + ancho) / 2f
+                    rectIcono.set(izq, cy - lado / 2f, izq + lado, cy + lado / 2f)
+                    pinturaIconoApp.alpha = (95 * aparicion).toInt().coerceIn(0, 255)
+                    c.drawBitmap(icono, null, rectIcono, pinturaIconoApp)
+                    texto(c, t.texto, izq + lado + hueco + ancho / 2f, cy, tx(16f), contenido)
+                }
+            }
             Tipo.LETRA -> {
                 if (pad) {
                     val conSub = t.sub.isNotEmpty()
@@ -1143,6 +1193,7 @@ class KeyboardView(
                             y < t.rect.top + dp(3f) || y > t.rect.bottom - dp(3f)) continue
                         presionadas[id] = t
                         puntosToque[id] = floatArrayOf(x, y)
+                        anticiparLetra(t, x, y)
                         programarVariantes(t, id)
                         if (vistaPrevia) burbujas.mostrar(id, t.rect, etiqueta(t), tema, deslizando = true)
                         invalidate()
@@ -1273,11 +1324,12 @@ class KeyboardView(
         when (t.tipo) {
             Tipo.LETRA -> {
                 puntosToque[id] = floatArrayOf(x, y)
+                anticiparLetra(t, x, y)
                 if (!esPad) {
                     if (vistaPrevia) burbujas.mostrar(id, t.rect, etiqueta(t), tema)
                     programarVariantes(t, id)
                     // Deslizar para escribir: solo con un dedo y en las letras
-                    if (deslizarActivo && modo == Modo.LETRAS && presionadas.size == 1) {
+                    if (deslizarActivo && modo == Modo.LETRAS && presionadas.size == 1 && t.letra >= 0) {
                         punteroTrazo = id
                         trazo.clear()
                         trazo.add(floatArrayOf(x, y))
@@ -1327,6 +1379,13 @@ class KeyboardView(
         }
         // Al presionar una letra solo cambia esa tecla: se repinta sola (no todo el teclado)
         if (t.tipo == Tipo.LETRA) invalidarTecla(t) else invalidate()
+    }
+
+    /** Avisa al servicio qué letra se va a escribir (solo letras: a–z y ñ) */
+    private fun anticiparLetra(t: Tecla, x: Float, y: Float) {
+        if (t.letra < 0 || modo != Modo.LETRAS || esPad) return
+        val k = enTeclas(x, y)
+        acciones.anticipar(etiqueta(t), k[0], k[1])
     }
 
     private fun soltar(t: Tecla, id: Int) {

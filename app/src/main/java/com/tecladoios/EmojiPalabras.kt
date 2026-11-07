@@ -49,6 +49,28 @@ object EmojiPalabras {
         return null
     }
 
+    /**
+     * Buscar emojis escribiendo ("risa", "cora", "perr"): los que tienen una palabra que empieza
+     * así, primero los exactos y después los de palabra más corta. Sin tildes ni mayúsculas.
+     */
+    fun buscar(consulta: String, max: Int): List<String> {
+        val q = normal(consulta.trim())
+        if (q.isEmpty()) return emptyList()
+        val puntos = LinkedHashMap<String, Int>()
+        if (q.length >= 4 && RISA.matches(q)) puntos["😂"] = 0
+        for ((clave, emoji) in mapa) {
+            val p = when {
+                clave == q -> 1
+                clave.startsWith(q) -> 10 + clave.length
+                clave.split(' ').any { it.startsWith(q) } -> 40 + clave.length
+                else -> continue
+            }
+            val previo = puntos[emoji]
+            if (previo == null || p < previo) puntos[emoji] = p
+        }
+        return puntos.entries.sortedBy { it.value }.take(max).map { it.key }
+    }
+
     /** palabras separadas por coma : emoji */
     private const val DATOS = """
 risa, jaja, jeje, jiji, lol, xd, muerto de risa, carcajada: 😂

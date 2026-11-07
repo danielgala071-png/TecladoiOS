@@ -54,6 +54,10 @@ class SuggestionBar(
         fun elegir(s: Sugerencia)
         /** Olvidar la palabra: no volver a sugerirla ni a corregir hacia ella */
         fun olvidar(s: Sugerencia)
+        /** Buscando emojis: tocaste la búsqueda (vuelves al panel de emojis) */
+        fun salirBusqueda()
+        /** Buscando emojis: elegiste uno */
+        fun emojiBuscado(e: String)
     }
 
     private val d = Medidas.escala(context)
@@ -168,6 +172,81 @@ class SuggestionBar(
         esquina.set(w - g - rf * 2f, g, w - g, g + rf * 2f)
         filo.arcTo(esquina, 270f, 90f, false)
         filo.lineTo(w - g, h)
+    }
+
+    // ---------- Buscar emojis ----------
+    /** Lo que estás buscando (null = la barra muestra sugerencias normales) */
+    private var busqueda: String? = null
+    private var resultados: List<String> = emptyList()
+    private val pinturaEmoji = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+    private val pinturaCursor = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    fun mostrarBusqueda(consulta: String?, lista: List<String>) {
+        if (consulta == busqueda && lista == resultados) return
+        busqueda = consulta
+        resultados = lista
+        presionado = -1
+        invalidate()
+    }
+
+    private val anchoBusqueda get() = width * 0.36f
+
+    /** Qué hay bajo el dedo en la búsqueda: [ZONA_BUSQUEDA], un emoji (0..5) o -1 */
+    private fun zonaBusqueda(x: Float): Int {
+        if (x < anchoBusqueda) return ZONA_BUSQUEDA
+        val celda = (width - anchoBusqueda) / CELDAS_EMOJI
+        val i = ((x - anchoBusqueda) / celda).toInt().coerceIn(0, CELDAS_EMOJI - 1)
+        return if (i < resultados.size) i else -1
+    }
+
+    private fun dibujarBusqueda(c: Canvas, consulta: String) {
+        val h = height.toFloat()
+        val arriba = 6 * d
+        val abajo = h - 10 * d
+        val rc = (abajo - arriba) / 2f
+        // Cápsula de vidrio con lo que escribes y un cursor del color de la app
+        pintura.color = if (presionado == ZONA_BUSQUEDA) tema.teclaPresionada else tema.tecla
+        c.drawRoundRect(6 * d, arriba, anchoBusqueda - 4 * d, abajo, rc, rc, pintura)
+        val previo = pinturaBorde.color
+        pinturaBorde.color = (tema.borde and 0x00FFFFFF) or 0x8C000000.toInt()
+        c.drawRoundRect(6 * d, arriba, anchoBusqueda - 4 * d, abajo, rc, rc, pinturaBorde)
+        pinturaBorde.color = previo
+        grosor(400)
+        pinturaTexto.textSize = 15f * d
+        val alin = pinturaTexto.textAlign
+        pinturaTexto.textAlign = Paint.Align.LEFT
+        val izq = 16 * d
+        val disponible = anchoBusqueda - izq - 14 * d
+        val cy = (arriba + abajo) / 2f - (pinturaTexto.fontMetrics.ascent + pinturaTexto.fontMetrics.descent) / 2f
+        val vacia = consulta.isEmpty()
+        pinturaTexto.color = if (vacia) tema.textoSecundario else tema.texto
+        val mostrar = if (vacia) "Buscar emoji" else
+            TextUtils.ellipsize(consulta, pinturaTexto, disponible, TextUtils.TruncateAt.START).toString()
+        c.drawText(mostrar, izq, cy, pinturaTexto)
+        if (!vacia) {
+            pinturaCursor.color = tema.azul
+            val xc = izq + pinturaTexto.measureText(mostrar) + 2 * d
+            c.drawRect(xc, arriba + 9 * d, xc + 2 * d, abajo - 9 * d, pinturaCursor)
+        }
+        pinturaTexto.textAlign = alin
+        pinturaTexto.textSize = 17f * d
+        // Los emojis que coinciden
+        val celda = (width - anchoBusqueda) / CELDAS_EMOJI
+        if (resultados.isEmpty() && !vacia) {
+            pinturaTexto.color = tema.textoSecundario
+            c.drawText("Sin resultados", anchoBusqueda + (width - anchoBusqueda) / 2f, centroY(), pinturaTexto)
+            return
+        }
+        pinturaEmoji.textSize = 24f * d
+        val fm = pinturaEmoji.fontMetrics
+        for ((i, e) in resultados.take(CELDAS_EMOJI).withIndex()) {
+            val cx = anchoBusqueda + celda * i + celda / 2f
+            if (i == presionado) {
+                pintura.color = tema.teclaPresionada
+                c.drawRoundRect(cx - celda / 2f + 2 * d, arriba, cx + celda / 2f - 2 * d, abajo, rc, rc, pintura)
+            }
+            c.drawText(e, cx, (arriba + abajo) / 2f - (fm.ascent + fm.descent) / 2f, pinturaEmoji)
+        }
     }
 
     fun mostrar(nuevos: List<Sugerencia?>) {
@@ -337,14 +416,17 @@ class SuggestionBar(
     }
 
     private fun dibujarSugerencias(c: Canvas) {
+        busqueda?.let { dibujarBusqueda(c, it); return }
         items[0]?.let { if (it.portapapeles) { dibujarCopiado(c, it); return } }
         val ancho = width / 3f
         for (i in 0 until 3) {
             val s = items[i] ?: continue
             val x0 = ancho * i
             if (i == presionado) {
+                // Al tocarla: cápsula de vidrio del color de la app (misma forma que la destacada)
+                val rp = (height - 16 * d) / 2f
                 pintura.color = tema.teclaPresionada
-                c.drawRoundRect(x0 + 4 * d, 5 * d, x0 + ancho - 4 * d, height - 9 * d, 10 * d, 10 * d, pintura)
+                c.drawRoundRect(x0 + 6 * d, 6 * d, x0 + ancho - 6 * d, height - 10 * d, rp, rp, pintura)
             } else if (s.destacada) {
                 // La corrección que se pondrá sola va en una cápsula de vidrio con el filo de la app
                 val arriba = 6 * d
@@ -416,6 +498,24 @@ class SuggestionBar(
             }
             return true
         }
+        if (busqueda != null) {
+            val zona = zonaBusqueda(e.x)
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { presionado = zona; invalidate() }
+                MotionEvent.ACTION_MOVE -> if (zona != presionado && presionado != -1) { presionado = -1; invalidate() }
+                MotionEvent.ACTION_UP -> {
+                    val z = presionado
+                    presionado = -1
+                    invalidate()
+                    if (z == zona && z != -1) {
+                        if (z == ZONA_BUSQUEDA) acciones.salirBusqueda()
+                        else resultados.getOrNull(z)?.let { acciones.emojiBuscado(it) }
+                    }
+                }
+                MotionEvent.ACTION_CANCEL -> { presionado = -1; invalidate() }
+            }
+            return true
+        }
         val esCopiado = items[0]?.portapapeles == true
         val i = if (esCopiado) 0 else (e.x / (width / 3f)).toInt().coerceIn(0, 2)
         when (e.actionMasked) {
@@ -460,5 +560,8 @@ class SuggestionBar(
     private companion object {
         /** Debajo de este tiempo tras tocar una letra, un toque en la barra se ignora */
         const val GUARDA_MS = 130L
+        /** Buscando emojis: la cápsula de búsqueda y cuántos emojis caben al lado */
+        const val ZONA_BUSQUEDA = 100
+        const val CELDAS_EMOJI = 6
     }
 }

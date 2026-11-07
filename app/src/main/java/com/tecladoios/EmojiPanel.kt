@@ -8,6 +8,9 @@ import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.text.TextUtils
+import android.widget.ScrollView
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -136,6 +139,15 @@ class EmojiPanel(
         fun borrar()
         fun volverABC()
         fun retro(tipo: Tipo)
+        /** Tocaste "Buscar emoji" */
+        fun buscarEmoji()
+        /** Lo que copiaste últimamente (fijados primero) */
+        fun historialCopiado(): List<Portapapeles.Elemento>
+        /** Fija o suelta algo del historial; devuelve si quedó fijado */
+        fun fijarCopiado(texto: String): Boolean
+        fun quitarCopiado(texto: String)
+        /** Pegar algo del historial */
+        fun pegar(texto: String)
     }
 
     private val d = Medidas.escala(context)
@@ -147,12 +159,50 @@ class EmojiPanel(
     private val scroll = HorizontalScrollView(context)
     private val categorias = BarraCategorias(context, tema) { i ->
         acciones.retro(Tipo.A_LETRAS)
+        if (enCopiado) mostrarCopiado(false)
         // Como en iPhone: salta directo a la categoría
         scroll.scrollTo(grilla.inicioDe(i), 0)
     }
 
+    /** Historial del portapapeles (se muestra en lugar de los emojis) */
+    private val listaCopiado = LinearLayout(context).apply { orientation = VERTICAL }
+    private val scrollCopiado = ScrollView(context).apply {
+        isVerticalScrollBarEnabled = false
+        overScrollMode = View.OVER_SCROLL_NEVER
+        visibility = View.GONE
+        addView(listaCopiado, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    }
+    private val buscador: TextView
+    private val botonCopiado: TextView
+    private var enCopiado = false
+
+    /** Fondo de vidrio con el filo de la app (como las teclas) */
+    private fun vidrio(radio: Float, conBorde: Boolean = true) = GradientDrawable().apply {
+        setColor(tema.tecla)
+        cornerRadius = radio
+        if (conBorde) setStroke(maxOf(1, dp(0.7f)), (tema.borde and 0x00FFFFFF) or 0x99000000.toInt())
+    }
+
     init {
         orientation = VERTICAL
+
+        // "Buscar emoji" arriba, como en iOS: al tocarlo vuelven las letras y escribes para buscar
+        buscador = TextView(context).apply {
+            text = "\uD83D\uDD0D  Buscar emoji"
+            textSize = 14f
+            setTextColor(tema.textoSecundario)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12f), 0, dp(12f), 0)
+            Fuentes.aplicar(this, 400)
+            background = vidrio(dp(16f).toFloat())
+            setOnClickListener {
+                acciones.retro(Tipo.A_LETRAS)
+                acciones.buscarEmoji()
+            }
+        }
+        addView(buscador, LayoutParams(LayoutParams.MATCH_PARENT, dp(32f)).apply {
+            setMargins(dp(10f), dp(6f), dp(10f), dp(2f))
+        })
 
         scroll.isHorizontalScrollBarEnabled = false
         scroll.overScrollMode = View.OVER_SCROLL_NEVER
@@ -162,6 +212,7 @@ class EmojiPanel(
             categorias.marcado = grilla.seccionEn(x)
         }
         addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+        addView(scrollCopiado, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
 
         val abajo = LinearLayout(context).apply {
             orientation = HORIZONTAL
@@ -179,6 +230,17 @@ class EmojiPanel(
             }
         }
         abajo.addView(abc, LayoutParams(dp(52f), LayoutParams.MATCH_PARENT))
+        // Portapapeles: lo último que copiaste, para pegarlo con un toque
+        botonCopiado = TextView(context).apply {
+            text = "\uD83D\uDCCB"
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setOnClickListener {
+                acciones.retro(Tipo.A_LETRAS)
+                mostrarCopiado(!enCopiado)
+            }
+        }
+        abajo.addView(botonCopiado, LayoutParams(dp(40f), LayoutParams.MATCH_PARENT))
         abajo.addView(categorias, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
         val borrar = BotonBorrar(context, tema, { acciones.retro(Tipo.BORRAR) }, { acciones.borrar() })
         abajo.addView(borrar, LayoutParams(dp(52f), LayoutParams.MATCH_PARENT))
@@ -191,6 +253,7 @@ class EmojiPanel(
 
     /** Se llama al abrir el panel: actualiza "Usados frecuentemente" y vuelve al inicio */
     fun refrescar() {
+        mostrarCopiado(false)
         scroll.scrollTo(0, 0)
         categorias.marcado = 0
         grilla.secciones = listOf(EmojiGrid.Seccion(CATEGORIAS[0].nombre, recientes())) +
@@ -203,10 +266,97 @@ class EmojiPanel(
         sumarReciente(context, e)
     }
 
+    /** Muestra el historial del portapapeles en lugar de los emojis (o vuelve a los emojis) */
+    private fun mostrarCopiado(si: Boolean) {
+        enCopiado = si
+        grilla.cerrarTonos()
+        scroll.visibility = if (si) View.GONE else View.VISIBLE
+        buscador.visibility = if (si) View.GONE else View.VISIBLE
+        scrollCopiado.visibility = if (si) View.VISIBLE else View.GONE
+        botonCopiado.background = if (si) vidrio(dp(14f).toFloat(), conBorde = false) else null
+        categorias.alpha = if (si) 0.45f else 1f
+        if (si) armarCopiado()
+    }
+
+    private fun armarCopiado() {
+        listaCopiado.removeAllViews()
+        val elementos = try { acciones.historialCopiado() } catch (_: Exception) { emptyList() }
+        listaCopiado.addView(TextView(context).apply {
+            text = if (elementos.isEmpty()) "Lo que copies aparecerá aquí."
+                else "Toca para pegar · mantén presionado para fijar o quitar"
+            textSize = 12f
+            setTextColor(tema.textoSecundario)
+            gravity = Gravity.CENTER
+            Fuentes.aplicar(this, 400)
+            setPadding(dp(12f), dp(if (elementos.isEmpty()) 40f else 8f), dp(12f), dp(6f))
+        }, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        for (e in elementos) {
+            val fila = TextView(context).apply {
+                text = (if (e.fijado) "\uD83D\uDCCC  " else "") + e.texto.replace(Regex("\\s+"), " ").trim()
+                textSize = 15f
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+                setTextColor(tema.texto)
+                Fuentes.aplicar(this, 400)
+                setPadding(dp(14f), dp(10f), dp(14f), dp(10f))
+                background = vidrio(dp(12f).toFloat())
+                setOnClickListener { acciones.pegar(e.texto) }
+                setOnLongClickListener {
+                    acciones.retro(Tipo.BORRAR)
+                    ofrecerOpciones(e)
+                    true
+                }
+            }
+            listaCopiado.addView(fila, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+                setMargins(dp(10f), dp(3f), dp(10f), dp(3f))
+            })
+        }
+    }
+
+    /** Mantener presionado: fijar/soltar y quitar, como dos botones en la misma fila */
+    private fun ofrecerOpciones(e: Portapapeles.Elemento) {
+        listaCopiado.removeAllViews()
+        val caja = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            setPadding(dp(10f), dp(16f), dp(10f), dp(8f))
+        }
+        fun boton(t: String, color: Int, accion: () -> Unit) = TextView(context).apply {
+            text = t
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setTextColor(color)
+            Fuentes.aplicar(this, 500)
+            background = vidrio(dp(12f).toFloat())
+            setOnClickListener {
+                acciones.retro(Tipo.A_LETRAS)
+                accion()
+                armarCopiado()
+            }
+        }
+        caja.addView(boton(if (e.fijado) "Soltar" else "Fijar", tema.texto) { acciones.fijarCopiado(e.texto) },
+            LayoutParams(0, dp(44f), 1f).apply { setMargins(0, 0, dp(6f), 0) })
+        caja.addView(boton("Quitar", 0xFFFF453A.toInt()) { acciones.quitarCopiado(e.texto) },
+            LayoutParams(0, dp(44f), 1f).apply { setMargins(dp(6f), 0, 0, 0) })
+        caja.addView(boton("Listo", tema.textoSecundario) { },
+            LayoutParams(0, dp(44f), 1f).apply { setMargins(dp(12f), 0, 0, 0) })
+        listaCopiado.addView(TextView(context).apply {
+            text = e.texto.replace(Regex("\\s+"), " ").trim()
+            textSize = 13f
+            maxLines = 3
+            ellipsize = TextUtils.TruncateAt.END
+            setTextColor(tema.textoSecundario)
+            setPadding(dp(14f), dp(14f), dp(14f), 0)
+        })
+        listaCopiado.addView(caja)
+    }
+
     /** Al cerrar el panel: se cierra la ventanita de tonos si quedó abierta */
     fun cerrarTonos() = grilla.cerrarTonos()
 
     companion object {
+        /** Los emojis que más usas (para la búsqueda, antes de escribir) */
+        fun recientes(c: Context): List<String> = recientesDe(Ajustes.prefs(c))
+
         private fun recientesDe(prefs: android.content.SharedPreferences): List<String> {
             val guardados = prefs.getString("recientes", null)
             return if (guardados.isNullOrBlank()) lista("😂 ❤️ 😍 🙏 😭 👍 😊 🔥 🥰 😅 🤣 💀 😘 🥺 😁 ✨ 😎 🤔 😢 👀")

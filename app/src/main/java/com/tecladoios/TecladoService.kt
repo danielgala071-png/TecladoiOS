@@ -1,6 +1,10 @@
 package com.tecladoios
 
+import android.Manifest
 import android.content.ClipDescription
+import android.content.pm.PackageManager
+import android.provider.ContactsContract
+import android.view.animation.DecelerateInterpolator
 import android.content.Intent
 import android.content.ClipboardManager
 import android.graphics.Bitmap
@@ -43,6 +47,8 @@ class TecladoService : InputMethodService(),
         private const val ED_CORTAR = 3
         private const val ED_COPIAR = 4
         private const val ED_PEGAR = 5
+        /** Dónde se guarda el historial del portapapeles */
+        private const val CLAVE_HISTORIAL = "historial_copiado"
         /** Lo aprendido se guarda como mucho cada tantos milisegundos (menos escrituras = menos batería) */
         private const val ESPERA_GUARDADO = 20_000L
     }
@@ -117,6 +123,7 @@ class TecladoService : InputMethodService(),
         horaALimpiar = -1L
     }
     private val alCambiarCopiado = ClipboardManager.OnPrimaryClipChangedListener {
+        guardarEnHistorial()
         copiadoHora = -1L
         if (isInputViewShown) actualizar()
     }
@@ -197,6 +204,45 @@ class TecladoService : InputMethodService(),
     )
     private val diferidas = ArrayList<Diferida>()
 
+    // ---------- Calcular antes de soltar ----------
+
+    /** Opciones del momento (se copian para que el hilo del motor no lea cosas a medio cambiar) */
+    private class Opciones(
+        val revisar: Boolean, val aplicar: Boolean, val linea: Boolean,
+        val enLetras: Boolean, val emojisBarra: Boolean,
+    )
+
+    /** Lo que calculó el motor para una palabra a medio escribir */
+    private class Resultado(
+        val p: String, val previa: String, val previa2: String, val probs: FloatArray?,
+        val corr: String?, val otras: List<String>, val completa: String?,
+    )
+
+    /**
+     * Cálculo adelantado: apenas el dedo toca una letra (antes de soltarla) el motor ya calcula
+     * las sugerencias como si estuviera escrita. Al soltar, si es la misma letra, la barra y la
+     * autocorrección quedan listas al instante, sin esperar al motor.
+     */
+    private class Anticipo(val clave: String, val turno: Int, val marca: Long, val hora: Long, val op: Opciones) {
+        @Volatile var resultado: Resultado? = null
+        /** La letra ya se escribió: mostrar el resultado apenas esté */
+        @Volatile var mostrar = false
+    }
+    private var anticipo: Anticipo? = null
+    /** Orden de los toques y de las letras escritas (para saber qué pasó primero) */
+    private var marca = 0L
+    private var marcaTexto = 0L
+
+    // ---------- Buscar emojis escribiendo ----------
+    private var buscandoEmoji = false
+    private var consultaEmoji = ""
+
+    // ---------- Contactos e íconos ----------
+    /** Cuándo se leyeron los contactos por última vez (0 = no se leyeron o están apagados) */
+    private var contactosLeidos = 0L
+    /** Ícono de cada app (para la barra espaciadora) */
+    private val iconos = LinkedHashMap<String, Bitmap?>()
+
     // ---------- Barra de edición ----------
     /** Estás moviendo el cursor con la barra espaciadora: la barra muestra Cortar, Copiar, Pegar... */
     private var editando = false
@@ -273,7 +319,7 @@ class TecladoService : InputMethodService(),
     }
 
     /** Si cambia la orientación o el tamaño elegido en Ajustes, el teclado se vuelve a armar */
-    private fun firma() = "${Medidas.horizontal(this)}-${Ajustes.tamano(this)}"
+    private fun firma() = "${Medidas.horizontal(this)}-${Ajustes.tamano(this)}-${Ajustes.filaNumeros(this)}"
 
     private fun construir(): View {
         val t = Tema.desde(this, false, colorDeApp(appActual))
@@ -474,6 +520,11 @@ class TecladoService : InputMethodService(),
         ultimaCorreccion = null
         ultimaCorreccionAuto = null
         ultimaCerrada = null
+        anticipo = null
+        buscandoEmoji = false
+        consultaEmoji = ""
+        teclado?.iconoApp = if (Ajustes.iconoEspacio(this)) iconoDe(appActual) else null
+        cargarContactosSiHaceFalta()
         espacioAutomatico = false
         escribiendo = false
         barra?.visible(false, animar = false)
@@ -488,6 +539,9 @@ class TecladoService : InputMethodService(),
 
     override fun onFinishInputView(finishingInput: Boolean) {
         manejador.removeCallbacks(tareaActualizar)
+        anticipo = null
+        buscandoEmoji = false
+        consultaEmoji = ""
         diferidas.clear()
         editando = false
         seleccionando = false
@@ -531,6 +585,7 @@ class TecladoService : InputMethodService(),
         espejoValido = false
         calculada = null
         toques.clear()
+        anticipo = null
         actualizar()
     }
 
@@ -830,7 +885,7 @@ class TecladoService : InputMethodService(),
     private fun actualizarMayus(inicio: Boolean) {
         val k = teclado ?: return
         if (k.modo != Modo.LETRAS) return
-        if (!mayusPermitida) { k.mayusAuto(false); return }
+        if (!mayusPermitida || buscandoEmoji) { k.mayusAuto(false); return }
         k.mayusAuto(inicio)
     }
 
@@ -851,6 +906,15 @@ class TecladoService : InputMethodService(),
 
     private fun actualizarBarra(antes: String, inicio: Boolean) {
         val b = barra ?: return
+        // Buscando un emoji: la barra muestra lo que buscas y los emojis que coinciden
+        if (buscandoEmoji) {
+            b.visible(true)
+            val lista = if (consultaEmoji.isBlank()) EmojiPanel.recientes(this).take(6)
+                else EmojiPalabras.buscar(consultaEmoji, 6)
+            b.mostrarBusqueda(consultaEmoji, lista)
+            return
+        }
+        b.mostrarBusqueda(null, emptyList())
         val enEmojis = emojis?.visibility == View.VISIBLE
         val modo = teclado?.modo
         val enPad = modo == Modo.PIN || modo == Modo.TELEFONO_SIMBOLOS
@@ -903,6 +967,27 @@ class TecladoService : InputMethodService(),
             return
         }
 
+        // Calculado mientras tenías el dedo en la tecla: se muestra ya, sin esperar al motor
+        if (p.isNotEmpty()) {
+            val a = anticipo
+            if (a != null && diccionario.vigente(a.turno) && SystemClock.uptimeMillis() - a.hora < 800) {
+                if (a.clave == claveDe(previa2De(antes), previa, p)) {
+                    b.mostrarEscrito(Sugerencia(p, literal = true))
+                    // Primero se marca y después se mira el resultado (así nunca se pierde)
+                    a.mostrar = true
+                    a.resultado?.let { mostrarResultado(it, a.op) }
+                    return
+                }
+                // Ya tocaste la letra siguiente (escribes rápido): esta palabra a medias no se
+                // calcula, el motor ya está con la que viene
+                if (a.marca > marcaTexto) {
+                    b.mostrarEscrito(Sugerencia(p, literal = true))
+                    return
+                }
+            }
+        }
+        anticipo = null
+
         // El cálculo anterior (si aún corre) ya no sirve: se corta y se pide uno nuevo
         diccionario.interrumpir()
         val t = diccionario.turno()
@@ -936,61 +1021,116 @@ class TecladoService : InputMethodService(),
         // Mientras se calcula, la barra ya muestra lo que escribiste (respuesta inmediata)
         b.mostrarEscrito(Sugerencia(p, literal = true))
         val previa2 = previa2De(antes)
-        val revisar = revisarActiva
-        val aplicar = autocorreccionActiva
-        val linea = enLineaActiva
         val toq = toquesPara(p)
-        val enLetras = teclado?.modo == Modo.LETRAS
-        val emojisBarra = emojisBarraActivo
+        val op = opcionesActuales()
         motor.post {
-            if (!diccionario.vigente(t)) return@post
-            // Primero las letras más probables: el teclado las usa en el siguiente toque
-            if (enLetras) {
-                val probs = try { diccionario.letrasProbables(p, t) } catch (_: Throwable) { null }
-                if (probs != null && diccionario.vigente(t)) {
+            val r = try {
+                calcularPalabra(p, previa, previa2, t, toq, op) { probs ->
+                    // Las letras probables primero: el teclado las usa en el siguiente toque
                     manejador.post { if (diccionario.vigente(t)) teclado?.probLetras = probs }
                 }
-            }
-            var corr: String? = null
-            var otras: List<String> = emptyList()
-            var completa: String? = null
-            try {
-                corr = if (revisar) diccionario.corregir(p, previa, previa2, t, toq) else null
-                if (!diccionario.vigente(t)) return@post
-                otras = diccionario.sugerir(p, 4, previa, previa2, t, toq).filter { it != corr && it != p }
-                // Predicción en línea: la palabra que más probablemente estás escribiendo
-                if (linea && corr == null && p.length >= 2) {
-                    val top = otras.firstOrNull()
-                    if (top != null && top.length >= p.length + 2 &&
-                        top.substring(0, p.length).equals(p, ignoreCase = true) && !diccionario.conocida(p)
-                    ) completa = top
-                }
-            } catch (e: Throwable) { Registro.anotar("sugerencias", e); return@post }
-            if (!diccionario.vigente(t)) return@post
-            val c = corr
-            val comp = completa
-            val lista = otras
-            manejador.post {
-                if (!diccionario.vigente(t)) return@post
-                calculada = Calculada(p, previa, previa2, if (aplicar) c else null, comp)
-                if (comp != null) {
-                    b.mostrar(listOf(
-                        Sugerencia(p, literal = true, resto = comp.substring(p.length)),
-                        lista.getOrNull(1)?.let { Sugerencia(it) },
-                        lista.getOrNull(2)?.let { Sugerencia(it) },
-                    ))
-                    return@post
-                }
-                // Con Autocorrección la corrección va resaltada al centro (se pone sola al dar espacio);
-                // solo con Revisar ortografía aparece como sugerencia para tocarla
-                val centro = c?.let { Sugerencia(it, destacada = aplicar) } ?: lista.getOrNull(0)?.let { Sugerencia(it) }
-                // Emoji de la palabra (o de su corrección) a la derecha: "corazon" → ❤️
-                val emo = if (emojisBarra) EmojiPalabras.para(p) ?: EmojiPalabras.para(c) else null
-                val derecha = emo?.let { Sugerencia(it, emoji = true) }
-                    ?: (if (c != null) lista.getOrNull(0) else lista.getOrNull(1))?.let { Sugerencia(it) }
-                b.mostrar(listOf(Sugerencia(p, literal = true), centro, derecha))
-            }
+            } catch (e: Throwable) { Registro.anotar("sugerencias", e); null } ?: return@post
+            manejador.post { if (diccionario.vigente(t)) mostrarResultado(r, op) }
         }
+    }
+
+    private fun opcionesActuales() = Opciones(
+        revisar = revisarActiva, aplicar = autocorreccionActiva, linea = enLineaActiva,
+        enLetras = teclado?.modo == Modo.LETRAS, emojisBarra = emojisBarraActivo,
+    )
+
+    private fun claveDe(previa2: String, previa: String, p: String) = "$previa2\u0001$previa\u0001$p"
+
+    /** En el hilo del motor: corrección, sugerencias y letras probables de [p] (null si se cortó) */
+    private fun calcularPalabra(
+        p: String, previa: String, previa2: String, t: Int, toq: Array<FloatArray>?, op: Opciones,
+        alProbs: ((FloatArray) -> Unit)? = null,
+    ): Resultado? {
+        if (!diccionario.vigente(t)) return null
+        val probs = if (op.enLetras) {
+            try { diccionario.letrasProbables(p, t) } catch (_: Throwable) { null }
+        } else null
+        if (!diccionario.vigente(t)) return null
+        if (probs != null) alProbs?.invoke(probs)
+        val corr = if (op.revisar) diccionario.corregir(p, previa, previa2, t, toq) else null
+        if (!diccionario.vigente(t)) return null
+        val otras = diccionario.sugerir(p, 4, previa, previa2, t, toq).filter { it != corr && it != p }
+        // Predicción en línea: la palabra que más probablemente estás escribiendo
+        var completa: String? = null
+        if (op.linea && corr == null && p.length >= 2) {
+            val top = otras.firstOrNull()
+            if (top != null && top.length >= p.length + 2 &&
+                top.substring(0, p.length).equals(p, ignoreCase = true) && !diccionario.conocida(p)
+            ) completa = top
+        }
+        if (!diccionario.vigente(t)) return null
+        return Resultado(p, previa, previa2, probs, corr, otras, completa)
+    }
+
+    /** En el hilo principal: pone en la barra lo calculado y deja lista la corrección del espacio */
+    private fun mostrarResultado(r: Resultado, op: Opciones) {
+        val b = barra ?: return
+        if (op.enLetras && r.probs != null) teclado?.probLetras = r.probs
+        val p = r.p
+        val c = r.corr
+        val comp = r.completa
+        val lista = r.otras
+        calculada = Calculada(p, r.previa, r.previa2, if (op.aplicar) c else null, comp)
+        if (comp != null) {
+            b.mostrar(listOf(
+                Sugerencia(p, literal = true, resto = comp.substring(p.length)),
+                lista.getOrNull(1)?.let { Sugerencia(it) },
+                lista.getOrNull(2)?.let { Sugerencia(it) },
+            ))
+            return
+        }
+        // Con Autocorrección la corrección va resaltada al centro (se pone sola al dar espacio);
+        // solo con Revisar ortografía aparece como sugerencia para tocarla
+        val centro = c?.let { Sugerencia(it, destacada = op.aplicar) } ?: lista.getOrNull(0)?.let { Sugerencia(it) }
+        // Emoji de la palabra (o de su corrección) a la derecha: "corazon" → ❤️
+        val emo = if (op.emojisBarra) EmojiPalabras.para(p) ?: EmojiPalabras.para(c) else null
+        val derecha = emo?.let { Sugerencia(it, emoji = true) }
+            ?: (if (c != null) lista.getOrNull(0) else lista.getOrNull(1))?.let { Sugerencia(it) }
+        b.mostrar(listOf(Sugerencia(p, literal = true), centro, derecha))
+    }
+
+    /** El dedo tocó una letra: se calcula ya, como si estuviera escrita */
+    override fun anticipar(s: String, x: Float, y: Float) {
+        if (buscandoEmoji || !sugerenciasActivas || editando || seleccionando || campoClave) return
+        if (currentInputConnection == null || s.length != 1 || !s[0].isLetter()) return
+        if (emojis?.visibility == View.VISIBLE) return
+        val texto = antes(120) + s
+        val (previa, p) = palabrasDe(texto)
+        if (p.isEmpty()) return
+        // Las sustituciones de texto las resuelve el camino de siempre
+        if (buscarAtajo(tokenDe(texto)) != null) return
+        val previa2 = previa2De(texto)
+        val clave = claveDe(previa2, previa, p)
+        if (anticipo?.clave == clave) return
+        val lista = ArrayList(toques)
+        lista.add(floatArrayOf(x, y, s[0].lowercaseChar().code.toFloat()))
+        val toq = toquesPara(p, lista)
+        diccionario.interrumpir()
+        val t = diccionario.turno()
+        val op = opcionesActuales()
+        val a = Anticipo(clave, t, ++marca, SystemClock.uptimeMillis(), op)
+        anticipo = a
+        motor.post {
+            val r = try {
+                calcularPalabra(p, previa, previa2, t, toq, op)
+            } catch (e: Throwable) { Registro.anotar("anticipar", e); null } ?: return@post
+            // Primero se guarda y después se mira si ya hay que mostrarlo (así nunca se pierde)
+            a.resultado = r
+            if (a.mostrar) manejador.post { mostrarAnticipo(a, r) }
+        }
+    }
+
+    private fun mostrarAnticipo(a: Anticipo, r: Resultado) {
+        if (anticipo !== a || !diccionario.vigente(a.turno) || buscandoEmoji) return
+        // Solo si en pantalla sigue la misma palabra
+        val (previa, p) = palabrasDe(antes(120))
+        if (p != r.p || previa != r.previa) return
+        mostrarResultado(r, a.op)
     }
 
     /** Calcula en el motor la corrección de una palabra ya cerrada y la pone apenas esté */
@@ -1344,6 +1484,12 @@ class TecladoService : InputMethodService(),
     }
 
     override fun texto(s: String, x: Float, y: Float) {
+        if (buscandoEmoji) {
+            if (consultaEmoji.length < 30 && s.length == 1 && s[0].isLetterOrDigit()) consultaEmoji += s.lowercase()
+            actualizar()
+            return
+        }
+        marcaTexto = ++marca
         salirDeEdicion()
         teclado?.probLetras = null
         escribiendo = true
@@ -1390,6 +1536,11 @@ class TecladoService : InputMethodService(),
     }
 
     override fun espacio() {
+        if (buscandoEmoji) {
+            if (consultaEmoji.isNotEmpty() && !consultaEmoji.endsWith(" ")) consultaEmoji += " "
+            actualizar()
+            return
+        }
         salirDeEdicion()
         teclado?.probLetras = null
         if (currentInputConnection == null) return
@@ -1417,6 +1568,11 @@ class TecladoService : InputMethodService(),
     }
 
     override fun borrar() {
+        if (buscandoEmoji) {
+            consultaEmoji = consultaEmoji.dropLast(1)
+            actualizar()
+            return
+        }
         salirDeEdicion()
         teclado?.probLetras = null
         escribiendo = true
@@ -1496,6 +1652,11 @@ class TecladoService : InputMethodService(),
     }
 
     override fun borrarPalabra() {
+        if (buscandoEmoji) {
+            consultaEmoji = ""
+            actualizar()
+            return
+        }
         if (currentInputConnection == null) return
         espacioAutomatico = false
         ultimaCorreccion = null
@@ -1560,6 +1721,10 @@ class TecladoService : InputMethodService(),
     }
 
     override fun enter() {
+        if (buscandoEmoji) {
+            salirBusqueda()
+            return
+        }
         salirDeEdicion()
         val ic = currentInputConnection ?: return
         val info = currentInputEditorInfo ?: return
@@ -1586,7 +1751,152 @@ class TecladoService : InputMethodService(),
         }
     }
 
+    // ---------- Buscar emojis escribiendo (como iOS) ----------
+
+    /** Tocaste "Buscar emoji": vuelven las letras y lo que escribes busca en vez de escribir */
+    override fun buscarEmoji() {
+        emojis?.cerrarTonos()
+        emojis?.animate()?.cancel()
+        emojis?.visibility = View.GONE
+        buscandoEmoji = true
+        consultaEmoji = ""
+        teclado?.let {
+            it.modo = Modo.LETRAS
+            it.mayusAuto(false)
+            aparecer(it)
+        }
+        actualizarBarra()
+    }
+
+    /** Tocaste la búsqueda en la barra (o intro): vuelves al panel de emojis */
+    override fun salirBusqueda() {
+        buscandoEmoji = false
+        consultaEmoji = ""
+        retro(Tipo.A_LETRAS)
+        abrirEmojis()
+    }
+
+    /** Elegiste un emoji de la búsqueda: se escribe y puedes seguir buscando */
+    override fun emojiBuscado(e: String) {
+        ultimaCorreccion = null
+        ultimaAprendida = null
+        ultimoDeslizado = null
+        espacioAutomatico = false
+        toques.clear()
+        reemplazar(0, e)
+        EmojiPanel.sumarReciente(this, e)
+        retro(Tipo.LETRA)
+    }
+
+    // ---------- Historial del portapapeles ----------
+
+    private fun historial() = Portapapeles(Ajustes.prefs(this).getString(CLAVE_HISTORIAL, null))
+
+    private fun guardarHistorial(h: Portapapeles) {
+        Ajustes.prefs(this).edit().putString(CLAVE_HISTORIAL, h.comoTexto()).apply()
+    }
+
+    /** Copiaste algo (en cualquier app): se suma al historial, salvo contraseñas y cosas privadas */
+    private fun guardarEnHistorial() {
+        try {
+            if (!Ajustes.historialPortapapeles(this)) return
+            val cm = portapapeles ?: return
+            val desc = cm.primaryClipDescription ?: return
+            if (desc.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) return
+            // Copiado desde un campo de contraseña donde está el teclado: no se guarda
+            if (campoClave && isInputViewShown) return
+            if (!desc.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) &&
+                !desc.hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML) &&
+                !desc.hasMimeType(ClipDescription.MIMETYPE_TEXT_URILIST)) return
+            val texto = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+            if (texto.isNullOrBlank()) return
+            val h = historial()
+            if (h.agregar(texto)) guardarHistorial(h)
+        } catch (_: Exception) { }
+    }
+
+    override fun historialCopiado(): List<Portapapeles.Elemento> =
+        if (Ajustes.historialPortapapeles(this)) historial().elementos() else emptyList()
+
+    override fun fijarCopiado(texto: String): Boolean {
+        val h = historial()
+        val fijado = h.alternarFijado(texto)
+        guardarHistorial(h)
+        return fijado
+    }
+
+    override fun quitarCopiado(texto: String) {
+        val h = historial()
+        h.quitar(texto)
+        guardarHistorial(h)
+    }
+
+    /** Tocaste algo del historial: se pega y vuelven las letras */
+    override fun pegar(texto: String) {
+        if (currentInputConnection == null) return
+        ultimaCorreccion = null
+        ultimaAprendida = null
+        ultimoDeslizado = null
+        espacioAutomatico = false
+        toques.clear()
+        escribiendo = true
+        ultimaEscritura = SystemClock.uptimeMillis()
+        reemplazar(0, texto)
+        retro(Tipo.LETRA)
+        volverABC()
+    }
+
+    // ---------- Contactos e ícono de la app ----------
+
+    /**
+     * Lee los nombres de tus contactos (si lo activaste y diste permiso) para no corregirlos y
+     * escribirlos con mayúscula. Se lee como mucho cada 6 horas, en el hilo del motor.
+     */
+    private fun cargarContactosSiHaceFalta() {
+        val activo = Ajustes.nombresContactos(this) &&
+            checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+        if (!activo) {
+            if (contactosLeidos != 0L) {
+                contactosLeidos = 0L
+                enMotor { diccionario.ponerContactos(emptyList()) }
+            }
+            return
+        }
+        val ahora = SystemClock.elapsedRealtime()
+        if (contactosLeidos != 0L && ahora - contactosLeidos < 6 * 60 * 60 * 1000L) return
+        contactosLeidos = ahora
+        enMotor {
+            val nombres = ArrayList<String>()
+            contentResolver.query(
+                ContactsContract.Contacts.CONTENT_URI,
+                arrayOf(ContactsContract.Contacts.DISPLAY_NAME_PRIMARY), null, null, null,
+            )?.use { c ->
+                while (c.moveToNext() && nombres.size < 5000) c.getString(0)?.let { nombres.add(it) }
+            }
+            diccionario.ponerContactos(nombres)
+        }
+    }
+
+    /** El ícono de la app (se guarda para no volver a dibujarlo) */
+    private fun iconoDe(paquete: String?): Bitmap? {
+        if (paquete == null || paquete == packageName) return null
+        if (iconos.containsKey(paquete)) return iconos[paquete]
+        val bmp = try {
+            val d = packageManager.getApplicationIcon(paquete)
+            val lado = 64
+            Bitmap.createBitmap(lado, lado, Bitmap.Config.ARGB_8888).also { b ->
+                d.setBounds(0, 0, lado, lado)
+                d.draw(Canvas(b))
+            }
+        } catch (_: Exception) { null }
+        if (iconos.size >= 12) iconos.remove(iconos.keys.first())
+        iconos[paquete] = bmp
+        return bmp
+    }
+
     override fun abrirEmojis() {
+        buscandoEmoji = false
+        consultaEmoji = ""
         teclado?.ocultarPreview()
         emojis?.refrescar()
         teclado?.visibility = View.INVISIBLE
@@ -1667,11 +1977,14 @@ class TecladoService : InputMethodService(),
     }
 
     /** Muestra una vista con un fundido rápido (cambio entre letras y emojis, como en iOS) */
+    /** Aparece con un fundido y subiendo apenas, como los cambios de teclado de iOS */
     private fun aparecer(v: View) {
         v.animate().cancel()
         v.alpha = 0f
+        v.translationY = 6f * resources.displayMetrics.density
         v.visibility = View.VISIBLE
-        v.animate().alpha(1f).setDuration(130).start()
+        v.animate().alpha(1f).translationY(0f).setDuration(170)
+            .setInterpolator(DecelerateInterpolator(1.8f)).withLayer().start()
     }
 
     override fun emoji(s: String) {
@@ -1794,6 +2107,7 @@ class TecladoService : InputMethodService(),
     // ---------- Deslizar para escribir ----------
 
     override fun deslizar(puntos: List<FloatArray>, proporcion: Float, mayus: Boolean) {
+        if (buscandoEmoji) return
         escribiendo = true
         ultimaEscritura = SystemClock.uptimeMillis()
         if (currentInputConnection == null) return
@@ -1839,8 +2153,25 @@ class TecladoService : InputMethodService(),
 
     // ---------- Respuesta del teclado (vibración y sonido) ----------
 
-    /** El efecto de vibración se arma una sola vez */
-    private var efectoToque: VibrationEffect? = null
+    /** Los efectos de vibración se arman una sola vez: letra, espacio/intro, borrar y teclas de función */
+    private val efectos = arrayOfNulls<VibrationEffect>(4)
+
+    private fun claseRetro(tipo: Tipo) = when (tipo) {
+        Tipo.LETRA, Tipo.VACIO -> 0
+        Tipo.ESPACIO, Tipo.ENTER -> 1
+        Tipo.BORRAR -> 2
+        else -> 3
+    }
+
+    /** Como en iPhone: el espacio y el intro se sienten un poco más firmes, las de función más suaves */
+    private fun crearEfecto(clase: Int): VibrationEffect = if (toqueFino == true) {
+        val fuerza = when (clase) { 1 -> 0.72f; 2 -> 0.6f; 3 -> 0.38f; else -> 0.5f }
+        VibrationEffect.startComposition()
+            .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, fuerza)
+            .compose()
+    } else {
+        VibrationEffect.createPredefined(if (clase == 1) VibrationEffect.EFFECT_CLICK else VibrationEffect.EFFECT_TICK)
+    }
 
     override fun retro(tipo: Tipo) {
         val conVibrar = vibrar
@@ -1848,7 +2179,7 @@ class TecladoService : InputMethodService(),
         if (!conVibrar && !conSonido) return
         // En su propio hilo: la tecla se dibuja y se escribe sin esperar a la vibración
         retroManejador.post {
-            if (conVibrar) vibrarAhora()
+            if (conVibrar) vibrarAhora(tipo)
             if (conSonido) {
                 val efecto = when (tipo) {
                     Tipo.BORRAR -> AudioManager.FX_KEYPRESS_DELETE
@@ -1861,20 +2192,15 @@ class TecladoService : InputMethodService(),
         }
     }
 
-    private fun vibrarAhora() {
+    private fun vibrarAhora(tipo: Tipo) {
         try {
             val v = vibrador ?: return
             // Toque corto y seco, como el Taptic Engine del iPhone (si el celular lo soporta)
             if (toqueFino == null) {
                 toqueFino = v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_TICK)
             }
-            val efecto = efectoToque ?: (if (toqueFino == true) {
-                VibrationEffect.startComposition()
-                    .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 0.5f)
-                    .compose()
-            } else {
-                VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
-            }).also { efectoToque = it }
+            val clase = claseRetro(tipo)
+            val efecto = efectos[clase] ?: crearEfecto(clase).also { efectos[clase] = it }
             v.vibrate(efecto)
         } catch (_: Exception) { }
     }
