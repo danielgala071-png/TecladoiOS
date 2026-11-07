@@ -263,6 +263,14 @@ class SuggestionBar(
         // Fondo negro como el teclado (curvo arriba) y el filo del color de la app
         pinturaFondo.color = tema.fondo
         c.drawPath(forma, pinturaFondo)
+        // Halo suave del color de la app por dentro del filo (igual que en el teclado)
+        val grosorFilo = pinturaBorde.strokeWidth
+        pinturaBorde.color = tema.resplandor
+        pinturaBorde.strokeWidth = grosorFilo * 6f
+        c.drawPath(filo, pinturaBorde)
+        pinturaBorde.strokeWidth = grosorFilo * 3f
+        c.drawPath(filo, pinturaBorde)
+        pinturaBorde.strokeWidth = grosorFilo
         pinturaBorde.color = tema.bordePanel
         c.drawPath(filo, pinturaBorde)
 
@@ -337,6 +345,17 @@ class SuggestionBar(
             if (i == presionado) {
                 pintura.color = tema.teclaPresionada
                 c.drawRoundRect(x0 + 4 * d, 5 * d, x0 + ancho - 4 * d, height - 9 * d, 10 * d, 10 * d, pintura)
+            } else if (s.destacada) {
+                // La corrección que se pondrá sola va en una cápsula de vidrio con el filo de la app
+                val arriba = 6 * d
+                val abajo = height - 10 * d
+                val rc = (abajo - arriba) / 2f
+                pintura.color = tema.tecla
+                c.drawRoundRect(x0 + 6 * d, arriba, x0 + ancho - 6 * d, abajo, rc, rc, pintura)
+                val previo = pinturaBorde.color
+                pinturaBorde.color = (tema.borde and 0x00FFFFFF) or 0x8C000000.toInt()
+                c.drawRoundRect(x0 + 6 * d, arriba, x0 + ancho - 6 * d, abajo, rc, rc, pinturaBorde)
+                pinturaBorde.color = previo
             }
             grosor(if (s.destacada) 500 else 400)
             val cy = centroY()

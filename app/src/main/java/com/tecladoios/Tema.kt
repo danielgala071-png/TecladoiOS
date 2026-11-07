@@ -43,6 +43,12 @@ data class Tema(
     val desenfoque: Int,
     /** Reflejo de vidrio en la parte de arriba de cada tecla (efecto translúcido) */
     val brillo: Int,
+    /** Sombra interior en la parte de abajo de cada tecla: le da volumen al vidrio */
+    val profundidad: Int,
+    /** Línea de luz finita en el filo de arriba de cada tecla (como el vidrio de iOS 26) */
+    val reflejo: Int,
+    /** Halo suave del color de la app alrededor del filo del teclado y de la barra */
+    val resplandor: Int,
 ) {
     companion object {
         private val BLANCO = 0xFFFFFFFF.toInt()
@@ -85,7 +91,7 @@ data class Tema(
                 fondoArriba = NEGRO,
                 // Vidrio translúcido: blanco muy tenue con un toque del color de la app
                 tecla = a(0x2E, mezclar(BLANCO, color, 0.22f)),
-                teclaFuncion = a(0x1A, mezclar(BLANCO, color, 0.30f)),
+                teclaFuncion = a(0x1C, mezclar(BLANCO, color, 0.34f)),
                 teclaPresionada = a(0x66, color),
                 teclaActiva = 0xFFEBEBF0.toInt(),
                 textoActivo = NEGRO,
@@ -101,7 +107,11 @@ data class Tema(
                 burbuja = a(0xF7, mezclar(0xFF1C1C1E.toInt(), color, 0.22f)),
                 bordeBurbuja = a(0xE6, color),
                 desenfoque = 0,
-                brillo = a(0x22, BLANCO),
+                // Se dibujan con opacidad propia (no dependen de la transparencia de la tecla)
+                brillo = a(0x16, BLANCO),
+                profundidad = a(0x38, NEGRO),
+                reflejo = a(0x5C, mezclar(BLANCO, color, 0.25f)),
+                resplandor = a(0x26, color),
             )
         }
     }

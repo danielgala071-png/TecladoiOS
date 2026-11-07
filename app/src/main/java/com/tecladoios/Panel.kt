@@ -16,6 +16,9 @@ class Panel(context: Context) : LinearLayout(context) {
 
     var colorBorde = 0
         set(value) { field = value; invalidate() }
+    /** Halo suave del color de la app por dentro del filo (0 = sin halo) */
+    var resplandor = 0
+        set(value) { field = value; invalidate() }
     var radio = 0f
         set(value) { field = value; armar(width, height) }
     var grosor = 1f
@@ -69,6 +72,14 @@ class Panel(context: Context) : LinearLayout(context) {
     override fun dispatchDraw(canvas: Canvas) {
         super.dispatchDraw(canvas)
         if (Color.alpha(colorBorde) == 0) return
+        // Primero el halo (ancho y tenue: la mitad de afuera queda recortada, se ve solo por dentro)
+        if (Color.alpha(resplandor) > 0) {
+            pintura.color = resplandor
+            pintura.strokeWidth = grosor * 6f
+            canvas.drawPath(borde, pintura)
+            pintura.strokeWidth = grosor * 3f
+            canvas.drawPath(borde, pintura)
+        }
         pintura.color = colorBorde
         pintura.strokeWidth = grosor
         canvas.drawPath(borde, pintura)

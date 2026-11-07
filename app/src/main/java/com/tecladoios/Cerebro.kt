@@ -15,6 +15,10 @@ import java.io.File
  *  - Tus errores de siempre: si escribes "qje" y te quedas con "que", lo corrige seguro.
  *  - Las predicciones que siempre ignoras: dejan de aparecer.
  *  - Lo reciente pesa más: lo que dejas de usar se va apagando solo con los meses.
+ *  - Memoria de la conversación: las palabras que usaste en los últimos minutos (un nombre,
+ *    un lugar, el tema del chat) suben solas en las sugerencias y en la autocorrección.
+ *  - Se calibra solo: si deshaces seguido la autocorrección se vuelve más prudente; si casi
+ *    nunca la deshaces, se atreve un poco más. Nadie tiene que tocar ningún ajuste.
  *
  * Es estable por diseño: todo va con candado (lo usa un solo hilo a la vez), tiene topes de
  * tamaño (nunca crece sin control) y si el archivo está dañado empieza de cero sin cerrarse.
@@ -49,6 +53,16 @@ class Cerebro(private val archivo: File) {
     private val ignoradas = HashMap<String, Float>()
     /** Las últimas palabras que escribiste (para saber las tres anteriores) */
     private val historial = ArrayDeque<String>()
+
+    /** Memoria de la conversación: palabra → cuántas veces (se apaga en minutos) y cuándo */
+    private class Reciente(var veces: Float, var ms: Long, val n: String)
+    private val recientes = HashMap<String, Reciente>()
+
+    /** Qué tan seguido deshaces la autocorrección (promedio que se mueve, 0 a 1) */
+    private var tasaDeshacer = TASA_BASE
+    /** Cuántas autocorrecciones vio (para saber cuánto creerle a la tasa) */
+    private var correccionesVistas = 0f
+
     private var cambios = false
     private var entradas = 0
     @Volatile var listo = false
@@ -106,6 +120,7 @@ class Cerebro(private val archivo: File) {
         }
         historial.addLast(w)
         while (historial.size > 4) historial.removeFirst()
+        notarReciente(w)
         cambios = true
     }
 
@@ -122,7 +137,98 @@ class Cerebro(private val archivo: File) {
         if (p2.isNotEmpty()) quitar(clave2(p2, p1), w)
         if (p3.isNotEmpty()) quitar(clave3(p3, p2, p1), w)
         if (app.isNotEmpty()) quitar(claveApp(app, p1), w)
+        recientes[w]?.let { r ->
+            r.veces -= 1f
+            if (r.veces <= 0.1f) recientes.remove(w)
+        }
         cambios = true
+    }
+
+    // ---------- Memoria de la conversación ----------
+
+    private fun pesoReciente(r: Reciente, ahora: Long): Float {
+        val minutos = (ahora - r.ms) / 60_000f
+        if (minutos <= 0f) return r.veces
+        return (r.veces * Math.exp((-minutos / VIDA_RECIENTE_MIN).toDouble())).toFloat()
+    }
+
+    private fun notarReciente(w: String) {
+        if (w.length < 4) return
+        val ahora = System.currentTimeMillis()
+        val r = recientes[w]
+        if (r != null) {
+            r.veces = minOf(8f, pesoReciente(r, ahora) + 1f)
+            r.ms = ahora
+            return
+        }
+        if (recientes.size >= MAX_RECIENTES) {
+            // Se olvida lo que ya se apagó (y si aún sobran, lo más flojo)
+            val iter = recientes.entries.iterator()
+            while (iter.hasNext()) if (pesoReciente(iter.next().value, ahora) < 0.15f) iter.remove()
+            if (recientes.size >= MAX_RECIENTES) {
+                recientes.entries.sortedBy { pesoReciente(it.value, ahora) }
+                    .take(recientes.size - MAX_RECIENTES * 3 / 4).map { it.key }.forEach { recientes.remove(it) }
+            }
+        }
+        recientes[w] = Reciente(1f, ahora, sinTildesDe(w))
+    }
+
+    /** Qué tan presente está [w] en lo que escribiste hace poco (0 = nada, 1 = muchísimo) */
+    @Synchronized
+    fun reciente(w: String): Float {
+        if (!listo || recientes.isEmpty()) return 0f
+        val r = recientes[normal(w)] ?: return 0f
+        val p = pesoReciente(r, System.currentTimeMillis())
+        return if (p < 0.15f) 0f else p / (p + 1f)
+    }
+
+    /** Palabras de la conversación que empiezan con [prefijo] (sin tildes), de más a menos presentes */
+    @Synchronized
+    fun recientesCon(prefijo: String, max: Int): List<Pair<String, Float>> {
+        if (!listo || recientes.isEmpty() || prefijo.isEmpty()) return emptyList()
+        val ahora = System.currentTimeMillis()
+        val res = ArrayList<Pair<String, Float>>()
+        for ((w, r) in recientes) {
+            if (w.length <= prefijo.length || !r.n.startsWith(prefijo)) continue
+            val p = pesoReciente(r, ahora)
+            if (p < 0.2f) continue
+            res.add(w to p / (p + 1f))
+        }
+        if (res.isEmpty()) return res
+        res.sortByDescending { it.second }
+        return if (res.size > max) res.subList(0, max).toList() else res
+    }
+
+    // ---------- Calibración de la autocorrección ----------
+
+    /** Se aplicó una autocorrección */
+    @Synchronized
+    fun correccionAplicada() {
+        if (!listo) return
+        tasaDeshacer += (0f - tasaDeshacer) * PASO_TASA
+        if (correccionesVistas < 5000f) correccionesVistas += 1f
+        cambios = true
+    }
+
+    /** Deshiciste una autocorrección */
+    @Synchronized
+    fun correccionDeshecha() {
+        if (!listo) return
+        tasaDeshacer += (1f - tasaDeshacer) * PASO_TASA
+        cambios = true
+    }
+
+    /**
+     * Qué tanto se atreve a corregir: menos de 1 = más prudente (deshaces seguido),
+     * más de 1 = corrige errores un poco más grandes (casi nunca la deshaces).
+     * Con pocas correcciones vistas se queda cerca de 1.
+     */
+    @Synchronized
+    fun audacia(): Float {
+        if (!listo) return 1f
+        val confianza = minOf(1f, correccionesVistas / 40f)
+        val a = 1f + (TASA_BASE - tasaDeshacer) * 2.2f
+        return (1f + (a - 1f) * confianza).coerceIn(0.85f, 1.12f)
     }
 
     /** La palabra antes de [p2] [p1], si el historial coincide con lo que hay en pantalla */
@@ -337,6 +443,10 @@ class Cerebro(private val archivo: File) {
         for ((e, m) in errores) for ((w, v) in m) sb.append(e).append('\t').append(w).append('\t').append(v).append('\n')
         sb.append("#i\n")
         for ((k, v) in ignoradas) sb.append(k).append('\t').append(v).append('\n')
+        // Calibración de la autocorrección (las versiones viejas ignoran esta sección)
+        sb.append("#a\n")
+        sb.append("tasa\t").append(tasaDeshacer).append('\n')
+        sb.append("vistas\t").append(correccionesVistas).append('\n')
         cambios = false
         return sb.toString()
     }
@@ -378,6 +488,9 @@ class Cerebro(private val archivo: File) {
         errores.clear()
         ignoradas.clear()
         historial.clear()
+        recientes.clear()
+        tasaDeshacer = TASA_BASE
+        correccionesVistas = 0f
         entradas = 0
         try {
             if (archivo.exists()) leer(archivo.readText(Charsets.UTF_8))
@@ -417,6 +530,13 @@ class Cerebro(private val archivo: File) {
                 'i' -> if (p.size == 2) {
                     ignoradas[p[0]] = p[1].toFloatOrNull() ?: continue
                 }
+                'a' -> if (p.size == 2) {
+                    val v = p[1].toFloatOrNull() ?: continue
+                    when (p[0]) {
+                        "tasa" -> tasaDeshacer = v.coerceIn(0f, 1f)
+                        "vistas" -> correccionesVistas = v.coerceIn(0f, 5000f)
+                    }
+                }
             }
         }
     }
@@ -428,6 +548,9 @@ class Cerebro(private val archivo: File) {
         errores.clear()
         ignoradas.clear()
         historial.clear()
+        recientes.clear()
+        tasaDeshacer = TASA_BASE
+        correccionesVistas = 0f
         entradas = 0
         cambios = false
         try { archivo.delete() } catch (_: Exception) { }
@@ -445,6 +568,7 @@ class Cerebro(private val archivo: File) {
         for (c in vacias) contextos.remove(c)
         errores.remove(w)
         for (m in errores.values) m.remove(w)
+        recientes.remove(w)
         cambios = true
     }
 
@@ -457,6 +581,45 @@ class Cerebro(private val archivo: File) {
         private const val MAX_ENTRADAS = 80_000
         private const val MAX_ERRORES = 3000
         private const val MAX_IGNORADAS = 3000
+        /** Memoria de la conversación: cuántas palabras y en cuántos minutos se apagan */
+        private const val MAX_RECIENTES = 400
+        private const val VIDA_RECIENTE_MIN = 25.0
+        /** Lo normal: se deshace más o menos 1 de cada 12 autocorrecciones */
+        private const val TASA_BASE = 0.08f
+        private const val PASO_TASA = 0.04f
+
+        /** Resumen de lo aprendido para Ajustes (lee el archivo del cerebro tal cual) */
+        fun resumen(texto: String?): String? {
+            if (texto == null || !texto.startsWith("tecladoios-cerebro-")) return null
+            var seccion = ' '
+            var frases = 0
+            var errores = 0
+            var tasa = -1f
+            var vistas = 0f
+            for (linea in texto.lineSequence()) {
+                if (linea.isEmpty()) continue
+                if (linea.length == 2 && linea[0] == '#') { seccion = linea[1]; continue }
+                when (seccion) {
+                    'c' -> frases++
+                    'e' -> errores++
+                    'a' -> {
+                        val p = linea.split('\t')
+                        if (p.size == 2) when (p[0]) {
+                            "tasa" -> tasa = p[1].toFloatOrNull() ?: -1f
+                            "vistas" -> vistas = p[1].toFloatOrNull() ?: 0f
+                        }
+                    }
+                }
+            }
+            val calibrada = when {
+                tasa < 0f || vistas < 40f -> "todavía aprendiendo cómo escribes"
+                tasa > 0.14f -> "más prudente (la deshaces seguido)"
+                tasa < 0.05f -> "más segura (casi nunca la deshaces)"
+                else -> "equilibrada"
+            }
+            return "$frases patrones de frases · $errores errores tuyos que ya reconoce\n" +
+                "Autocorrección: $calibrada"
+        }
 
         fun sinTildes(s: String): String =
             java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)

@@ -576,6 +576,13 @@ class SettingsActivity : Activity() {
     private fun paginaPalabras() {
         volver()
         tituloGrande("Palabras aprendidas")
+        // Lo que aprendió el cerebro por su cuenta (frases, errores tuyos y cómo se calibró)
+        val resumen = try { Cerebro.resumen(Diccionario.leerCerebro(this)) } catch (_: Throwable) { null }
+        if (resumen != null) {
+            grupo("Cerebro", listOf(filaInfo("Lo que aprendió de ti", resumen)),
+                pie = "Aprende solo mientras escribes: si borras una palabra y la escribes bien, " +
+                    "la próxima vez la corrige sola. Todo queda en tu celular, sin internet.")
+        }
         val todas = try { Diccionario.palabrasAprendidas(this) } catch (_: Throwable) { emptyList() }
         if (todas.isEmpty()) {
             grupo(null, listOf(filaAccion("Todavía no aprendió palabras", gris, derecha = null) {}),

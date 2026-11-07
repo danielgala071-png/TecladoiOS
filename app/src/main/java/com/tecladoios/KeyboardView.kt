@@ -9,6 +9,7 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.RenderNode
 import android.graphics.Shader
 import android.os.Handler
 import android.os.Looper
@@ -43,6 +44,10 @@ class Tecla(val tipo: Tipo, val texto: String = "", val ancho: Float = 1f, val s
     var shaderBorde: Shader? = null
     /** Reflejo de vidrio translúcido (se calcula una vez) */
     var shaderBrillo: Shader? = null
+    /** Sombra interior abajo: volumen del vidrio (se calcula una vez) */
+    var shaderFondo: Shader? = null
+    /** Línea de luz en el filo de arriba (se calcula una vez) */
+    var shaderReflejo: Shader? = null
 }
 
 /** Las teclas dibujadas directamente en pantalla, con el diseño del teclado del iPhone. */
@@ -265,6 +270,34 @@ class KeyboardView(
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
+    /** Línea de luz finita en el filo de arriba de cada tecla */
+    private val pinturaReflejo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeWidth = maxOf(1f, dp(0.75f))
+    }
+    /** Para tapar una tecla de la capa fija antes de dibujarla presionada (el fondo es negro) */
+    private val pinturaTapar = Paint().apply { color = tema.fondo or (0xFF shl 24) }
+
+    // ---------- Capa fija (rendimiento) ----------
+    /**
+     * Todas las teclas en reposo se graban una sola vez en una capa de la GPU. En cada toque
+     * solo se dibuja encima la tecla que cambia: el teclado ya no recalcula 33 teclas con sus
+     * degradados por cada letra, así responde más rápido y gasta menos batería.
+     * La capa se vuelve a grabar solo si cambia algo de lo que muestra (mayúsculas, modo...).
+     */
+    private val capaFija = RenderNode("teclas")
+    private var versionDistribucion = 0
+    private var capaVersion = -1
+    private var capaModo: Modo? = null
+    private var capaShift = -1
+    private var capaEnter = ""
+    private var capaAccion = false
+    private var capaCursor = false
+    private var capaAparicion = -1f
+    private var capaAncho = -1
+    private var capaAlto = -1
+
     private val pinturaTrazo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
@@ -354,15 +387,29 @@ class KeyboardView(
         )
     }
 
+    /** El mismo color con la opacidad multiplicada por [f] */
+    private fun conAlfa(color: Int, f: Float): Int =
+        (color and 0x00FFFFFF) or ((Color.alpha(color) * f).toInt().coerceIn(0, 255) shl 24)
+
     private fun colocar(t: Tecla, x: Float, w: Float, top: Float, sep: Float) {
         t.rect.set(x + sep, top + sepV, x + w - sep, top + altoFila - sepV)
         Formas.suave(t.forma, t.rect.left, t.rect.top, t.rect.right, t.rect.bottom, radio, 0f, t.curvaDer, t.curvaIzq)
-        // Filo del color de la app: intenso arriba y se va desvaneciendo hacia abajo (vidrio)
-        t.shaderBorde = LinearGradient(0f, t.rect.top, 0f, t.rect.bottom,
-            tema.borde, (tema.borde and 0x00FFFFFF) or ((Color.alpha(tema.borde) * 2 / 5) shl 24), Shader.TileMode.CLAMP)
+        val r = t.rect
+        // Filo del color de la app como luz que entra en diagonal: intenso arriba a la izquierda,
+        // tenue al medio y un poco más vivo abajo (como el borde de un vidrio grueso)
+        t.shaderBorde = LinearGradient(r.left, r.top, r.left + r.width() * 0.35f, r.bottom,
+            intArrayOf(tema.borde, conAlfa(tema.borde, 0.32f), conAlfa(tema.borde, 0.62f)),
+            floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
         // Reflejo arriba de la tecla: le da el efecto translúcido de vidrio
-        t.shaderBrillo = LinearGradient(0f, t.rect.top, 0f, t.rect.top + t.rect.height() * 0.55f,
+        t.shaderBrillo = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.55f,
             tema.brillo, tema.brillo and 0x00FFFFFF, Shader.TileMode.CLAMP)
+        // Sombra interior abajo: el vidrio se ve con volumen, no plano
+        t.shaderFondo = LinearGradient(0f, r.top + r.height() * 0.45f, 0f, r.bottom,
+            tema.profundidad and 0x00FFFFFF, tema.profundidad, Shader.TileMode.CLAMP)
+        // Línea de luz en el filo de arriba: brilla al centro y se apaga hacia las esquinas
+        t.shaderReflejo = LinearGradient(r.left, 0f, r.right, 0f,
+            intArrayOf(tema.reflejo and 0x00FFFFFF, tema.reflejo, tema.reflejo and 0x00FFFFFF),
+            null, Shader.TileMode.CLAMP)
     }
 
     /**
@@ -379,6 +426,8 @@ class KeyboardView(
     }
 
     private fun acomodar() {
+        // Cambió la distribución: la capa fija se vuelve a grabar en el próximo dibujo
+        versionDistribucion++
         if (width == 0) return
         val pad = esPad
         for (fila in filas) for (t in fila) { t.curvaIzq = 0f; t.curvaDer = 0f }
@@ -526,6 +575,9 @@ class KeyboardView(
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         modelo.guardar()
+        // Libera la memoria de la GPU mientras el teclado no se ve
+        capaFija.discardDisplayList()
+        capaVersion = -1
         animAparicion?.cancel()
         aparicion = 1f
         ocultarPreview()
@@ -536,8 +588,57 @@ class KeyboardView(
     private fun etiqueta(t: Tecla) =
         if (modo == Modo.LETRAS && shift > 0) t.textoMayus else t.texto
 
+    /** ¿La tecla se ve presionada ahora? */
+    private fun estaPresionada(t: Tecla) = !modoCursor && !deslizando && presionadas.containsValue(t)
+
+    /** Graba las teclas en reposo en la capa fija, solo si cambió algo de lo que se ve */
+    private fun asegurarCapa() {
+        val w = width
+        val h = height
+        if (capaVersion == versionDistribucion && capaModo == modo && capaShift == shift &&
+            capaEnter == etiquetaEnter && capaAccion == enterAccion && capaCursor == modoCursor &&
+            capaAparicion == aparicion && capaAncho == w && capaAlto == h && capaFija.hasDisplayList()
+        ) return
+        capaFija.setPosition(0, 0, w, h)
+        val rc = capaFija.beginRecording(w, h)
+        try {
+            for (fila in filas) for (t in fila) dibujar(rc, t, false, 0f)
+        } finally {
+            capaFija.endRecording()
+        }
+        capaVersion = versionDistribucion
+        capaModo = modo
+        capaShift = shift
+        capaEnter = etiquetaEnter
+        capaAccion = enterAccion
+        capaCursor = modoCursor
+        capaAparicion = aparicion
+        capaAncho = w
+        capaAlto = h
+    }
+
     override fun onDraw(canvas: Canvas) {
-        for (fila in filas) for (t in fila) dibujar(canvas, t)
+        if (canvas.isHardwareAccelerated && width > 0 && height > 0) {
+            asegurarCapa()
+            canvas.drawRenderNode(capaFija)
+            // Encima, solo las teclas que están cambiando (presionadas o terminando su animación)
+            if (!modoCursor) {
+                val m = dp(1.5f)
+                for (fila in filas) for (t in fila) {
+                    if (t.tipo == Tipo.VACIO) continue
+                    val presionada = estaPresionada(t)
+                    val f = pulsos[t] ?: 0f
+                    if (!presionada && f <= 0f) continue
+                    val r = t.rect
+                    canvas.drawRect(r.left - m, r.top - m, r.right + m, r.bottom + m, pinturaTapar)
+                    dibujar(canvas, t, presionada, f)
+                }
+            }
+        } else {
+            for (fila in filas) for (t in fila) {
+                dibujar(canvas, t, estaPresionada(t), if (!modoCursor) pulsos[t] ?: 0f else 0f)
+            }
+        }
         if (!teclaUnaMano.rect.isEmpty && !modoCursor) {
             pinturaIcono.color = tema.textoSecundario
             Iconos.chevron(canvas, teclaUnaMano.rect.centerX(), teclaUnaMano.rect.centerY(), dp(22f),
@@ -567,14 +668,9 @@ class KeyboardView(
         anim.start()
     }
 
-    private fun dibujar(c: Canvas, t: Tecla) {
+    /** Dibuja una tecla. [presionada] y [f] (animación del toque) vienen de afuera: en la capa fija van en reposo. */
+    private fun dibujar(c: Canvas, t: Tecla, presionada: Boolean, f: Float) {
         if (t.tipo == Tipo.VACIO) return
-        // Redibujo parcial: si la tecla está fuera del área que se está repintando, se salta.
-        // Así, al animar o repintar una sola tecla, no se redibujan las demás con sus shaders.
-        val md = dp(2f)
-        if (c.quickReject(t.rect.left - md, t.rect.top - md, t.rect.right + md, t.rect.bottom + md)) return
-        val presionada = presionadas.containsValue(t) && !modoCursor && !deslizando
-        val f = if (!modoCursor) pulsos[t] ?: 0f else 0f
         val pad = esPad
         // En el teclado numérico, borrar no tiene fondo (como en iPhone)
         val sinFondo = pad && t.tipo == Tipo.BORRAR
@@ -610,9 +706,14 @@ class KeyboardView(
             }
             pintura.color = color
             c.drawPath(forma, pintura)
-            // Reflejo de vidrio (no en mayúsculas activadas ni en el enter de color)
-            if (!modoCursor && Color.alpha(color) < 0xC0) {
+            // Vidrio (no en mayúsculas activadas ni en el enter de color): reflejo arriba y
+            // volumen abajo. La pintura va opaca para que el degradado tenga su propia intensidad.
+            val vidrio = !modoCursor && Color.alpha(color) < 0xC0
+            if (vidrio) {
+                pintura.color = Color.BLACK
                 pintura.shader = t.shaderBrillo
+                c.drawPath(forma, pintura)
+                pintura.shader = t.shaderFondo
                 c.drawPath(forma, pintura)
                 pintura.shader = null
             }
@@ -621,6 +722,16 @@ class KeyboardView(
                 pinturaBorde.shader = t.shaderBorde
                 c.drawPath(forma, pinturaBorde)
                 pinturaBorde.shader = null
+                // Línea de luz en el filo de arriba (en reposo; al presionar la tecla se "hunde")
+                if (vidrio && f <= 0f && !presionada) {
+                    val y = r.top + pinturaBorde.strokeWidth + dp(0.35f)
+                    val k = radio * 1.4f
+                    if (r.right - r.left > k * 2.5f) {
+                        pinturaReflejo.shader = t.shaderReflejo
+                        c.drawLine(r.left + k, y, r.right - k, y, pinturaReflejo)
+                        pinturaReflejo.shader = null
+                    }
+                }
             }
         }
 

@@ -556,7 +556,10 @@ class Diccionario(context: Context) {
         val base = contextoFijo(previa, w, previa2)
         // El cerebro sabe qué escribes tú después de esas palabras (hasta tres antes y en esta app)
         val c = cerebro.prob(previa, previa2, w, app)
-        return if (c < 0.03f) base else maxOf(base, minOf(0.95f, 0.3f + c))
+        val conFrase = if (c < 0.03f) base else maxOf(base, minOf(0.95f, 0.3f + c))
+        // Memoria de la conversación: si la usaste hace un rato (un nombre, un lugar), pesa más
+        val r = cerebro.reciente(w)
+        return if (r <= 0f) conFrase else maxOf(conFrase, r * 0.4f)
     }
 
     private fun contextoFijo(previa: String, w: String, previa2: String): Float {
@@ -677,6 +680,11 @@ class Diccionario(context: Context) {
                 // Solo palabras de verdad (del diccionario o ya tuyas), nunca un error que se coló
                 if (w == lp || bloqueada(w) || (ix != null && !conoce(ix, w))) continue
                 res[w] = (res[w] ?: 0) + (pr * 1600f).toInt()
+            }
+            // Memoria de la conversación: lo que escribiste hace unos minutos vuelve a aparecer
+            for ((w, pr) in cerebro.recientesCon(np, 6)) {
+                if (w == lp || bloqueada(w) || (ix != null && !conoce(ix, w))) continue
+                res[w] = (res[w] ?: 0) + (pr * 700f).toInt()
             }
         }
         return res.entries.sortedByDescending { it.value }
@@ -956,7 +964,8 @@ class Diccionario(context: Context) {
         // 3) Errores de tipeo con la distribución del teclado
         // (una palabra rara escrita una sola vez puede ser un error; cuando la repites ya es tuya)
         if (mejor == null && np.length >= 3) {
-            mejor = masParecida(ix, np, limitePara(np.length), previa, previa2)
+            // El límite se calibra solo según qué tan seguido deshaces la autocorrección
+            mejor = masParecida(ix, np, limitePara(np.length) * cerebro.audacia(), previa, previa2)
         }
         // 4) Palabras pegadas: "estoybien" → "estoy bien", "yonsoy" → "yo soy"
         if (mejor == null && np.length >= 4) {
@@ -1184,6 +1193,18 @@ class Diccionario(context: Context) {
         val f = final.trim().trimEnd { !it.isLetterOrDigit() }
         cerebro.aprenderError(escrito.trim(), f, peso)
         cambios = true
+    }
+
+    /** Se aplicó sola una autocorrección (para que el cerebro se calibre) */
+    @Synchronized
+    fun correccionAplicada() {
+        if (!pausado) cerebro.correccionAplicada()
+    }
+
+    /** Deshiciste una autocorrección (el cerebro se vuelve un poco más prudente) */
+    @Synchronized
+    fun correccionDeshecha() {
+        if (!pausado) cerebro.correccionDeshecha()
     }
 
     /** Deshiciste la corrección de [original] a [corregido]: a la segunda vez ya no se vuelve a hacer */

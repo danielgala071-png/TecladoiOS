@@ -124,6 +124,23 @@ class TecladoService : InputMethodService(),
 
     private var toqueFino: Boolean? = null
     private var ultimaCorreccion: Pair<String, String>? = null
+    /** La misma de arriba cuando fue una autocorrección (para que el cerebro se calibre al deshacerla) */
+    private var ultimaCorreccionAuto: Pair<String, String>? = null
+
+    /**
+     * La última palabra que cerraste y dónde empezaba. Si la borras y escribes otra parecida
+     * en el mismo lugar, el cerebro aprende solo que la primera era un error tuyo ("tqrjeta"
+     * borrada y reescrita como "tarjeta"), sin que tengas que tocar nada.
+     */
+    private class Cerrada(
+        val palabra: String, val previa: String, val previa2: String, val inicio: Int, val hora: Long,
+    ) {
+        /** Lo que quedó escrito (puede ser la autocorrección) */
+        var aprendida: String = palabra
+        /** Ya se deshizo lo aprendido (borraste el espacio enseguida) */
+        var desaprendida = false
+    }
+    private var ultimaCerrada: Cerrada? = null
     private var ultimoEspacio = 0L
     /** Lo último que se aprendió (para deshacerlo si borras enseguida) */
     private data class Aprendida(val previa2: String, val previa: String, val palabra: String, val texto: String)
@@ -266,6 +283,7 @@ class TecladoService : InputMethodService(),
             radio = 0f
             grosor = maxOf(1f, resources.displayMetrics.density * 1.1f)
             colorBorde = t.bordePanel
+            resplandor = t.resplandor
             addView(zona, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
         p.setOnApplyWindowInsetsListener { v, insets ->
@@ -441,6 +459,8 @@ class TecladoService : InputMethodService(),
             }
         }
         ultimaCorreccion = null
+        ultimaCorreccionAuto = null
+        ultimaCerrada = null
         espacioAutomatico = false
         escribiendo = false
         barra?.visible(false, animar = false)
@@ -996,10 +1016,17 @@ class TecladoService : InputMethodService(),
                 // Las otras pendientes que están más adelante se corren
                 val delta = nuevo.length - orig.length
                 for (o in diferidas) if (o.fin > d.fin - orig.length) o.fin += delta
-                if (extra == 0) ultimaCorreccion = Pair(d.palabra, nuevo)
+                if (extra == 0) {
+                    ultimaCorreccion = Pair(d.palabra, nuevo)
+                    ultimaCorreccionAuto = ultimaCorreccion
+                }
                 final = corr
                 val escrito = d.palabra
-                enMotor { diccionario.notarCorreccion(escrito, corr) }
+                ultimaCerrada?.let { if (it.palabra == escrito) it.aprendida = corr }
+                enMotor {
+                    diccionario.notarCorreccion(escrito, corr)
+                    diccionario.correccionAplicada()
+                }
             }
         }
         aprenderCerrada(final, d.previa, d.previa2, d.sufijo, alFinal = extra == 0)
@@ -1063,6 +1090,10 @@ class TecladoService : InputMethodService(),
             return
         }
 
+        // ¿Borraste la palabra anterior y escribiste esta en su lugar? El cerebro aprende solo
+        val inicio = if (selIni >= 0 && selIni == selFin) selIni - palabra.length else -1
+        notarReescritura(palabra, previa, previa2, inicio)
+
         // 2) Autocorrección de la palabra (con la posición exacta de cada toque, como Gboard).
         //    Si el motor ya la calculó se usa al instante; si no (escribes muy rápido), el
         //    espacio se escribe ya y la corrección llega enseguida: el toque nunca espera.
@@ -1073,8 +1104,11 @@ class TecladoService : InputMethodService(),
         var diferir = autocorreccionActiva && !yaCalculada
         if (corr != null) {
             nuevaPalabra = corr
-            // El cerebro anota este error tuyo (si lo deshaces, se resta)
-            enMotor { diccionario.notarCorreccion(palabra, corr) }
+            // El cerebro anota este error tuyo (si lo deshaces, se resta) y se calibra
+            enMotor {
+                diccionario.notarCorreccion(palabra, corr)
+                diccionario.correccionAplicada()
+            }
         }
         else if (enLineaActiva && sufijo == " ") completadaDe(palabra, previa)?.let { nuevaPalabra = it; diferir = false }
 
@@ -1103,6 +1137,7 @@ class TecladoService : InputMethodService(),
             return
         }
 
+        ultimaCerrada?.let { if (it.palabra == palabra) it.aprendida = nuevaPalabra }
         if (sugerenciasActivas || autocorreccionActiva) {
             // Aprender va en segundo plano: no frena la escritura
             val np = nuevaPalabra
@@ -1128,6 +1163,58 @@ class TecladoService : InputMethodService(),
         val nuevo = (if (cambiaPrevia) nuevaPrevia + espacios else "") + nuevaPalabra
         reemplazar(original.length, nuevo + sufijo)
         ultimaCorreccion = Pair(original, nuevo + sufijo)
+        ultimaCorreccionAuto = if (corr != null) ultimaCorreccion else null
+    }
+
+    /**
+     * Autoaprendizaje: si la palabra que acabas de cerrar empieza donde empezaba la anterior,
+     * es que borraste la anterior y la reescribiste. Si se parecen ("tqrjeta" → "tarjeta"),
+     * la primera era un error tuyo: se deja de aprender y la próxima vez se corrige sola.
+     */
+    private fun notarReescritura(palabra: String, previa: String, previa2: String, inicio: Int) {
+        val ahora = SystemClock.uptimeMillis()
+        val u = ultimaCerrada
+        ultimaCerrada = if (inicio >= 0) Cerrada(palabra, previa, previa2, inicio, ahora) else null
+        if (u == null || inicio < 0 || u.inicio != inicio || ahora - u.hora > 25_000L) return
+        if (!sugerenciasActivas && !autocorreccionActiva) return
+        if (!u.previa.equals(previa, ignoreCase = true)) return
+        val a = u.palabra
+        if (a.equals(palabra, ignoreCase = true) || a.length < 3 || palabra.length < 3) return
+        if (!parecidas(Cerebro.sinTildes(a.lowercase()), Cerebro.sinTildes(palabra.lowercase()))) return
+        val quitar = !u.desaprendida
+        val aprendida = u.aprendida
+        enMotor {
+            if (diccionario.pausado) return@enMotor
+            // Lo que se había aprendido de la palabra borrada no cuenta
+            if (quitar) diccionario.desaprender(aprendida, u.previa, u.previa2)
+            // Solo si lo nuevo es una palabra de verdad y lo borrado no (si no, solo cambiaste de idea)
+            if (diccionario.conocida(palabra) && !diccionario.conocida(a)) {
+                diccionario.notarCorreccion(a, palabra, 1.5f)
+            }
+        }
+    }
+
+    /** Se parecen lo suficiente como para ser la misma palabra mal escrita (hasta 2 cambios) */
+    private fun parecidas(a: String, b: String): Boolean {
+        if (Math.abs(a.length - b.length) > 2) return false
+        val fila = IntArray(b.length + 1) { it }
+        for (i in 1..a.length) {
+            var diag = fila[0]
+            fila[0] = i
+            var menor = fila[0]
+            for (j in 1..b.length) {
+                val arriba = fila[j]
+                fila[j] = minOf(
+                    fila[j] + 1,
+                    fila[j - 1] + 1,
+                    diag + if (a[i - 1] == b[j - 1]) 0 else 1,
+                )
+                diag = arriba
+                if (fila[j] < menor) menor = fila[j]
+            }
+            if (menor > 2) return false
+        }
+        return fila[b.length] <= 2
     }
 
     /** Al poner "?", la palabra de pregunta del inicio lleva tilde: "que hora es?" → "qué hora es?" */
@@ -1359,6 +1446,8 @@ class TecladoService : InputMethodService(),
         }
         val uc = ultimaCorreccion
         ultimaCorreccion = null
+        val fueAuto = uc != null && uc === ultimaCorreccionAuto
+        ultimaCorreccionAuto = null
         val ua = ultimaAprendida
         ultimaAprendida = null
         if (uc != null) {
@@ -1366,8 +1455,11 @@ class TecladoService : InputMethodService(),
             if (antes(uc.second.length) == uc.second) {
                 toques.clear()
                 reemplazar(uc.second.length, uc.first)
+                // Volviste a tu palabra: no fue una reescritura
+                ultimaCerrada = null
                 // La corrección no era lo que querías: se olvida y se aprende lo tuyo
                 enMotor {
+                    if (fueAuto) diccionario.correccionDeshecha()
                     if (ua != null) diccionario.desaprender(ua.palabra, ua.previa, ua.previa2)
                     diccionario.rechazarCorreccion(uc.first.trim(), uc.second.trim())
                     uc.first.split(" ").filter { it.isNotBlank() }.forEach {
@@ -1380,6 +1472,7 @@ class TecladoService : InputMethodService(),
         }
         // Borraste el espacio justo después de una palabra: no se cuenta como aprendida
         if (ua != null && antes(ua.texto.length) == ua.texto) {
+            ultimaCerrada?.let { if (it.aprendida.equals(ua.palabra, ignoreCase = true)) it.desaprendida = true }
             enMotor { diccionario.desaprender(ua.palabra, ua.previa, ua.previa2) }
         }
         calculada = null
@@ -1395,7 +1488,11 @@ class TecladoService : InputMethodService(),
         }
         if (!espejoValido) leerEspejo()
         val n = if (espejoValido && selIni >= 0) largoUltimo() else -1
-        sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
+        // Si se sabe exactamente qué hay antes del cursor, se borra directo (una sola llamada a la
+        // app, como Gboard): más rápido que simular la tecla, sobre todo al mantener presionado
+        val clase = (currentInputEditorInfo?.inputType ?: 0) and InputType.TYPE_MASK_CLASS
+        if (n > 0 && clase != InputType.TYPE_NULL) ic.deleteSurroundingText(n, 0)
+        else sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
         when {
             n > 0 -> {
                 espejo.setLength(espejo.length - n)
@@ -1482,6 +1579,7 @@ class TecladoService : InputMethodService(),
         val sinAccion = (info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0
         if (!sinAccion && accion != EditorInfo.IME_ACTION_NONE && accion != EditorInfo.IME_ACTION_UNSPECIFIED) {
             toques.clear()
+            ultimaCerrada = null
             // Enviaste o buscaste: dejaste de escribir, la barra se esconde
             escribiendo = false
             ic.performEditorAction(accion)
@@ -1624,10 +1722,14 @@ class TecladoService : InputMethodService(),
         if (s.revertir) {
             // Volver a lo que escribiste y aprenderlo para no corregirlo otra vez
             val uc = ultimaCorreccion ?: return
+            val fueAuto = uc === ultimaCorreccionAuto
+            ultimaCorreccionAuto = null
+            ultimaCerrada = null
             val sufijo = uc.second.takeLastWhile { !it.isLetterOrDigit() }
             reemplazar(uc.second.length, uc.first + sufijo)
             val ua = ultimaAprendida
             enMotor {
+                if (fueAuto) diccionario.correccionDeshecha()
                 ua?.let { diccionario.desaprender(it.palabra, it.previa, it.previa2) }
                 diccionario.rechazarCorreccion(uc.first.trim(), uc.second.trim())
                 uc.first.split(" ").filter { it.isNotBlank() }.forEach {
@@ -1652,6 +1754,10 @@ class TecladoService : InputMethodService(),
             val (pv, act) = palabrasDe(sin)
             previa = act.ifEmpty { pv }
             previa2 = if (act.isNotEmpty()) pv else previa2De(sin)
+        } else if (s.reemplaza < 0 && !s.texto.contains(' ')) {
+            // Elegiste la palabra justo donde borraste otra: también cuenta como reescritura
+            val ini = if (selIni >= 0 && selIni == selFin) selIni - palabra.length else -1
+            notarReescritura(s.texto, previa, previa2, ini)
         }
         reemplazar(borrarN, s.texto + " ")
         // Elegir una sugerencia a propósito enseña más que escribirla (sobre todo la que está "entre comillas")
