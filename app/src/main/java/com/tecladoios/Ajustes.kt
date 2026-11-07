@@ -65,6 +65,14 @@ object Ajustes {
             guardarAtajos(c, lista)
             p.edit().putBoolean("atajos_v5", true).apply()
         }
+        // Una sola vez: quitar las sustituciones que chocaban con palabras reales
+        // (solo si siguen tal cual venían; si las cambiaste tú, se respetan)
+        if (!p.getBoolean("atajos_v6", false)) {
+            val antes = lista.size
+            lista.removeAll { (atajo, frase) -> RETIRADOS[atajo.lowercase()] == frase }
+            if (lista.size != antes) guardarAtajos(c, lista)
+            p.edit().putBoolean("atajos_v6", true).apply()
+        }
         return lista
     }
 
@@ -74,15 +82,23 @@ object Ajustes {
         prefs(c).edit().putString("atajos", arr.toString()).apply()
     }
 
+    /**
+     * Sustituciones que se quitaron porque cambiaban palabras que sí querías escribir:
+     * "dnd" (también es "dónde"), "aver" (a veces es "haber"), "toy", "sta" e "ig".
+     */
+    private val RETIRADOS = mapOf(
+        "dnd" to "de nada", "aver" to "a ver", "toy" to "estoy", "sta" to "está", "ig" to "Instagram",
+    )
+
     /** Sustituciones comunes del chat peruano */
     val ATAJOS_SUGERIDOS = listOf(
         "pq" to "porque", "xq" to "porque", "tmb" to "también", "tb" to "también",
         "tqm" to "te quiero mucho", "tkm" to "te quiero mucho", "ntp" to "no te preocupes",
-        "dnd" to "de nada", "xfa" to "por favor", "cdt" to "cuídate", "bn" to "bien",
+        "xfa" to "por favor", "cdt" to "cuídate", "bn" to "bien",
         "msj" to "mensaje", "salu2" to "saludos", "nd" to "nada", "dsp" to "después",
         "aki" to "aquí", "vdd" to "verdad", "grax" to "gracias",
         "q" to "que", "k" to "que", "xk" to "por qué", "bno" to "bueno", "tons" to "entonces",
-        "ps" to "pues", "tbn" to "también", "dnd" to "de nada", "kiero" to "quiero", "ke" to "que",
+        "ps" to "pues", "tbn" to "también", "kiero" to "quiero", "ke" to "que",
         // Más abreviaturas comunes del chat
         "pk" to "porque", "porq" to "porque", "pqe" to "porque", "tmbn" to "también", "tambn" to "también",
         "tmpc" to "tampoco", "tpc" to "tampoco", "dsps" to "después", "dps" to "después", "dspues" to "después",
@@ -94,7 +110,7 @@ object Ajustes {
         "hla" to "hola", "grs" to "gracias", "gcs" to "gracias", "grx" to "gracias", "pls" to "por favor",
         "plis" to "por favor", "bss" to "besos", "bdias" to "buenos días",
         "bnas" to "buenas", "bnoches" to "buenas noches", "bn8" to "buenas noches", "btardes" to "buenas tardes",
-        "kien" to "quién", "kmo" to "cómo", "ksa" to "casa", "kasa" to "casa", "aver" to "a ver",
+        "kien" to "quién", "kmo" to "cómo", "ksa" to "casa", "kasa" to "casa",
         "osea" to "o sea", "nomas" to "nomás", "hno" to "hermano", "hna" to "hermana", "nunk" to "nunca",
         "ntc" to "no te creas", "tqi" to "te quiero", "tq" to "te quiero",
         "cdte" to "cuídate",
@@ -107,11 +123,11 @@ object Ajustes {
         "dond" to "dónde", "cnd" to "cuando", "cdo" to "cuando", "kndo" to "cuando", "tdv" to "todavía",
         "tdvia" to "todavía", "xa" to "para", "pra" to "para", "kn" to "con", "cn" to "con", "sn" to "sin",
         "dsd" to "desde", "hta" to "hasta", "hst" to "hasta", "msm" to "mismo", "mjr" to "mejor",
-        "vrdd" to "verdad", "vdad" to "verdad", "toy" to "estoy", "tas" to "estás", "sta" to "está",
+        "vrdd" to "verdad", "vdad" to "verdad", "tas" to "estás",
         "stas" to "estás", "stamos" to "estamos", "ksi" to "casi", "kpo" to "capo", "gnial" to "genial",
         "dle" to "dale", "chvr" to "chévere", "chvre" to "chévere", "bkn" to "bacán", "slds" to "saludos",
         "atte" to "atentamente", "nro" to "número", "wsp" to "WhatsApp", "wasa" to "WhatsApp",
-        "ig" to "Instagram", "fb" to "Facebook", "yt" to "YouTube", "nsc" to "no sé",
+        "fb" to "Facebook", "yt" to "YouTube", "nsc" to "no sé",
         "ntp" to "no te preocupes", "mñ" to "mañana", "hy" to "hoy", "ayr" to "ayer", "ahi" to "ahí",
         "aorita" to "ahorita", "orita" to "ahorita", "fds" to "fin de semana",
         "hbd" to "¡Feliz cumpleaños!", "qepd" to "que en paz descanse", "bnd" to "bendiciones",

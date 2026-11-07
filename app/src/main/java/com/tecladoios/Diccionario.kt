@@ -35,6 +35,12 @@ class Diccionario(context: Context) {
     private val archivo = File(context.applicationContext.filesDir, ARCHIVO)
     private val normales = HashMap<String, String>()
     private val aprendidas = HashMap<String, Int>()
+    /**
+     * Índice ordenado de lo aprendido ("sin tildes\u0000palabra"): para buscar por cómo empieza
+     * sin recorrer todas tus palabras en cada letra. Con meses de uso son miles y así no se
+     * pone lento. Se mantiene al día en cada lugar donde cambia [aprendidas].
+     */
+    private val indiceAprendidas = java.util.TreeSet<String>()
     private val pares = HashMap<String, HashMap<String, Int>>()
     /** Palabras que pediste olvidar: no se sugieren ni se usan para corregir */
     private val bloqueadas = HashSet<String>()
@@ -340,6 +346,23 @@ class Diccionario(context: Context) {
     /** Solo para palabras aprendidas (hilo principal) */
     private fun normalDe(p: String) = normales.getOrPut(p) { normal(p) }
 
+    private fun claveIndice(p: String) = normal(p) + '\u0000' + p
+
+    /** Pone o suma una palabra aprendida y la anota en el índice si es nueva */
+    private fun ponerAprendida(p: String, n: Int) {
+        if (aprendidas.put(p, n) == null) indiceAprendidas.add(claveIndice(p))
+    }
+
+    private fun quitarAprendida(p: String) {
+        if (aprendidas.remove(p) != null) indiceAprendidas.remove(claveIndice(p))
+    }
+
+    /** Claves del índice cuyas palabras (sin tildes) empiezan con [np] */
+    private fun aprendidasDesde(np: String): Collection<String> =
+        if (np.isEmpty()) indiceAprendidas else indiceAprendidas.subSet(np, true, np + '\uFFFF', false)
+
+    private fun palabraDe(clave: String) = clave.substring(clave.indexOf('\u0000') + 1)
+
     private fun bloqueada(p: String) = bloqueadas.isNotEmpty() && p.lowercase() in bloqueadas
 
     /** Más alto = más común (escala logarítmica, como la frecuencia real de las palabras) */
@@ -635,8 +658,10 @@ class Diccionario(context: Context) {
                 if (w != lp && normalDe(w).startsWith(np) && !bloqueada(w)) res[w] = (res[w] ?: 0) + 300 - minOf(i, 8) * 25
             }
         }
-        for ((p, c) in aprendidas) {
-            if (p != lp && normalDe(p).startsWith(np) && !bloqueada(p)) {
+        for (k in aprendidasDesde(np)) {
+            val p = palabraDe(k)
+            val c = aprendidas[p] ?: continue
+            if (p != lp && !bloqueada(p)) {
                 val tuya = propia(p, c)
                 // Sin tilde ("sabado") o de dos letras que aún no es tuya: no se sugiere (la buena sí)
                 if (!tuya && (p.length <= 2 || (ix != null && esVariante(ix, p)))) continue
@@ -667,7 +692,9 @@ class Diccionario(context: Context) {
                     }
                 }
             }
-            for ((p, c) in aprendidas) {
+            for (ch in iniciales(np)) for (k in aprendidasDesde(ch.toString())) {
+                val p = palabraDe(k)
+                val c = aprendidas[p] ?: continue
                 if (res.containsKey(p) || p == lp || bloqueada(p) || !propia(p, c)) continue
                 val n = normalDe(p)
                 val d = minOf(distancia(np, n, np.length, lim), distancia(np, n, n.length, lim))
@@ -724,8 +751,11 @@ class Diccionario(context: Context) {
         }
         if (cortado()) return null
         val lp = prefijo.lowercase()
-        for ((p, c) in aprendidas) {
-            if (c < 2 || p.length <= largo || !p.startsWith(lp)) continue
+        for (k in aprendidasDesde(np)) {
+            val p = palabraDe(k)
+            val c = aprendidas[p] ?: continue
+            // Se compara sin tildes: "cancio" también cuenta para "canción"
+            if (c < 2 || p.length <= largo || normalDe(p).length != p.length) continue
             val ch = p[largo]
             val tecla = if (ch == 'ñ') 26 else (SIN_ACENTO[ch] ?: ch) - 'a'
             if (tecla !in 0..26) continue
@@ -833,7 +863,9 @@ class Diccionario(context: Context) {
             }
         }
         if (maxRango < 0) {
-            for ((c, n) in aprendidas) {
+            for (ch in iniciales(np)) for (k in aprendidasDesde(ch.toString())) {
+                val c = palabraDe(k)
+                val n = aprendidas[c] ?: continue
                 if (bloqueada(c)) continue
                 val nc = normalDe(c)
                 if (Math.abs(nc.length - np.length) > 2 || !propia(c, n)) continue
@@ -952,8 +984,12 @@ class Diccionario(context: Context) {
             val c = ix.palabras[mi]
             if (!bloqueada(c)) { mejor = c; puntaje = frec(mi) }
         }
-        for ((c, n) in aprendidas) {
-            if (propia(c, n) && n * 40 > puntaje && normalDe(c) == np && !bloqueada(c)) { mejor = c; puntaje = n * 40 }
+        for (k in aprendidasDesde(np)) {
+            // Solo las que sin tildes son exactamente lo escrito
+            if (k.length <= np.length || k[np.length] != '\u0000') continue
+            val c = palabraDe(k)
+            val n = aprendidas[c] ?: continue
+            if (propia(c, n) && n * 40 > puntaje && !bloqueada(c)) { mejor = c; puntaje = n * 40 }
         }
 
         // 2) Tocaste la b, la n o la v en vez del espacio: "quebhago" → "que hago".
@@ -1139,7 +1175,7 @@ class Diccionario(context: Context) {
             if (peso < 2) return
             bloqueadas.remove(l)
         }
-        aprendidas[l] = (aprendidas[l] ?: 0) + peso
+        ponerAprendida(l, (aprendidas[l] ?: 0) + peso)
         usadas[l] = hoy()
         cambios = true
         // Por si Android cierra el teclado de golpe: cada tanto se guarda igual
@@ -1173,7 +1209,7 @@ class Diccionario(context: Context) {
     fun desaprender(palabra: String, previa: String, previa2: String = "") {
         val l = palabra.lowercase()
         cerebro.desaprender(previa, palabra, previa2, app)
-        aprendidas[l]?.let { n -> if (n <= 1) { aprendidas.remove(l); usadas.remove(l) } else aprendidas[l] = n - 1 }
+        aprendidas[l]?.let { n -> if (n <= 1) { quitarAprendida(l); usadas.remove(l) } else aprendidas[l] = n - 1 }
         val mapa = pares[previa.lowercase()]
         mapa?.get(l)?.let { n -> if (n <= 1) mapa.remove(l) else mapa[l] = n - 1 }
         if (previa2.isNotEmpty()) {
@@ -1241,7 +1277,7 @@ class Diccionario(context: Context) {
     fun olvidar(p: String) {
         val l = p.lowercase()
         cerebro.olvidar(l)
-        aprendidas.remove(l)
+        quitarAprendida(l)
         usadas.remove(l)
         nombres.remove(l)
         pares.remove(l)
@@ -1356,6 +1392,7 @@ class Diccionario(context: Context) {
     fun recargarSiCambio() {
         if (prefs.getInt("aprendidas_rev", 0) != revision) {
             aprendidas.clear()
+            indiceAprendidas.clear()
             usadas.clear()
             pares.clear()
             trios.clear()
@@ -1377,7 +1414,7 @@ class Diccionario(context: Context) {
         // Limpieza: lo que escribiste una sola vez y no volviste a usar en 45 días era un error
         if (n <= 1 && dias > 45) return
         // Lo que dejaste de usar hace meses pierde fuerza poco a poco
-        aprendidas[p] = if (dias > 120 && n > 2) maxOf(2, n / 2) else n
+        ponerAprendida(p, if (dias > 120 && n > 2) maxOf(2, n / 2) else n)
         usadas[p] = usada
     }
 

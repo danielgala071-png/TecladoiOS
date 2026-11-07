@@ -5,6 +5,8 @@
 
     <application
         android:name=".App"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
         android:label="TecladoiOS"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"

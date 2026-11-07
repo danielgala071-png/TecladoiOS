@@ -19,6 +19,7 @@ import android.view.MotionEvent
 import android.view.RoundedCorner
 import android.view.View
 import android.view.WindowInsets
+import android.view.accessibility.AccessibilityManager
 import android.view.animation.DecelerateInterpolator
 
 enum class Tipo { LETRA, SHIFT, BORRAR, A_NUMEROS, A_SIMBOLOS, A_LETRAS, EMOJI, ESPACIO, ENTER, MIC, UNA_MANO, VACIO }
@@ -925,6 +926,68 @@ class KeyboardView(
         burbujas.quitar(id)
         if (puntos.size >= 2) acciones.deslizar(puntos, altoFila / unidad, mayus)
         if (shift == 1 && modo == Modo.LETRAS) shift = 0
+        invalidate()
+    }
+
+    // ---------- Accesibilidad (TalkBack) ----------
+
+    private val accesibilidad = context.getSystemService(AccessibilityManager::class.java)
+    private var teclaExplorada: Tecla? = null
+
+    /** Cómo lee TalkBack cada tecla */
+    private fun nombreAccesible(t: Tecla): String = when (t.tipo) {
+        Tipo.LETRA -> etiqueta(t)
+        Tipo.SHIFT -> when (shift) { 2 -> "bloqueo de mayúsculas"; 1 -> "mayúsculas activadas"; else -> "mayúsculas" }
+        Tipo.BORRAR -> "borrar"
+        Tipo.ESPACIO -> "espacio"
+        Tipo.ENTER -> etiquetaEnter
+        Tipo.A_NUMEROS -> "números"
+        Tipo.A_SIMBOLOS -> "más símbolos"
+        Tipo.A_LETRAS -> "letras"
+        Tipo.EMOJI -> "emojis"
+        Tipo.UNA_MANO -> "teclado completo"
+        Tipo.MIC, Tipo.VACIO -> ""
+    }
+
+    /**
+     * Con TalkBack: deslizas el dedo y te dice cada tecla; al levantarlo sobre una tecla, se
+     * escribe ("levantar para escribir", como Gboard). Sin TalkBack no hace nada.
+     */
+    override fun onHoverEvent(e: MotionEvent): Boolean {
+        if (accesibilidad?.isTouchExplorationEnabled != true) return super.onHoverEvent(e)
+        val x = e.x
+        val y = e.y
+        when (e.actionMasked) {
+            MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE -> {
+                val t = teclaEn(x, y)
+                if (t !== teclaExplorada) {
+                    teclaExplorada = t
+                    if (t != null) {
+                        val nombre = nombreAccesible(t)
+                        if (nombre.isNotEmpty()) announceForAccessibility(nombre)
+                    }
+                }
+            }
+            MotionEvent.ACTION_HOVER_EXIT -> {
+                val t = teclaExplorada
+                teclaExplorada = null
+                if (t != null && x >= 0f && y >= 0f && x <= width && y <= height && teclaEn(x, y) === t) activarAccesible(t)
+            }
+        }
+        return true
+    }
+
+    /** Escribe o usa la tecla elegida con TalkBack (lo mismo que tocarla y soltarla) */
+    private fun activarAccesible(t: Tecla) {
+        when (t.tipo) {
+            Tipo.VACIO, Tipo.MIC -> return
+            Tipo.BORRAR -> { acciones.retro(Tipo.BORRAR); acciones.borrar() }
+            Tipo.SHIFT -> {
+                presionar(t, -1, t.rect.centerX(), t.rect.centerY())
+                animarPulso(t, 0f)
+            }
+            else -> { acciones.retro(t.tipo); soltar(t, -1) }
+        }
         invalidate()
     }
 

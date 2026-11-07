@@ -245,8 +245,21 @@ class TecladoService : InputMethodService(),
      */
     override fun onShowInputRequested(flags: Int, configChange: Boolean): Boolean {
         if (!configChange && (flags and InputMethod.SHOW_EXPLICIT) == 0 &&
-            (flags and InputMethod.SHOW_FORCED) == 0) return false
+            (flags and InputMethod.SHOW_FORCED) == 0 && !esBuscador(currentInputEditorInfo)) return false
         return super.onShowInputRequested(flags, configChange)
+    }
+
+    /**
+     * Buscadores (Google, Chrome, Play Store, contactos...): ahí sí se abre solo, porque
+     * entraste justamente para escribir. En los chats sigue esperando a que toques.
+     */
+    private fun esBuscador(info: EditorInfo?): Boolean {
+        if (info == null) return false
+        val accion = info.imeOptions and EditorInfo.IME_MASK_ACTION
+        val variacion = info.inputType and InputType.TYPE_MASK_VARIATION
+        val clase = info.inputType and InputType.TYPE_MASK_CLASS
+        return accion == EditorInfo.IME_ACTION_SEARCH ||
+            (clase == InputType.TYPE_CLASS_TEXT && variacion == InputType.TYPE_TEXT_VARIATION_FILTER)
     }
 
     private fun dp(v: Float) = (v * Medidas.escala(this)).toInt()
@@ -1180,7 +1193,7 @@ class TecladoService : InputMethodService(),
         if (!u.previa.equals(previa, ignoreCase = true)) return
         val a = u.palabra
         if (a.equals(palabra, ignoreCase = true) || a.length < 3 || palabra.length < 3) return
-        if (!parecidas(Cerebro.sinTildes(a.lowercase()), Cerebro.sinTildes(palabra.lowercase()))) return
+        if (!Cerebro.parecidas(Cerebro.sinTildes(a.lowercase()), Cerebro.sinTildes(palabra.lowercase()))) return
         val quitar = !u.desaprendida
         val aprendida = u.aprendida
         enMotor {
@@ -1194,28 +1207,6 @@ class TecladoService : InputMethodService(),
         }
     }
 
-    /** Se parecen lo suficiente como para ser la misma palabra mal escrita (hasta 2 cambios) */
-    private fun parecidas(a: String, b: String): Boolean {
-        if (Math.abs(a.length - b.length) > 2) return false
-        val fila = IntArray(b.length + 1) { it }
-        for (i in 1..a.length) {
-            var diag = fila[0]
-            fila[0] = i
-            var menor = fila[0]
-            for (j in 1..b.length) {
-                val arriba = fila[j]
-                fila[j] = minOf(
-                    fila[j] + 1,
-                    fila[j - 1] + 1,
-                    diag + if (a[i - 1] == b[j - 1]) 0 else 1,
-                )
-                diag = arriba
-                if (fila[j] < menor) menor = fila[j]
-            }
-            if (menor > 2) return false
-        }
-        return fila[b.length] <= 2
-    }
 
     /** Al poner "?", la palabra de pregunta del inicio lleva tilde: "que hora es?" → "qué hora es?" */
     private fun acentuarPregunta() {

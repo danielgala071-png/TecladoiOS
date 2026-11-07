@@ -20,12 +20,16 @@ android {
     // Firma fija: antes cada compilación de GitHub usaba una llave nueva y Android no dejaba
     // instalar la versión nueva encima (había que desinstalar y se perdía lo aprendido).
     // Con esta llave siempre igual, cada APK nuevo se instala como actualización.
+    // La llave ya no vive en el repositorio: GitHub la pone en firma.jks al compilar, desde
+    // el secreto FIRMA_BASE64 (y la clave desde FIRMA_CLAVE). Es la misma llave de siempre,
+    // así que cada APK se sigue instalando encima sin perder lo aprendido.
     signingConfigs {
         create("fija") {
+            val clave = System.getenv("FIRMA_CLAVE").takeUnless { it.isNullOrBlank() } ?: "tecladoios"
             storeFile = file("firma.jks")
-            storePassword = "tecladoios"
+            storePassword = clave
             keyAlias = "tecladoios"
-            keyPassword = "tecladoios"
+            keyPassword = clave
         }
     }
 
@@ -53,4 +57,13 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    testOptions {
+        // Las pruebas corren en la computadora de GitHub (sin Android): lo de Android devuelve vacío
+        unitTests.isReturnDefaultValues = true
+    }
+}
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
 }

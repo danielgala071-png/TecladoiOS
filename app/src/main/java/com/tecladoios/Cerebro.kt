@@ -621,6 +621,29 @@ class Cerebro(private val archivo: File) {
                 "Autocorrección: $calibrada"
         }
 
+        /** Se parecen lo suficiente como para ser la misma palabra mal escrita (hasta 2 cambios) */
+        fun parecidas(a: String, b: String): Boolean {
+            if (Math.abs(a.length - b.length) > 2) return false
+            val fila = IntArray(b.length + 1) { it }
+            for (i in 1..a.length) {
+                var diag = fila[0]
+                fila[0] = i
+                var menor = fila[0]
+                for (j in 1..b.length) {
+                    val arriba = fila[j]
+                    fila[j] = minOf(
+                        fila[j] + 1,
+                        fila[j - 1] + 1,
+                        diag + if (a[i - 1] == b[j - 1]) 0 else 1,
+                    )
+                    diag = arriba
+                    if (fila[j] < menor) menor = fila[j]
+                }
+                if (menor > 2) return false
+            }
+            return fila[b.length] <= 2
+        }
+
         fun sinTildes(s: String): String =
             java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
                 .replace(MARCAS, "")
