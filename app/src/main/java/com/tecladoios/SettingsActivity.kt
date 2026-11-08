@@ -468,6 +468,7 @@ class SettingsActivity : Activity() {
         grupo("Todos los teclados", listOf(
             filaInterruptor("Mayúsculas automáticas", "mayusculas", true),
             filaInterruptor("Autocorrección", "autocorregir", true),
+            filaInterruptor("Separar palabras pegadas al escribir", "separar_vivo", true),
             filaInterruptor("Revisar ortografía", "ortografia", true),
             filaInterruptor("Activar Bloq Mayús", "bloq_mayus", true),
             filaInterruptor("Atajos", "atajos_activos", true),
@@ -484,7 +485,10 @@ class SettingsActivity : Activity() {
             filaInterruptor("Ícono de la app en la barra espaciadora", "icono_espacio", true),
         ), pie = "Pulsar dos veces la barra espaciadora insertará un punto seguido de un espacio. " +
                 "Con “Signos de apertura”, al terminar con ? o ! se pone ¿ o ¡ donde empieza la " +
-                "pregunta (también después de una coma: “Hola, ¿cómo estás?”).")
+                "pregunta (también después de una coma: “Hola, ¿cómo estás?”). “Separar palabras " +
+                "pegadas”: si se te pasa el espacio o cae una letra en su lugar (“Yanpodemos”), el " +
+                "teclado lo separa solo mientras escribes (“Ya podemos”). Si no era eso, borra una " +
+                "vez y vuelve como lo escribiste; el teclado aprende y no lo vuelve a separar.")
 
         grupo("Portapapeles", listOf(
             filaInterruptor("Mostrar lo copiado", "portapapeles", true),

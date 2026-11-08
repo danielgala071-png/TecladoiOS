@@ -281,8 +281,8 @@ class SuggestionBar(
         }
         if (!alguna) return
         animCambio?.cancel()
-        animCambio = ValueAnimator.ofFloat(0.35f, 1f).apply {
-            duration = 110
+        animCambio = ValueAnimator.ofFloat(0.25f, 1f).apply {
+            duration = 150
             interpolator = FRENO_BARRA
             addUpdateListener {
                 cambio = it.animatedValue as Float
@@ -487,8 +487,18 @@ class SuggestionBar(
             val s = items[i] ?: continue
             val x0 = ancho * i
             // Las casillas que acaban de cambiar aparecen con un fundido cortito (como en iPhone)
-            val capa = if (cambio < 1f && cambiadas[i])
+            val animando = cambio < 1f && cambiadas[i]
+            val capa = if (animando)
                 c.saveLayerAlpha(x0, 0f, x0 + ancho, height.toFloat(), (cambio * 255).toInt()) else -1
+            if (animando) {
+                // La palabra nueva sube apenas mientras aparece (como en iPhone); la corrección
+                // resaltada además brota desde un poquito más chica
+                c.translate(0f, (1f - cambio) * 5f * d)
+                if (s.destacada) {
+                    val k = 0.9f + 0.1f * cambio
+                    c.scale(k, k, x0 + ancho / 2f, height / 2f)
+                }
+            }
             dibujarCasilla(c, i, s, x0, ancho)
             if (capa >= 0) c.restoreToCount(capa)
         }

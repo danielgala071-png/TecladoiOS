@@ -364,6 +364,8 @@ class KeyboardView(
     /** Borrar mantenido: primero letra por letra, luego palabra por palabra (como iPhone) */
     private val repetirBorrar = object : Runnable {
         override fun run() {
+            // Seguro: si el dedo ya no está en borrar (se perdió el aviso de soltar), se para
+            if (presionadas.values.none { it.tipo == Tipo.BORRAR }) return
             repeticiones++
             if (repeticiones > 14 && !esPad) {
                 acciones.borrarPalabra()
@@ -1113,6 +1115,84 @@ class KeyboardView(
         invalidate()
     }
 
+    /**
+     * Teclas "pegadas": a veces Android no avisa que un dedo se levantó (escribiendo muy
+     * rápido con dos pulgares, o si otra ventana se lleva el toque). Esa tecla quedaba marcada,
+     * el borrar seguía borrando o la letra no salía. Aquí se revisa en cada toque qué dedos
+     * siguen de verdad en la pantalla y los que ya no están se sueltan como si se hubieran
+     * levantado (su letra se escribe, nada queda colgado).
+     */
+    private fun limpiarColgadas(e: MotionEvent) {
+        if (presionadas.isEmpty()) return
+        // En el toque nuevo, si el dedo que recién bajó ya figuraba presionado, es que el
+        // aviso de soltar de antes se perdió (Android reusa el mismo número de dedo)
+        val nuevo = when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> e.getPointerId(e.actionIndex)
+            else -> -1
+        }
+        var colgadas: ArrayList<Int>? = null
+        for (id in presionadas.keys) {
+            if (id == nuevo || e.findPointerIndex(id) < 0) {
+                if (colgadas == null) colgadas = ArrayList(2)
+                colgadas.add(id)
+            }
+        }
+        if (colgadas == null) return
+        for (id in colgadas) soltarColgada(id)
+        apagarSueltas()
+        invalidate()
+    }
+
+    private fun soltarColgada(id: Int) {
+        val t = presionadas.remove(id)
+        val yaEscrita = escritas.remove(id)
+        burbujas.soltar(id)
+        if (t != null && pulsos.containsKey(t) && presionadas.values.none { it === t }) animarPulso(t, 0f)
+        when (id) {
+            punteroVariantes -> {
+                variantes.cerrar()
+                punteroVariantes = -1
+                punteroLargo = -1
+                teclaLarga = null
+            }
+            punteroEspacio -> {
+                manejador.removeCallbacks(activarCursor)
+                punteroEspacio = -1
+                modoCursor = false
+                espacioAcepto = false
+            }
+            punteroCambio -> {
+                punteroCambio = -1
+                cambioDeslizado = false
+            }
+            punteroTrazo -> {
+                punteroTrazo = -1
+                deslizando = false
+                trazo.clear()
+            }
+            else -> {
+                if (id == punteroLargo) {
+                    manejador.removeCallbacks(abrirVariantes)
+                    punteroLargo = -1
+                    teclaLarga = null
+                }
+                when {
+                    t == null -> {}
+                    t.tipo == Tipo.BORRAR -> manejador.removeCallbacks(repetirBorrar)
+                    t.tipo == Tipo.EMOJI -> { manejador.removeCallbacks(abrirAjustesTarea); punteroEmoji = -1 }
+                    t.tipo == Tipo.LETRA && !yaEscrita -> soltar(t, id)
+                }
+            }
+        }
+        puntosToque.remove(id)
+    }
+
+    /** Si el teclado se esconde con un dedo apoyado, nada queda presionado al volver */
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        super.onVisibilityChanged(changedView, visibility)
+        if (visibility != VISIBLE && presionadas.isNotEmpty()) reiniciar()
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
@@ -1121,7 +1201,11 @@ class KeyboardView(
                 // al escribir rápido, así se siente menos "pegajoso".
                 requestUnbufferedDispatch(e)
                 // Primer dedo: si quedó algo colgado de antes (un toque perdido), se limpia
-                if (e.actionMasked == MotionEvent.ACTION_DOWN && presionadas.isNotEmpty()) reiniciar()
+                if (e.actionMasked == MotionEvent.ACTION_DOWN && presionadas.isNotEmpty()) {
+                    // Las letras de esos dedos sí se tocaron: se escriben antes de limpiar
+                    limpiarColgadas(e)
+                    reiniciar()
+                } else if (presionadas.isNotEmpty()) limpiarColgadas(e)
                 val i = e.actionIndex
                 val id = e.getPointerId(i)
                 val x = e.getX(i)
@@ -1200,6 +1284,7 @@ class KeyboardView(
                 presionar(t, id, x, y)
             }
             MotionEvent.ACTION_MOVE -> {
+                limpiarColgadas(e)
                 for (i in 0 until e.pointerCount) {
                     val id = e.getPointerId(i)
                     val x = e.getX(i)

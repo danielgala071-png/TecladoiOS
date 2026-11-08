@@ -133,6 +133,39 @@ class CerebroTest {
     }
 
     @Test
+    fun `aprende las teclas que confundes`() {
+        val archivo = archivoNuevo()
+        val c = nuevo(archivo)
+        assertNull("sin nada aprendido no cambia la autocorrección", c.factoresConfusion())
+        repeat(3) { c.aprenderError("tenfo", "tengo", 1f) }
+        val f = c.factoresConfusion()
+        assertNotNull(f)
+        val fg = Cerebro.letra('f') * Cerebro.LETRAS + Cerebro.letra('g')
+        val ab = Cerebro.letra('a') * Cerebro.LETRAS + Cerebro.letra('b')
+        assertTrue("la f por la g ya cuesta menos", f!![fg] < 1f)
+        assertEquals("lo demás sigue igual", 1f, f[ab], 0.0001f)
+        // Se guarda y se vuelve a leer
+        c.escribir(c.instantanea())
+        val leido = nuevo(archivo).factoresConfusion()
+        assertNotNull(leido)
+        assertEquals(f[fg], leido!![fg], 0.01f)
+        // Deshacer la corrección lo resta
+        repeat(2) { c.rechazarError("tenfo", "tengo") }
+        assertNull(c.factoresConfusion())
+    }
+
+    @Test
+    fun `aprende con que palabra empiezas los mensajes`() {
+        val c = nuevo()
+        repeat(3) { c.aprender("", "buenas", "", "") }
+        assertEquals("buenas", c.candidatos("", "", "", "", 3).first().first)
+        assertEquals(0, Cerebro.letra('a'))
+        assertEquals(26, Cerebro.letra('ñ'))
+        assertEquals(4, Cerebro.letra('é'))
+        assertEquals(-1, Cerebro.letra('3'))
+    }
+
+    @Test
     fun `sin tildes`() {
         assertEquals("cancion", Cerebro.sinTildes("canción"))
         assertEquals("ano", Cerebro.sinTildes("año"))

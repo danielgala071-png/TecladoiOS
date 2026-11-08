@@ -182,6 +182,18 @@ class TecladoService : InputMethodService(),
         var desaprendida = false
     }
     private var ultimaCerrada: Cerrada? = null
+
+    /**
+     * La última separación hecha mientras escribías ("yanpode" → "ya pode"). Si borras justo
+     * después, vuelve a como lo escribiste y el teclado aprende que ahí no iba espacio.
+     */
+    private class Separacion(
+        val original: String, val nuevo: String, val primera: String,
+        val previa: String, val previa2: String, val hora: Long,
+    )
+    private var ultimaSeparacion: Separacion? = null
+    /** Separar palabras pegadas mientras escribes (sin esperar el espacio) */
+    private var separarActivo = true
     private var ultimoEspacio = 0L
     /** Lo último que se aprendió (para deshacerlo si borras enseguida) */
     private data class Aprendida(val previa2: String, val previa: String, val palabra: String, val texto: String)
@@ -244,12 +256,16 @@ class TecladoService : InputMethodService(),
     private class Opciones(
         val revisar: Boolean, val aplicar: Boolean, val linea: Boolean,
         val enLetras: Boolean, val emojisBarra: Boolean,
+        /** Se puede separar la palabra a medias si quedó pegada ("yanpode" → "ya pode") */
+        val separar: Boolean = false,
     )
 
     /** Lo que calculó el motor para una palabra a medio escribir */
     private class Resultado(
         val p: String, val previa: String, val previa2: String, val probs: FloatArray?,
         val corr: String?, val otras: List<String>, val completa: String?,
+        /** La palabra a medias quedó pegada a la anterior: así se separa ("ya pode") */
+        val separada: String? = null,
     )
 
     /**
@@ -552,6 +568,8 @@ class TecladoService : InputMethodService(),
         autocorreccionActiva = Ajustes.autocorregir(this) && escribeTexto && !sinSugerencias
         revisarActiva = (Ajustes.revisarOrtografia(this) || autocorreccionActiva) && escribeTexto && !sinSugerencias
         enLineaActiva = Ajustes.enLinea(this) && sugerenciasActivas
+        separarActivo = Ajustes.separarVivo(this) && autocorreccionActiva
+        ultimaSeparacion = null
         puntuacionActiva = Ajustes.puntuacionInteligente(this) && escribeTexto
         borrarDeslizadoActivo = Ajustes.borrarDeslizado(this)
         mayusPermitida = Ajustes.mayusculas(this) && escribeTexto
@@ -1134,7 +1152,7 @@ class TecladoService : InputMethodService(),
         b.mostrarEscrito(Sugerencia(p, literal = true))
         val previa2 = previa2De(antes)
         val toq = toquesPara(p)
-        val op = opcionesActuales()
+        val op = opcionesActuales(puedeSeparar(antes, p))
         motor.post {
             val r = try {
                 calcularPalabra(p, previa, previa2, t, toq, op) { probs ->
@@ -1146,10 +1164,24 @@ class TecladoService : InputMethodService(),
         }
     }
 
-    private fun opcionesActuales() = Opciones(
+    private fun opcionesActuales(separar: Boolean = false) = Opciones(
         revisar = revisarActiva, aplicar = autocorreccionActiva, linea = enLineaActiva,
         enLetras = teclado?.modo == Modo.LETRAS, emojisBarra = emojisBarraActivo,
+        separar = separar,
     )
+
+    /**
+     * ¿Se puede separar la palabra a medias [p] si quedó pegada? Solo en palabras sueltas
+     * (no dentro de un enlace, un correo, un @usuario o un #tema) y no en nombres escritos
+     * con mayúscula a mitad de oración ("Yanina", "Benjamín").
+     */
+    private fun puedeSeparar(antes: String, p: String): Boolean {
+        if (!separarActivo || buscandoEmoji || p.length < 5 || teclado?.modo != Modo.LETRAS) return false
+        val token = tokenDe(antes)
+        if (token != p && !(token.length == p.length + 1 && token[0] in "¿¡(\"“‘'")) return false
+        if (p[0].isUpperCase() && !inicioDeOracion(antes.substring(0, antes.length - p.length))) return false
+        return true
+    }
 
     private fun claveDe(previa2: String, previa: String, p: String) = "$previa2\u0001$previa\u0001$p"
 
@@ -1159,6 +1191,13 @@ class TecladoService : InputMethodService(),
         alProbs: ((FloatArray) -> Unit)? = null,
     ): Resultado? {
         if (!diccionario.vigente(t)) return null
+        // Palabras pegadas mientras escribes: si hay que separar, es lo único que importa ahora
+        // (después de separar se calcula de nuevo para lo que sigue)
+        if (op.separar) {
+            val sep = try { diccionario.separarEnVivo(p, previa, previa2, t, toq) } catch (_: Throwable) { null }
+            if (!diccionario.vigente(t)) return null
+            if (sep != null) return Resultado(p, previa, previa2, null, null, emptyList(), null, sep)
+        }
         val probs = if (op.enLetras) {
             try { diccionario.letrasProbables(p, t) } catch (_: Throwable) { null }
         } else null
@@ -1182,6 +1221,10 @@ class TecladoService : InputMethodService(),
     /** En el hilo principal: pone en la barra lo calculado y deja lista la corrección del espacio */
     private fun mostrarResultado(r: Resultado, op: Opciones) {
         val b = barra ?: return
+        if (r.separada != null) {
+            aplicarSeparacion(r)
+            return
+        }
         if (op.enLetras && r.probs != null) teclado?.probLetras = r.probs
         val p = r.p
         val c = r.corr
@@ -1210,6 +1253,37 @@ class TecladoService : InputMethodService(),
         b.mostrar(listOf(Sugerencia(p, literal = true), centro, derechaFinal))
     }
 
+    /**
+     * Separa la palabra a medias que quedó pegada a la anterior ("yanpode" → "ya pode"),
+     * solo si en pantalla sigue exactamente igual. La primera palabra queda cerrada (se aprende)
+     * y sigues escribiendo la segunda sin notar nada.
+     */
+    private fun aplicarSeparacion(r: Resultado) {
+        val nuevo = r.separada ?: return
+        if (!separarActivo || currentInputConnection == null || editando || seleccionando) return
+        val a = antes(120)
+        if (!a.endsWith(r.p)) return
+        val (previa, p) = palabrasDe(a)
+        if (p != r.p || previa != r.previa) return
+        val sp = nuevo.indexOf(' ')
+        if (sp <= 0 || sp >= nuevo.length - 1) return
+        val primera = nuevo.substring(0, sp)
+        val resto = nuevo.substring(sp + 1)
+        val prev2 = previa2De(a)
+        // Los toques de lo que sigues escribiendo se conservan (corrección por posición)
+        val guardados = if (resto.length <= toques.size) ArrayList(toques.subList(toques.size - resto.length, toques.size))
+            else ArrayList()
+        reemplazar(p.length, nuevo)
+        toques.clear()
+        toques.addAll(guardados)
+        anticipo = null
+        ultimaCorreccion = null
+        ultimaCorreccionAuto = null
+        ultimaCerrada = null
+        ultimaSeparacion = Separacion(p, nuevo, primera, previa, prev2, SystemClock.uptimeMillis())
+        aprenderCerrada(primera, previa, prev2, " ", alFinal = false)
+    }
+
     /** El dedo tocó una letra: se calcula ya, como si estuviera escrita */
     override fun anticipar(s: String, x: Float, y: Float) {
         if (buscandoEmoji || !sugerenciasActivas || editando || seleccionando || campoClave) return
@@ -1228,7 +1302,7 @@ class TecladoService : InputMethodService(),
         val toq = toquesPara(p, lista)
         diccionario.interrumpir()
         val t = diccionario.turno()
-        val op = opcionesActuales()
+        val op = opcionesActuales(puedeSeparar(texto, p))
         val a = Anticipo(clave, t, ++marca, SystemClock.uptimeMillis(), op)
         anticipo = a
         motor.post {
@@ -1329,6 +1403,7 @@ class TecladoService : InputMethodService(),
         espacioAutomatico = false
         ultimaAprendida = null
         ultimoDeslizado = null
+        ultimaSeparacion = null
         val misToques = ArrayList(toques)
         toques.clear()
 
@@ -1606,6 +1681,7 @@ class TecladoService : InputMethodService(),
             return
         }
         marcaTexto = ++marca
+        ultimaSeparacion = null
         salirDeEdicion()
         teclado?.probLetras = null
         escribiendo = true
@@ -1695,6 +1771,22 @@ class TecladoService : InputMethodService(),
         ultimaEscritura = SystemClock.uptimeMillis()
         val ic = currentInputConnection ?: return
         espacioAutomatico = false
+        // Borrar justo después de una separación automática: vuelve a como lo escribiste
+        // y el teclado aprende que ahí no iba espacio (no lo vuelve a separar)
+        val us = ultimaSeparacion
+        ultimaSeparacion = null
+        if (us != null && SystemClock.uptimeMillis() - us.hora < 5000 && antes(us.nuevo.length) == us.nuevo) {
+            toques.clear()
+            ultimaCorreccion = null
+            ultimaAprendida = null
+            ultimoDeslizado = null
+            reemplazar(us.nuevo.length, us.original)
+            enMotor {
+                diccionario.desaprender(us.primera, us.previa, us.previa2)
+                diccionario.rechazarSeparacion(us.original)
+            }
+            return
+        }
         // Borrar con Deslizar para escribir por palabra: se va la palabra entera
         val ud = ultimoDeslizado
         ultimoDeslizado = null
@@ -1788,6 +1880,7 @@ class TecladoService : InputMethodService(),
     }
 
     override fun moverCursor(pasos: Int) {
+        ultimaSeparacion = null
         espacioAutomatico = false
         ultimaAprendida = null
         ultimaCorreccion = null
@@ -1849,7 +1942,14 @@ class TecladoService : InputMethodService(),
         ultimoDeslizado = null
         val accion = info.imeOptions and EditorInfo.IME_MASK_ACTION
         val sinAccion = (info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0
+        ultimaSeparacion = null
         if (!sinAccion && accion != EditorInfo.IME_ACTION_NONE && accion != EditorInfo.IME_ACTION_UNSPECIFIED) {
+            // La última palabra también se corrige antes de enviar o buscar (como al dar espacio),
+            // solo si la corrección ya está calculada (enviar nunca espera)
+            val c = calculada
+            if (autocorreccionActiva && c != null && c.correccion != null && palabrasDe(antes(80)).second == c.palabra) {
+                try { cerrarPalabra("") } catch (e: Throwable) { Registro.anotar("corregir al enviar", e) }
+            }
             toques.clear()
             ultimaCerrada = null
             // Enviaste o buscaste: dejaste de escribir. La barra se queda un momento (con tus

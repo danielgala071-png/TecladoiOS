@@ -19,6 +19,8 @@ object Ajustes {
     fun atajosActivos(c: Context) = si(c, "atajos_activos", true)
     fun sugerencias(c: Context) = si(c, "sugerencias", true)
     fun enLinea(c: Context) = si(c, "en_linea", false)
+    /** Separa palabras pegadas mientras escribes, sin esperar el espacio ("yanpodemos" → "ya podemos") */
+    fun separarVivo(c: Context) = si(c, "separar_vivo", true)
     fun puntuacionInteligente(c: Context) = si(c, "puntuacion", true)
     fun deslizar(c: Context) = si(c, "deslizar", true)
     fun borrarDeslizado(c: Context) = si(c, "borrar_deslizado", true)

@@ -72,6 +72,12 @@ class Diccionario(context: Context) {
 
     /** El cerebro: tu modelo de lenguaje personal (frases, apps, errores de siempre) */
     private val cerebro = Cerebro(File(context.applicationContext.filesDir, Cerebro.ARCHIVO))
+    /**
+     * Tus teclas confundidas (las aprende el cerebro): la autocorrección cobra menos por los
+     * dedazos que tú sueles hacer. Es una copia para leerla rápido en cada comparación.
+     */
+    @Volatile private var confusion: FloatArray? = null
+
     /** La app donde estás escribiendo (el cerebro aprende cómo escribes en cada una) */
     @Volatile var app = ""
     /** Las últimas predicciones que se mostraron (para saber cuáles ignoras) */
@@ -146,6 +152,7 @@ class Diccionario(context: Context) {
         val app = context.applicationContext
         Thread({
             try { cerebro.cargar() } catch (e: Throwable) { Registro.anotar("cargar el cerebro", e) }
+            try { confusion = cerebro.factoresConfusion() } catch (_: Throwable) { }
             try { indice = construir(app) } catch (e: Throwable) { Registro.anotar("armar el diccionario", e) }
         }, "diccionario").apply {
             priority = Thread.NORM_PRIORITY - 1
@@ -564,6 +571,7 @@ class Diccionario(context: Context) {
         antes[0] = 0f
         for (j in 1..m) antes[j] = antes[j - 1] + if (b[j - 1] == 'h') 0.3f else 1f
         val tq = toq?.takeIf { it.size == n }
+        val cf = confusion
         for (i in 1..n) {
             actual[0] = i.toFloat()
             var minimo = actual[0]
@@ -575,9 +583,16 @@ class Diccionario(context: Context) {
                 (i >= 2 && costoCambio(a[i - 2], ca) <= 0.4f) || (i < n && costoCambio(a[i], ca) <= 0.4f) -> 0.65f
                 else -> 1f
             }
+            val ia = if (cf != null) Cerebro.letra(ca) else -1
             for (j in 1..m) {
                 val cb = b[j - 1]
-                var v = antes[j - 1] + (if (tq != null) costoToque(tq[i - 1], ca, cb) else costoCambio(ca, cb))
+                var cambio = if (tq != null) costoToque(tq[i - 1], ca, cb) else costoCambio(ca, cb)
+                // Un dedazo tuyo de siempre (lo aprendió el cerebro) cuesta menos
+                if (ia >= 0 && cambio > 0f) {
+                    val ib = Cerebro.letra(cb)
+                    if (ib >= 0) cambio *= cf!![ia * Cerebro.LETRAS + ib]
+                }
+                var v = antes[j - 1] + cambio
                 v = minOf(v, antes[j] + extra)
                 // Letra que faltó (letra doble o "h" muda cuestan menos: "aroz" → "arroz", "ola" → "hola")
                 v = minOf(v, actual[j - 1] + if (cb == 'h') 0.3f else if (j >= 2 && b[j - 2] == cb) 0.5f else 1f)
@@ -1042,6 +1057,282 @@ class Diccionario(context: Context) {
         return if (mejorPuntaje >= 520) mejor else null
     }
 
+    // ---------- Separar mientras escribes ----------
+
+    /**
+     * Separa palabras pegadas MIENTRAS escribes, sin esperar el espacio:
+     * "yanpode" → "ya pode" (la n cayó en vez del espacio), "quebhag" → "que hag",
+     * "yapodem" → "ya podem" (no tocaste el espacio). Sigues escribiendo y queda "ya podemos".
+     *
+     * Es prudente a propósito (separar mal una palabra molesta mucho más que no separar):
+     *  - Mientras lo escrito todavía pueda ser el comienzo de una palabra (del diccionario,
+     *    tuya, de un contacto, en inglés o una marca), no se toca nada.
+     *  - Si parece una palabra a medias con un error de tipeo ("tenfo" → tengo), tampoco:
+     *    eso lo arregla la autocorrección al dar espacio.
+     *  - Palabra + terminación ("normalazo", "infórmenos", "dímelo") nunca se corta.
+     *  - La primera parte tiene que ser una palabra común o tuya, y lo que sigue tiene que
+     *    empezar una palabra común (al menos 3 letras, 4 si la primera es cortita).
+     *  - Lo aprendido manda: si el cerebro sabe que después de esa palabra sueles escribir
+     *    una que empieza así, se anima más (y hasta pasa por encima de la duda del tipeo).
+     *  - Si deshaces una separación (borrar justo después), no la vuelve a hacer.
+     *
+     * Devuelve lo que reemplaza a la palabra a medias ("ya pode") o null si no hay que separar.
+     */
+    @Synchronized
+    fun separarEnVivo(
+        p: String, previa: String, previa2: String, t: Int, toques: Array<FloatArray>? = null,
+    ): String? {
+        miTurno = t
+        toq = toques
+        sinCorte = false
+        return try { separarSinFiltro(p, previa, previa2) } catch (e: Throwable) {
+            Registro.anotar("separar", e); null
+        } finally { toq = null }
+    }
+
+    private fun separarSinFiltro(p: String, previa: String, previa2: String): String? {
+        val n = p.length
+        if (n < 5 || n > 28 || cortado()) return null
+        for (ch in p) if (!ch.isLetter()) return null
+        // Mayúsculas en el medio ("WhatsApp", "PUCP"): es un nombre o una sigla, no se toca
+        for (i in 1 until n) if (p[i].isUpperCase()) return null
+        val ix = indice ?: return null
+        val l = p.lowercase()
+        val np = normal(p)
+        if (np.length != n) return null
+        if (expresiva(l) || l in INGLES || esLisura(l)) return null
+        // Mientras pueda ser el comienzo de una palabra (aunque sea rara), no se toca
+        if (esComienzo(ix, np)) return null
+        if (separacionRechazada(np)) return null
+        // Palabra + terminación: "normalazo", "infórmenos", "dímelo", "rapidísimo"
+        if (conSufijo(ix, np)) return null
+        if (cortado()) return null
+
+        var mejor: String? = null
+        var mejorS = 0f
+        var mejorCtx = 0f
+        for (k in 2..n - 3) {
+            for (conSep in 0..1) {
+                if (conSep == 1 && np[k] !in JUNTO_AL_ESPACIO) continue
+                val desdeB = k + conSep
+                val largoB = n - desdeB
+                // Lo que sigue tiene que tener sustancia: 3 letras (4 si la primera es cortita)
+                if (largoB < 3 || (k <= 2 && largoB < 4)) continue
+                val na = np.substring(0, k)
+                if (k <= 2 && na !in ENLACE) continue
+                val a = l.substring(0, k)
+
+                // Primera parte: palabra común del diccionario o una palabra tuya
+                var ra = rango(ix, a)
+                if (ra < 0) ra = mejorPorNormal(ix, na)
+                val fa: Int
+                val formaA: String
+                if (ra in 0..COMUN) {
+                    fa = frec(ra)
+                    formaA = if (ix.palabras[ra].equals(a, ignoreCase = true)) p.substring(0, k)
+                    else igualarMayus(ix.palabras[ra], p.substring(0, k))
+                } else {
+                    val c = aprendidas[a] ?: 0
+                    if (!propia(a, c)) continue
+                    fa = 450 + minOf(c, 30) * 5
+                    formaA = p.substring(0, k)
+                }
+                if (bloqueada(formaA) || lisuraAjena(formaA)) continue
+
+                // Segunda parte: tiene que empezar una palabra común (o una tuya)
+                val nb = np.substring(desdeB)
+                val rb = mejorComienzo(ix, nb)
+                val fb = when {
+                    rb >= 0 -> frec(rb)
+                    aprendidasDesde(nb).any { k2 -> propia(palabraDe(k2), aprendidas[palabraDe(k2)] ?: 0) } -> 450
+                    else -> continue
+                }
+
+                // Lo aprendido: ¿después de esa palabra sueles escribir una que empieza así?
+                val la = formaA.lowercase()
+                var ctx = 0f
+                for ((w, pr) in cerebro.candidatos(la, previa, app, nb, 1)) {
+                    if (conoce(ix, w)) ctx = maxOf(ctx, minOf(1f, pr * 1.5f))
+                }
+                if (pares[la]?.keys?.any { normalDe(it).startsWith(nb) } == true) ctx = maxOf(ctx, 0.5f)
+                if (paresFijos(la)?.any { normal(it).startsWith(nb) } == true) ctx = maxOf(ctx, 0.35f)
+
+                // Las palabras largas casi nunca son un accidente: suman
+                val faL = fa + minOf(250, maxOf(0, 60 * (k - 3)))
+                var s = minOf(faL, fb) + (faL + fb) / 4f
+                if (conSep == 0) s -= 40f
+                s += ctx * 300f
+                if (previa.isNotEmpty()) s += contexto(previa, formaA, previa2) * 120f
+                if (s > mejorS) {
+                    mejorS = s
+                    mejorCtx = ctx
+                    mejor = formaA + " " + p.substring(desdeB)
+                }
+            }
+            if (cortado()) return null
+        }
+        val res = mejor ?: return null
+        if (mejorS < 600f) return null
+        // ¿Era una palabra a medias mal tocada? Ante la duda, no se separa (salvo que lo
+        // aprendido diga claramente que ahí van dos palabras)
+        if (mejorCtx < 0.35f && pareceErrorDeTipeo(ix, np)) return null
+        return if (cortado()) null else res
+    }
+
+    /**
+     * Tres o más palabras pegadas (sin espacio o con una b, n, v, m o c en su lugar):
+     * "quebhagonhoy" → "que hago hoy", "estoybienngracias" → "estoy bien gracias".
+     * Todas las partes tienen que ser palabras muy comunes (o tuyas) y gana la forma con
+     * menos palabras; si empatan, la de palabras más comunes.
+     */
+    private fun segmentar(ix: Indice, p: String): String? {
+        val np = normal(p)
+        val n = np.length
+        if (n < 7 || n > 30 || n != p.length) return null
+        // Desde cada posición hasta el final: cuántas palabras como mínimo (-1 = imposible),
+        // la menos común de ellas y dónde empieza la siguiente
+        val partes = IntArray(n + 1) { -1 }
+        val menor = IntArray(n + 1) { Int.MAX_VALUE }
+        val sigue = IntArray(n + 1)
+        val formas = arrayOfNulls<String>(n + 1)
+        partes[n] = 0
+        for (s in n - 1 downTo 0) {
+            if (cortado()) return null
+            for (e in n downTo s + 1) {
+                val w = np.substring(s, e)
+                if (w.length <= 2 && w !in ENLACE) continue
+                val (forma, fr) = palabraParaSegmentar(ix, w) ?: continue
+                for (opcion in 0..1) {
+                    val nx = if (opcion == 0) e else e + 1
+                    // Con una letra en lugar del espacio, tiene que haber algo después
+                    if (opcion == 1 && (e >= n - 1 || np[e] !in JUNTO_AL_ESPACIO)) continue
+                    if (nx > n || partes[nx] < 0) continue
+                    val cuantas = partes[nx] + 1
+                    val m = minOf(fr, menor[nx])
+                    if (partes[s] < 0 || cuantas < partes[s] || (cuantas == partes[s] && m > menor[s])) {
+                        partes[s] = cuantas
+                        menor[s] = m
+                        sigue[s] = nx
+                        formas[s] = forma
+                    }
+                }
+            }
+        }
+        // Dos palabras ya las resuelven separar() y separarEspacio()
+        if (partes[0] < 3) return null
+        val sb = StringBuilder(n + 4)
+        var i = 0
+        while (i < n) {
+            val f = formas[i] ?: return null
+            if (sb.isNotEmpty()) sb.append(' ')
+            sb.append(f)
+            if (sigue[i] <= i) return null
+            i = sigue[i]
+        }
+        val r = sb.toString()
+        return if (lisuraAjena(r)) null else r
+    }
+
+    /** Una parte de palabras pegadas: palabra muy común (sin jerga) o tuya, con su frecuencia */
+    private fun palabraParaSegmentar(ix: Indice, w: String): Pair<String, Int>? {
+        var r = rango(ix, w)
+        if (r < 0) r = mejorPorNormal(ix, w)
+        if (r in 0..MUY_COMUN) {
+            val c = ix.palabras[r]
+            if (bloqueada(c) || (esJerga(c) && !propia(c.lowercase(), aprendidas[c.lowercase()] ?: 0))) return null
+            return c to frec(r)
+        }
+        val n = aprendidas[w] ?: 0
+        return if (propia(w, n) && !bloqueada(w)) w to 450 else null
+    }
+
+    /** ¿Lo escrito todavía puede ser el comienzo de alguna palabra? */
+    private fun esComienzo(ix: Indice, np: String): Boolean {
+        val k = desde(ix, np)
+        if (k < ix.orden.size && ix.normal[ix.orden[k]].startsWith(np)) return true
+        if (aprendidasDesde(np).isNotEmpty()) return true
+        val agenda = contactos
+        if (agenda.isNotEmpty()) for (v in agenda.values) if (v.startsWith(np)) return true
+        for (w in INGLES) if (w.startsWith(np)) return true
+        for (f in FORMAS.keys) if (f.startsWith(np)) return true
+        for (e in ERRORES_COMUNES.keys) if (e.startsWith(np)) return true
+        return false
+    }
+
+    /** La palabra más común (posición) que empieza con [nb], entre las más usadas, o -1 */
+    private fun mejorComienzo(ix: Indice, nb: String): Int {
+        val orden = ix.ordenTop
+        var k = desde(ix, nb, orden)
+        var mejor = -1
+        var vistas = 0
+        while (k < orden.size && vistas < 400) {
+            val i = orden[k++]
+            if (!ix.normal[i].startsWith(nb)) break
+            if (mejor < 0 || i < mejor) mejor = i
+            vistas++
+        }
+        return mejor
+    }
+
+    /** "normalazo", "infórmenos", "dímelo": una palabra con su terminación (no son dos palabras) */
+    private fun conSufijo(ix: Indice, np: String): Boolean {
+        for (k in 2 until np.length) {
+            if (!esSufijo(np.substring(k))) continue
+            if (mejorPorNormal(ix, np.substring(0, k)) >= 0) return true
+        }
+        return false
+    }
+
+    private fun esSufijo(r: String): Boolean {
+        for (x in SUFIJOS) {
+            if (x.startsWith(r)) return true
+            if (r.length > x.length && r.startsWith(x)) {
+                val r2 = r.substring(x.length)
+                for (y in SUFIJOS) if (y.startsWith(r2)) return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * ¿Parece una palabra a medias con un error de tipeo? ("tenfo" → tengo, "estanmo" → estamos)
+     * Se compara con el comienzo de las palabras conocidas usando la distancia de teclado.
+     */
+    private fun pareceErrorDeTipeo(ix: Indice, np: String): Boolean {
+        val n = np.length
+        var vistas = 0
+        for (ch in iniciales(np)) {
+            // Si llegó otra letra, ante la duda se dice que sí (y no se separa)
+            if (cortado()) return true
+            recorrer(ix, ch, n - 1, MAX_LARGO) { i ->
+                if ((++vistas and 255) == 0 && cortado()) return true
+                if (i <= RARA) {
+                    val w = ix.normal[i]
+                    var d = distancia(np, w, n, 1f)
+                    if (d > 0.7f) d = minOf(d, distancia(np, w, n - 1, 1f), distancia(np, w, n + 1, 1f))
+                    if (d <= 0.7f || (d <= 1f && i <= COMUN)) return true
+                }
+            }
+        }
+        return false
+    }
+
+    /** Separaciones que deshiciste: lo que empieza así ya no se separa */
+    private fun separacionRechazada(np: String): Boolean {
+        if (rechazos.isEmpty()) return false
+        for (k in 3..np.length) if ((np.substring(0, k) + ">~") in rechazos) return true
+        return false
+    }
+
+    /** Deshiciste la separación de [original] (borrar justo después): no se vuelve a hacer */
+    @Synchronized
+    fun rechazarSeparacion(original: String) {
+        val n = normal(original)
+        if (pausado || n.length < 3) return
+        rechazos.add("$n>~")
+        cambios = true
+    }
+
     private fun corregirSinFiltro(p: String, previa: String, previa2: String): String? {
         if (p.length < 2) return null
         val l = p.lowercase()
@@ -1114,6 +1405,10 @@ class Diccionario(context: Context) {
         if (mejor == null && np.length >= 4) {
             (if (np.length >= 5) separar(ix, p) else null)?.let { s -> return conMayus(s, p) }
             separarEspacio(ix, p, soloSeguro = false)?.let { s -> return conMayus(s, p) }
+        }
+        // 5) Tres o más palabras pegadas: "quebhagonhoy" → "que hago hoy"
+        if (mejor == null && np.length >= 7) {
+            segmentar(ix, p)?.let { s -> return conMayus(s, p) }
         }
         val elegida = mejor ?: return null
         val resultado = igualarMayus(elegida, p)
@@ -1335,6 +1630,7 @@ class Diccionario(context: Context) {
         if (pausado) return
         val f = final.trim().trimEnd { !it.isLetterOrDigit() }
         cerebro.aprenderError(escrito.trim(), f, peso)
+        confusion = cerebro.factoresConfusion()
         cambios = true
     }
 
@@ -1357,6 +1653,7 @@ class Diccionario(context: Context) {
         val c = corregido.trim().trimEnd { !it.isLetterOrDigit() }.lowercase()
         if (pausado || o.isEmpty() || c.isEmpty() || o.contains(' ') || o == c) return
         cerebro.rechazarError(o, c)
+        confusion = cerebro.factoresConfusion()
         val clave = "$o>$c"
         // La primera vez solo se anota; la segunda vez ya no se vuelve a corregir
         if (clave in rechazos) return
@@ -1615,6 +1912,8 @@ class Diccionario(context: Context) {
         private const val RARA = 45000
         /** Hasta esta posición la palabra es común (para separar palabras pegadas) */
         private const val COMUN = 15000
+        /** Hasta esta posición la palabra es muy común (para separar tres o más palabras pegadas) */
+        private const val MUY_COMUN = 2600
         /** Veces que hay que usar una palabra que no está en el diccionario para que sea tuya */
         private const val MIN_PROPIA = 3
         /** Lo mismo para palabras de dos letras ("yq", "jj" casi siempre son errores) */
@@ -1626,6 +1925,19 @@ class Diccionario(context: Context) {
         private const val OTRA = 2
         /** Teclas de la fila de abajo que el dedo toca cuando quería el espacio */
         private const val JUNTO_AL_ESPACIO = "bnvmc"
+        /**
+         * Terminaciones que se pegan a una palabra sin ser otra palabra: pronombres ("dímelo",
+         * "infórmenos"), diminutivos y aumentativos ("ahorita", "normalazo") y otras.
+         */
+        private val SUFIJOS: List<String> = run {
+            val cl = listOf("me", "te", "se", "nos", "os", "le", "les", "lo", "los", "la", "las")
+            val dobles = listOf("me", "te", "se", "nos").flatMap { a -> listOf("lo", "la", "los", "las", "le", "les").map { a + it } }
+            cl + dobles + listOf(
+                "azo", "aza", "azos", "azas", "ito", "ita", "itos", "itas", "cito", "cita", "citos", "citas",
+                "illo", "illa", "illos", "illas", "ote", "ota", "otes", "otas", "isimo", "isima", "isimos",
+                "isimas", "mente", "ucho", "ucha", "on", "ona", "ones", "onas",
+            )
+        }
         /** Palabras cortitas de enlace que pueden quedar pegadas por fallar el espacio */
         private val ENLACE = hashSetOf(
             "a", "y", "o", "e", "u", "ya", "yo", "no", "ni", "tu", "te", "me", "se", "mi", "ti",

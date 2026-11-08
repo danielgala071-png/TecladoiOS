@@ -19,6 +19,10 @@ import java.io.File
  *    un lugar, el tema del chat) suben solas en las sugerencias y en la autocorrección.
  *  - Se calibra solo: si deshaces seguido la autocorrección se vuelve más prudente; si casi
  *    nunca la deshaces, se atreve un poco más. Nadie tiene que tocar ningún ajuste.
+ *  - Tus teclas confundidas: si sueles tocar la f queriendo la g ("tenfo" → "tengo"), ese
+ *    error tuyo le cuesta menos a la autocorrección (corrige mejor tus dedazos de siempre).
+ *  - La hora: de mañana empiezas con "buenos días", de noche con "buenas noches"; el cerebro
+ *    aprende con qué palabras empiezas tus mensajes según la hora del día.
  *
  * Es estable por diseño: todo va con candado (lo usa un solo hilo a la vez), tiene topes de
  * tamaño (nunca crece sin control) y si el archivo está dañado empieza de cero sin cerrarse.
@@ -58,6 +62,13 @@ class Cerebro(private val archivo: File) {
     private class Reciente(var veces: Float, var ms: Long, val n: String)
     private val recientes = HashMap<String, Reciente>()
 
+    /** Teclas que confundes: [escrita * LETRAS + querida] → cuántas veces (de tus correcciones) */
+    private val confusiones = FloatArray(LETRAS * LETRAS)
+
+    /** Franja del día ya calculada (se recalcula como mucho una vez por minuto) */
+    private var franjaGuardada = -1
+    private var franjaHasta = 0L
+
     /** Qué tan seguido deshaces la autocorrección (promedio que se mueve, 0 a 1) */
     private var tasaDeshacer = TASA_BASE
     /** Cuántas autocorrecciones vio (para saber cuánto creerle a la tasa) */
@@ -90,6 +101,23 @@ class Cerebro(private val archivo: File) {
     private fun clave2(p2: String, p1: String) = "2 $p2 $p1"
     private fun clave3(p3: String, p2: String, p1: String) = "3 $p3 $p2 $p1"
     private fun claveApp(app: String, p1: String) = "@" + app + " " + p1.ifEmpty { INICIO }
+    /** Cómo empiezas los mensajes según la hora: "%h0 ^" (mañana), "%h1 ^" (tarde)... */
+    private fun claveHora() = "%h" + franja() + " " + INICIO
+
+    /** 0 = mañana (5 a 11), 1 = tarde (12 a 18), 2 = noche (19 a 23), 3 = madrugada */
+    private fun franja(): Int {
+        val ahora = System.currentTimeMillis()
+        if (franjaGuardada >= 0 && ahora < franjaHasta) return franjaGuardada
+        val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        franjaGuardada = when (h) {
+            in 5..11 -> 0
+            in 12..18 -> 1
+            in 19..23 -> 2
+            else -> 3
+        }
+        franjaHasta = ahora + 60_000L
+        return franjaGuardada
+    }
 
     // ---------- Aprender ----------
 
@@ -110,6 +138,8 @@ class Cerebro(private val archivo: File) {
         if (p2.isNotEmpty()) anotar(clave2(p2, p1), w, dia)
         if (p3.isNotEmpty()) anotar(clave3(p3, p2, p1), w, dia)
         if (app.isNotEmpty()) anotar(claveApp(app, p1), w, dia)
+        // Al empezar un mensaje: con qué palabra empiezas a esta hora del día
+        if (p1.isEmpty()) anotar(claveHora(), w, dia)
         // Usarla es lo contrario de ignorarla
         if (ignoradas.isNotEmpty()) ignoradas.remove("$p1>$w")
         // Historial: si la frase no sigue, empieza de nuevo
@@ -137,6 +167,7 @@ class Cerebro(private val archivo: File) {
         if (p2.isNotEmpty()) quitar(clave2(p2, p1), w)
         if (p3.isNotEmpty()) quitar(clave3(p3, p2, p1), w)
         if (app.isNotEmpty()) quitar(claveApp(app, p1), w)
+        if (p1.isEmpty()) quitar(claveHora(), w)
         recientes[w]?.let { r ->
             r.veces -= 1f
             if (r.veces <= 0.1f) recientes.remove(w)
@@ -273,6 +304,7 @@ class Cerebro(private val archivo: File) {
         if (e.length < 2 || e == f || f.isEmpty() || e.contains(' ')) return
         val m = errores.getOrPut(e) { HashMap() }
         m[f] = minOf(30f, (m[f] ?: 0f) + peso)
+        anotarConfusiones(e, f, peso)
         if (errores.size > MAX_ERRORES) {
             // Se olvidan los más flojos
             errores.entries.sortedBy { it.value.values.maxOrNull() ?: 0f }
@@ -290,8 +322,46 @@ class Cerebro(private val archivo: File) {
         val f = normal(final)
         val v = (m[f] ?: return) - 3f
         if (v <= 0f) m.remove(f) else m[f] = v
+        anotarConfusiones(e, f, -2f)
         if (m.isEmpty()) errores.remove(e)
         cambios = true
+    }
+
+    /**
+     * Teclas que confundes: si [escrito] y [final] tienen el mismo largo y difieren en una o
+     * dos letras ("tenfo" → "tengo"), se anota que tocaste la f queriendo la g.
+     */
+    private fun anotarConfusiones(escrito: String, final: String, peso: Float) {
+        if (escrito.length != final.length || escrito.length < 2) return
+        var diferentes = 0
+        for (i in escrito.indices) if (escrito[i] != final[i]) diferentes++
+        if (diferentes == 0 || diferentes > 2) return
+        for (i in escrito.indices) {
+            val a = letra(escrito[i])
+            val b = letra(final[i])
+            if (a < 0 || b < 0 || a == b) continue
+            val k = a * LETRAS + b
+            confusiones[k] = (confusiones[k] + peso).coerceIn(0f, 40f)
+        }
+        cambios = true
+    }
+
+    /**
+     * Cuánto le cuesta a la autocorrección cada cambio de tecla según tus confusiones:
+     * [escrita * LETRAS + querida] → factor (1 = normal, más chico = es un error tuyo de siempre).
+     * null si todavía no aprendió ninguna.
+     */
+    @Synchronized
+    fun factoresConfusion(): FloatArray? {
+        if (!listo) return null
+        var r: FloatArray? = null
+        for (i in confusiones.indices) {
+            val v = confusiones[i]
+            if (v < 2f) continue
+            if (r == null) r = FloatArray(LETRAS * LETRAS) { 1f }
+            r[i] = (1f / (1f + (v - 1f) * 0.12f)).coerceAtLeast(0.45f)
+        }
+        return r
     }
 
     /**
@@ -356,10 +426,10 @@ class Cerebro(private val archivo: File) {
         val p1 = normal(previa)
         val p2 = if (p1.isEmpty()) "" else normal(previa2)
         val p3 = terceraDe(p1, p2)
-        return mezcla(p1, p2, p3, app, normal(w), hoy())
+        return mezcla(p1, p2, p3, app, normal(w), hoy(), if (p1.isEmpty()) claveHora() else null)
     }
 
-    private fun mezcla(p1: String, p2: String, p3: String, app: String, w: String, dia: Int): Float {
+    private fun mezcla(p1: String, p2: String, p3: String, app: String, w: String, dia: Int, hora: String? = null): Float {
         var resto = 1f
         var p = 0f
         fun nivel(clave: String?, fuerza: Float) {
@@ -377,6 +447,7 @@ class Cerebro(private val archivo: File) {
         nivel(if (p3.isNotEmpty()) clave3(p3, p2, p1) else null, 1f)
         nivel(if (p2.isNotEmpty()) clave2(p2, p1) else null, 0.95f)
         nivel(if (app.isNotEmpty()) claveApp(app, p1) else null, 0.85f)
+        nivel(hora, 0.8f)
         nivel(clave1(p1), 0.9f)
         return (p * castigo(p1, w)).coerceIn(0f, 1f)
     }
@@ -393,10 +464,12 @@ class Cerebro(private val archivo: File) {
         val p3 = terceraDe(p1, p2)
         val dia = hoy()
         val vistas = HashSet<String>()
-        val claves = ArrayList<String>(4)
+        val hora = if (p1.isEmpty()) claveHora() else null
+        val claves = ArrayList<String>(5)
         if (p3.isNotEmpty()) claves.add(clave3(p3, p2, p1))
         if (p2.isNotEmpty()) claves.add(clave2(p2, p1))
         if (app.isNotEmpty()) claves.add(claveApp(app, p1))
+        if (hora != null) claves.add(hora)
         claves.add(clave1(p1))
         for (c in claves) {
             val s = contextos[c] ?: continue
@@ -411,7 +484,7 @@ class Cerebro(private val archivo: File) {
         if (vistas.isEmpty()) return emptyList()
         val res = ArrayList<Pair<String, Float>>(vistas.size)
         for (w in vistas) {
-            val pr = mezcla(p1, p2, p3, app, w, dia)
+            val pr = mezcla(p1, p2, p3, app, w, dia, hora)
             if (pr > 0.01f) res.add(w to pr)
         }
         res.sortByDescending { it.second }
@@ -447,6 +520,14 @@ class Cerebro(private val archivo: File) {
         sb.append("#a\n")
         sb.append("tasa\t").append(tasaDeshacer).append('\n')
         sb.append("vistas\t").append(correccionesVistas).append('\n')
+        // Teclas que confundes (las versiones viejas ignoran esta sección)
+        sb.append("#k\n")
+        for (i in confusiones.indices) {
+            val v = confusiones[i]
+            if (v < 0.5f) continue
+            sb.append(i / LETRAS).append('\t').append(i % LETRAS).append('\t')
+                .append(Math.round(v * 100f) / 100f).append('\n')
+        }
         cambios = false
         return sb.toString()
     }
@@ -491,6 +572,7 @@ class Cerebro(private val archivo: File) {
         recientes.clear()
         tasaDeshacer = TASA_BASE
         correccionesVistas = 0f
+        confusiones.fill(0f)
         entradas = 0
         try {
             if (archivo.exists()) leer(archivo.readText(Charsets.UTF_8))
@@ -537,6 +619,12 @@ class Cerebro(private val archivo: File) {
                         "vistas" -> correccionesVistas = v.coerceIn(0f, 5000f)
                     }
                 }
+                'k' -> if (p.size == 3) {
+                    val a = p[0].toIntOrNull() ?: continue
+                    val b = p[1].toIntOrNull() ?: continue
+                    val v = p[2].toFloatOrNull() ?: continue
+                    if (a in 0 until LETRAS && b in 0 until LETRAS) confusiones[a * LETRAS + b] = v.coerceIn(0f, 40f)
+                }
             }
         }
     }
@@ -551,6 +639,7 @@ class Cerebro(private val archivo: File) {
         recientes.clear()
         tasaDeshacer = TASA_BASE
         correccionesVistas = 0f
+        confusiones.fill(0f)
         entradas = 0
         cambios = false
         try { archivo.delete() } catch (_: Exception) { }
@@ -574,6 +663,23 @@ class Cerebro(private val archivo: File) {
 
     companion object {
         const val ARCHIVO = "cerebro.txt"
+        /** Letras del teclado para las confusiones: a–z y la ñ */
+        const val LETRAS = 27
+
+        /** Posición de la letra (a = 0 ... z = 25, ñ = 26; las vocales con tilde cuentan sin ella) o -1 */
+        fun letra(c: Char): Int {
+            val l = c.lowercaseChar()
+            return when (l) {
+                in 'a'..'z' -> l - 'a'
+                'ñ' -> 26
+                'á', 'à', 'ä', 'â' -> 0
+                'é', 'è', 'ë', 'ê' -> 4
+                'í', 'ì', 'ï', 'î' -> 8
+                'ó', 'ò', 'ö', 'ô' -> 14
+                'ú', 'ù', 'ü', 'û' -> 20
+                else -> -1
+            }
+        }
         private const val VERSION = "tecladoios-cerebro-1"
         private const val INICIO = "^"
         /** Días en que algo que ya no usas pierde la mitad de su peso */
@@ -596,12 +702,17 @@ class Cerebro(private val archivo: File) {
             var errores = 0
             var tasa = -1f
             var vistas = 0f
+            var teclas = 0
             for (linea in texto.lineSequence()) {
                 if (linea.isEmpty()) continue
                 if (linea.length == 2 && linea[0] == '#') { seccion = linea[1]; continue }
                 when (seccion) {
                     'c' -> frases++
                     'e' -> errores++
+                    'k' -> {
+                        val p = linea.split('\t')
+                        if (p.size == 3 && (p[2].toFloatOrNull() ?: 0f) >= 2f) teclas++
+                    }
                     'a' -> {
                         val p = linea.split('\t')
                         if (p.size == 2) when (p[0]) {
@@ -617,7 +728,8 @@ class Cerebro(private val archivo: File) {
                 tasa < 0.05f -> "más segura (casi nunca la deshaces)"
                 else -> "equilibrada"
             }
-            return "$frases patrones de frases · $errores errores tuyos que ya reconoce\n" +
+            val conTeclas = if (teclas > 0) " · $teclas teclas que sueles confundir" else ""
+            return "$frases patrones de frases · $errores errores tuyos que ya reconoce$conTeclas\n" +
                 "Autocorrección: $calibrada"
         }
 
