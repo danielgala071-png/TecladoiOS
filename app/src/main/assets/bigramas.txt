@@ -499,3 +499,9 @@ yapéame: lo, a, por
 pásame: el, la, tu, tus
 nos: vemos, hablamos, jateamos, juntamos
 por: favor, si, las, la
+# ---- Horas y cantidades ----
+a las: 8, 9, 10, 11, 12, 3, 4, 5, 6, 7
+son las: 8, 9, 10, 3, 4, 5, 6, 7
+nos vemos a: las
+hasta las: 8, 9, 10, 11, 12, 6, 7
+desde las: 8, 9, 10, 3, 4

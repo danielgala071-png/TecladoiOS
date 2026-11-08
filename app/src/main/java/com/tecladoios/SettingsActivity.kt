@@ -509,10 +509,14 @@ class SettingsActivity : Activity() {
             filaInterruptor("Escritura rápida", "escritura_rapida", false),
             filaInterruptor("Mantener la barra unos segundos", "barra_sostenida", true),
             filaInterruptor("Emojis frecuentes con el campo vacío", "emojis_frecuentes", true),
+            filaInterruptor("Deslizar el espacio para aceptar", "aceptar_deslizando", true),
+            filaInterruptor("Modo formal automático", "modo_formal", true),
         ), pie = "Escritura rápida quita la burbuja de las letras y los acentos al mantener presionado: " +
                 "nada se interpone si escribes muy rápido con los pulgares (los acentos los pone la " +
                 "autocorrección). Con “Mantener la barra”, al enviar un mensaje la barra se queda un " +
-                "momento en vez de desaparecer de golpe.")
+                "momento en vez de desaparecer de golpe. “Deslizar el espacio”: desliza la barra " +
+                "espaciadora hacia arriba y se pone la sugerencia del centro. “Modo formal”: en el " +
+                "correo y en apps de trabajo, el teclado propone saludos formales y casi no sugiere jerga.")
 
         val borde = when (Ajustes.bordeTeclas(this)) {
             "apagado" -> "Apagado"; "sutil" -> "Sutil"; "vivo" -> "Vivo"; else -> "Normal"
@@ -601,7 +605,7 @@ class SettingsActivity : Activity() {
             packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
         } catch (_: Exception) { "?" }
         contenedor.addView(TextView(this).apply {
-            text = "TecladoiOS versión $version · AMOLED v8"
+            text = "TecladoiOS versión $version · AMOLED v11"
             Fuentes.aplicar(this, 400)
             textSize = 13f
             setTextColor(gris)
@@ -680,6 +684,13 @@ class SettingsActivity : Activity() {
             filaInfo("Bloq Mayús", "Toca dos veces la tecla de mayúsculas."),
             filaInfo("Punto rápido", "Toca dos veces la barra espaciadora para poner punto y espacio."),
             filaInfo("Deslizar para escribir", "Desliza el dedo de letra en letra sin soltar y suelta al final de la palabra."),
+            filaInfo("Aceptar sin estirar el dedo", "Desliza la barra espaciadora hacia arriba: se pone la sugerencia del centro y queda el espacio listo."),
+        ))
+        grupo("Barra de sugerencias", listOf(
+            filaInfo("Descartar una sugerencia", "Desliza la sugerencia hacia abajo: desaparece y el teclado deja de proponerla."),
+            filaInfo("Tildes que cambian el sentido", "Al escribir tu, el, si, mas, que, como, esta… la otra forma (tú, él, sí, más, qué, cómo, está) aparece a la derecha."),
+            filaInfo("Sugerencias en cadena", "Después de tocar una sugerencia, la barra ya propone la siguiente palabra: puedes armar frases tocando solo la barra."),
+            filaInfo("Siglas y nombres", "SUNAT, EsSalud, WhatsApp o Cusco se escriben bien aunque los pongas en minúsculas."),
         ))
         grupo("Borrar", listOf(
             filaInfo("Borrar rápido", "Mantén presionada la tecla borrar: primero va letra por letra y luego palabra por palabra."),

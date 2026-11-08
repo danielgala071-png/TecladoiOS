@@ -6,6 +6,7 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -80,6 +81,8 @@ class SuggestionBar(
     private var confirmar: Sugerencia? = null
     private var mantenido = false
     private var tocoEn = -1
+    /** Dónde empezó el toque (para saber si deslizaste hacia abajo) */
+    private var y0Toque = 0f
     private val manejador = Handler(Looper.getMainLooper())
     private val alMantener = Runnable {
         val s = items.getOrNull(presionado) ?: return@Runnable
@@ -262,10 +265,51 @@ class SuggestionBar(
         }
     }
 
+    // Fundido de las casillas que cambian
+    private var cambio = 1f
+    private val cambiadas = BooleanArray(3)
+    private var animCambio: ValueAnimator? = null
+
+    private fun animarCambio(antes: List<Sugerencia?>, ahora: List<Sugerencia?>) {
+        if (!mostrando || opacidad < 1f || !isShown) return
+        var alguna = false
+        for (i in 0 until 3) {
+            // La casilla de la izquierda (lo que escribes) cambia con cada letra: esa no se funde
+            val cambia = i > 0 && ahora[i] != null && ahora[i]?.texto != antes[i]?.texto
+            cambiadas[i] = cambia
+            if (cambia) alguna = true
+        }
+        if (!alguna) return
+        animCambio?.cancel()
+        animCambio = ValueAnimator.ofFloat(0.35f, 1f).apply {
+            duration = 110
+            interpolator = FRENO_BARRA
+            addUpdateListener {
+                cambio = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    /**
+     * La sugerencia que se pone al deslizar la barra espaciadora hacia arriba: la del centro
+     * (la corrección o la más probable). Si solo hay lo copiado, eso. null si no hay nada útil.
+     */
+    fun sugerenciaCentral(): Sugerencia? {
+        if (!mostrando || busqueda != null || confirmar != null) return null
+        val primera = items[0]
+        if (primera != null && primera.portapapeles) return primera
+        val centro = items[1]
+        if (centro != null && centro.accion == 0) return centro
+        return items[2]?.takeIf { it.accion == 0 && !it.emoji }
+    }
+
     fun mostrar(nuevos: List<Sugerencia?>) {
         val lista = List(3) { nuevos.getOrNull(it) }
         // Si no cambió nada, no se vuelve a dibujar (menos trabajo en cada letra)
         if (lista == items) return
+        animarCambio(items, lista)
         items = lista
         if (confirmar == null) presionado = -1
         invalidate()
@@ -442,71 +486,106 @@ class SuggestionBar(
         for (i in 0 until 3) {
             val s = items[i] ?: continue
             val x0 = ancho * i
-            if (i == presionado) {
-                // Al tocarla: cápsula de vidrio del color de la app (misma forma que la destacada)
-                val rp = (height - 16 * d) / 2f
-                pintura.color = tema.teclaPresionada
-                c.drawRoundRect(x0 + 6 * d, 6 * d, x0 + ancho - 6 * d, height - 10 * d, rp, rp, pintura)
-            } else if (s.destacada) {
-                // La corrección que se pondrá sola va en una cápsula de vidrio con el filo de la app
-                val arriba = 6 * d
-                val abajo = height - 10 * d
-                val rc = (abajo - arriba) / 2f
-                // Vidrio apenas teñido del color de la app: se nota que es la que se pondrá sola
-                pintura.color = Tema.mezclar(tema.tecla, tema.azul, 0.22f)
-                c.drawRoundRect(x0 + 6 * d, arriba, x0 + ancho - 6 * d, abajo, rc, rc, pintura)
-                val previo = pinturaBorde.color
-                pinturaBorde.color = (tema.borde and 0x00FFFFFF) or 0x8C000000.toInt()
-                c.drawRoundRect(x0 + 6 * d, arriba, x0 + ancho - 6 * d, abajo, rc, rc, pinturaBorde)
-                pinturaBorde.color = previo
-            }
-            // Emoji sugerido: se dibuja grande y nítido (antes salía del tamaño de las letras)
-            if (s.emoji) {
-                pinturaEmoji.textSize = 24f * d
-                val fe = pinturaEmoji.fontMetrics
-                val cyE = (6 * d + height - 10 * d) / 2f - (fe.ascent + fe.descent) / 2f
-                c.drawText(s.texto, x0 + ancho / 2f, cyE, pinturaEmoji)
-                continue
-            }
-            grosor(if (s.destacada) 500 else 400)
-            val cy = centroY()
-            val resto = s.resto
-            if (resto != null) {
-                // Predicción en línea: lo escrito normal y lo que falta en gris
-                val total = pinturaTexto.measureText(s.texto + resto)
-                if (total <= ancho - 16 * d) {
-                    val izq = x0 + (ancho - total) / 2f
-                    val alin = pinturaTexto.textAlign
-                    pinturaTexto.textAlign = Paint.Align.LEFT
-                    pinturaTexto.color = tema.texto
-                    c.drawText(s.texto, izq, cy, pinturaTexto)
-                    pinturaTexto.color = tema.textoSecundario
-                    c.drawText(resto, izq + pinturaTexto.measureText(s.texto), cy, pinturaTexto)
-                    pinturaTexto.textAlign = alin
-                    continue
-                }
-            }
-            pinturaTexto.color = tema.texto
-            val crudo = if (s.literal) "\u201C${s.texto}\u201D" else s.texto
-            // Palabras largas: primero se achica un poco la letra (hasta 13) y solo si aun así
-            // no cabe se corta con "…" (como en iPhone, casi nunca se ve cortada)
-            val disponible = ancho - 16 * d
-            val medida = pinturaTexto.measureText(crudo)
-            if (medida > disponible) {
-                pinturaTexto.textSize = maxOf(13f * d, 17f * d * disponible / medida)
-            }
-            val txt = TextUtils.ellipsize(crudo, pinturaTexto, disponible, TextUtils.TruncateAt.END).toString()
-            c.drawText(txt, x0 + ancho / 2f, cy, pinturaTexto)
-            pinturaTexto.textSize = 17f * d
+            // Las casillas que acaban de cambiar aparecen con un fundido cortito (como en iPhone)
+            val capa = if (cambio < 1f && cambiadas[i])
+                c.saveLayerAlpha(x0, 0f, x0 + ancho, height.toFloat(), (cambio * 255).toInt()) else -1
+            dibujarCasilla(c, i, s, x0, ancho)
+            if (capa >= 0) c.restoreToCount(capa)
         }
-        // Separadores finos entre las casillas, como en la imagen
-        pintura.color = (tema.textoSecundario and 0x00FFFFFF) or 0x55000000
-        pintura.strokeWidth = maxOf(1f, d * 0.7f)
+        // Separadores finos entre las casillas, como en iPhone: no se dibujan junto a una
+        // cápsula (la corrección resaltada o la que estás tocando), así la cápsula se ve limpia
+        pintura.color = (tema.textoSecundario and 0x00FFFFFF) or 0x4D000000
+        pintura.strokeWidth = maxOf(1f, d * 0.6f)
+        fun conCapsula(k: Int) = k == presionado || (k == soltado && brilloSoltado > 0f) || items[k]?.destacada == true
         for (i in 1 until 3) {
-            if (items[i - 1] != null && items[i] != null) {
-                c.drawLine(ancho * i, height * 0.26f, ancho * i, height * 0.66f, pintura)
+            if (items[i - 1] != null && items[i] != null && !conCapsula(i - 1) && !conCapsula(i)) {
+                c.drawLine(ancho * i, height * 0.3f, ancho * i, height * 0.62f, pintura)
             }
         }
+    }
+
+    // La cápsula de la sugerencia que soltaste se apaga suave
+    private var soltado = -1
+    private var brilloSoltado = 0f
+    private var animSoltado: ValueAnimator? = null
+
+    private fun apagarPresion(i: Int) {
+        animSoltado?.cancel()
+        if (i < 0 || !isShown) { soltado = -1; brilloSoltado = 0f; return }
+        soltado = i
+        animSoltado = ValueAnimator.ofFloat(1f, 0f).apply {
+            duration = 160
+            interpolator = FRENO_BARRA
+            addUpdateListener {
+                brilloSoltado = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    /** Dibuja una casilla de la barra (sugerencia, corrección, emoji o predicción en línea) */
+    private fun dibujarCasilla(c: Canvas, i: Int, s: Sugerencia, x0: Float, ancho: Float) {
+        if (i == presionado || (i == soltado && brilloSoltado > 0f)) {
+            // Al tocarla: cápsula de vidrio (misma forma que la destacada). Al soltar no
+            // desaparece de golpe: se apaga suave, como en iPhone
+            val rp = (height - 16 * d) / 2f
+            val f = if (i == presionado) 1f else brilloSoltado
+            pintura.color = (tema.teclaPresionada and 0x00FFFFFF) or
+                ((Color.alpha(tema.teclaPresionada) * f).toInt().coerceIn(0, 255) shl 24)
+            c.drawRoundRect(x0 + 6 * d, 6 * d, x0 + ancho - 6 * d, height - 10 * d, rp, rp, pintura)
+        }
+        if (i != presionado && s.destacada) {
+            // La corrección que se pondrá sola va en una cápsula de vidrio con el filo de la app
+            val arriba = 6 * d
+            val abajo = height - 10 * d
+            val rc = (abajo - arriba) / 2f
+            // Vidrio apenas teñido del color de la app: se nota que es la que se pondrá sola
+            pintura.color = Tema.mezclar(tema.tecla, tema.azul, 0.22f)
+            c.drawRoundRect(x0 + 6 * d, arriba, x0 + ancho - 6 * d, abajo, rc, rc, pintura)
+            val previo = pinturaBorde.color
+            pinturaBorde.color = (tema.borde and 0x00FFFFFF) or 0x8C000000.toInt()
+            c.drawRoundRect(x0 + 6 * d, arriba, x0 + ancho - 6 * d, abajo, rc, rc, pinturaBorde)
+            pinturaBorde.color = previo
+        }
+        // Emoji sugerido: se dibuja grande y nítido (antes salía del tamaño de las letras)
+        if (s.emoji) {
+            pinturaEmoji.textSize = 24f * d
+            val fe = pinturaEmoji.fontMetrics
+            val cyE = (6 * d + height - 10 * d) / 2f - (fe.ascent + fe.descent) / 2f
+            c.drawText(s.texto, x0 + ancho / 2f, cyE, pinturaEmoji)
+            return
+        }
+        grosor(if (s.destacada) 500 else 400)
+        val cy = centroY()
+        val resto = s.resto
+        if (resto != null) {
+            // Predicción en línea: lo escrito normal y lo que falta en gris
+            val total = pinturaTexto.measureText(s.texto + resto)
+            if (total <= ancho - 16 * d) {
+                val izq = x0 + (ancho - total) / 2f
+                val alin = pinturaTexto.textAlign
+                pinturaTexto.textAlign = Paint.Align.LEFT
+                pinturaTexto.color = tema.texto
+                c.drawText(s.texto, izq, cy, pinturaTexto)
+                pinturaTexto.color = tema.textoSecundario
+                c.drawText(resto, izq + pinturaTexto.measureText(s.texto), cy, pinturaTexto)
+                pinturaTexto.textAlign = alin
+                return
+            }
+        }
+        pinturaTexto.color = tema.texto
+        val crudo = if (s.literal) "\u201C${s.texto}\u201D" else s.texto
+        // Palabras largas: primero se achica un poco la letra (hasta 13) y solo si aun así
+        // no cabe se corta con "…" (como en iPhone, casi nunca se ve cortada)
+        val disponible = ancho - 16 * d
+        val medida = pinturaTexto.measureText(crudo)
+        if (medida > disponible) {
+            pinturaTexto.textSize = maxOf(13f * d, 17f * d * disponible / medida)
+        }
+        val txt = TextUtils.ellipsize(crudo, pinturaTexto, disponible, TextUtils.TruncateAt.END).toString()
+        c.drawText(txt, x0 + ancho / 2f, cy, pinturaTexto)
+        pinturaTexto.textSize = 17f * d
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -563,12 +642,27 @@ class SuggestionBar(
                 ignorarGesto = !esCopiado && SystemClock.uptimeMillis() - ultimaTeclaMs < GUARDA_MS
                 if (ignorarGesto) return true
                 mantenido = false
+                y0Toque = e.y
                 presionado = if (items[i] != null) i else -1
                 if (presionado != -1) manejador.postDelayed(alMantener, 450)
                 invalidate()
             }
             MotionEvent.ACTION_MOVE -> {
                 if (ignorarGesto) return true
+                // Deslizar una sugerencia hacia abajo: se descarta (y no se vuelve a sugerir)
+                val bajo = presionado
+                val sb = if (bajo >= 0) items[bajo] else null
+                if (sb != null && !mantenido && e.y - y0Toque > height * 0.55f &&
+                    (sb.portapapeles || sePuedeOlvidar(sb))) {
+                    manejador.removeCallbacks(alMantener)
+                    mantenido = true
+                    presionado = -1
+                    performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                    items = items.map { if (it === sb) null else it }
+                    acciones.olvidar(sb)
+                    invalidate()
+                    return true
+                }
                 if (presionado != -1 && i != presionado) {
                     manejador.removeCallbacks(alMantener)
                     presionado = -1
@@ -580,6 +674,7 @@ class SuggestionBar(
                 manejador.removeCallbacks(alMantener)
                 val s = if (presionado == i && !mantenido) items[i] else null
                 mantenido = false
+                if (s != null) apagarPresion(presionado)
                 presionado = -1
                 invalidate()
                 if (s != null) acciones.elegir(s)

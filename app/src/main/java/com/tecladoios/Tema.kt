@@ -101,7 +101,9 @@ data class Tema(
                 // Letras un poco más claras que las teclas de función (se distinguen mejor, como en iOS)
                 tecla = a(0x31, mezclar(BLANCO, color, 0.08f)),
                 teclaFuncion = a(0x17, mezclar(BLANCO, color, 0.14f)),
-                teclaPresionada = a(0x5C, color),
+                // Tecla presionada: el vidrio se ilumina (más claro, apenas teñido de la app),
+                // como en iPhone. Antes se volvía un bloque verde oscuro y pesado.
+                teclaPresionada = a(0x6E, mezclar(BLANCO, color, 0.28f)),
                 teclaActiva = 0xFFEBEBF0.toInt(),
                 textoActivo = NEGRO,
                 sombra = 0,

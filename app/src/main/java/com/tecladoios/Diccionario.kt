@@ -378,6 +378,14 @@ class Diccionario(context: Context) {
 
     private fun bloqueada(p: String) = bloqueadas.isNotEmpty() && p.lowercase() in bloqueadas
 
+    /**
+     * Modo formal (correo y apps de trabajo, lo pone el servicio): la jerga del chat baja mucho
+     * en las sugerencias y al empezar se proponen saludos formales ("Estimado", "Buenos"...).
+     */
+    @Volatile var formal = false
+
+    private fun esJerga(w: String): Boolean = sinTildes(w.lowercase()) in JERGA_CHAT
+
     /** ¿Es una lisura? ("huevón", "carajo"...) */
     private fun esLisura(w: String): Boolean {
         val l = w.lowercase()
@@ -770,9 +778,10 @@ class Diccionario(context: Context) {
                 res[w] = (res[w] ?: 0) + 520
             }
         }
+        val enFormal = formal
         return res.entries.asSequence()
-            .filter { !lisuraAjena(it.key) }
-            .sortedByDescending { it.value }
+            .filter { !lisuraAjena(it.key) && !(enFormal && esLisura(it.key)) }
+            .sortedByDescending { if (enFormal && esJerga(it.key)) it.value / 4 else it.value }
             // Siglas y marcas con su forma correcta (SUNAT, EsSalud, WhatsApp) y sin repetir
             .map { FORMAS[sinTildes(it.key)] ?: it.key }
             .distinct()
@@ -882,7 +891,8 @@ class Diccionario(context: Context) {
                 if (!res.containsKey(w) && w != l && !bloqueada(w)) res[w] = 0
             }
         }
-        val lista = res.entries.filter { !lisuraAjena(it.key) }
+        val enFormal = formal
+        val lista = res.entries.filter { !lisuraAjena(it.key) && !(enFormal && (esLisura(it.key) || esJerga(it.key))) }
             .sortedByDescending { it.value }.take(max).map { FORMAS[sinTildes(it.key)] ?: it.key }
         ultimasPredichas = l to lista
         return lista.map { if (esNombre(it)) it.replaceFirstChar { c -> c.uppercase() } else it }
@@ -890,6 +900,7 @@ class Diccionario(context: Context) {
 
     /** Cómo empiezan los mensajes, según la hora: de mañana "buenos", de tarde y noche "buenas" */
     private fun inicioAhora(): List<String> {
+        if (formal) return INICIO_FORMAL
         val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
         val saludo = if (h in 5..11) "buenos" else "buenas"
         return listOf("hola", saludo) + INICIO.filter { it != "hola" && it != saludo }
@@ -2638,6 +2649,26 @@ yapéame: porfa, cuando, la, el, ahorita
 
         private val LISURAS: HashSet<String> = HashSet<String>().apply {
             for (w in LISURAS_TXT.trim().split(ESPACIOS)) { add(w.lowercase()); add(sinTildes(w)) }
+        }
+
+        /** Cómo empiezan los mensajes formales (correo, trámites) */
+        private val INICIO_FORMAL = listOf(
+            "estimado", "estimada", "buenos", "buenas", "quisiera", "le", "les", "por", "mediante",
+            "hola", "agradeceré", "solicito", "cordiales", "saludos", "adjunto", "en",
+        )
+
+        /** Jerga del chat que en modo formal casi no se sugiere */
+        private val JERGA_CHAT: HashSet<String> = HashSet<String>().apply {
+            for (w in """
+                causa causita pe pes ps oe bro broder bróder brother pata patita patas yunta choche
+                mano manito jato jerma flaco flaca chibolo chibola chamba chambear chambita misio luca
+                lucas palta paltazo roche piña bacán bacanazo chévere mostro bravazo buenazo paja asu
+                mare pucha puchamare alucina xd jaja jajaja jajajaja jeje jsjs chela chelas tono tonazo
+                manyas manyar jalar jalado floro yapa ya_fue firme fresh tranqui gil sapo tombo pituco
+                huachafo achorado mancha jama jamear huarique pichanga cachuelo gorrear zampar telo
+                calato chape chapar encamotado vacilar vacilón jugador caleta pulenta cheverazo yala
+                oki okey okis holi holis grax porfa porfis xfa ntp tqm tkm chau chao besos besito
+            """.trim().split(ESPACIOS)) add(sinTildes(w))
         }
 
         private val FORMAS: Map<String, String> = FORMAS_TXT.trim().split(ESPACIOS).associateBy { sinTildes(it) }

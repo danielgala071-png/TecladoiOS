@@ -83,6 +83,8 @@ class KeyboardView(
          * calcular las sugerencias de ya, así al soltarla la barra está lista al instante.
          */
         fun anticipar(s: String, x: Float, y: Float)
+        /** Deslizaste la barra espaciadora hacia arriba: se pone la sugerencia del centro */
+        fun aceptarSugerencia()
     }
 
     private val d = Medidas.escala(context)
@@ -275,6 +277,10 @@ class KeyboardView(
     private var yCursor = 0f
     /** Cuándo se apoyó el dedo en el espacio: un toque rápido que "barre" no mueve el cursor */
     private var espacioDesdeMs = 0L
+    /** Este toque del espacio ya aceptó la sugerencia (al soltarlo no escribe espacio) */
+    private var espacioAcepto = false
+    /** Deslizar el espacio hacia arriba acepta la sugerencia del centro (lo pone el servicio) */
+    var aceptarDeslizando = true
 
     // Deslizar desde 123 (o ABC, #+=): eliges un número o signo sin soltar el dedo,
     // se escribe y vuelve solo al teclado de antes, como en iPhone
@@ -615,6 +621,7 @@ class KeyboardView(
         punteroLargo = -1
         teclaLarga = null
         punteroEspacio = -1
+        espacioAcepto = false
         modoCursor = false
         punteroCambio = -1
         cambioDeslizado = false
@@ -746,6 +753,13 @@ class KeyboardView(
         anim.start()
     }
 
+    /** Mezcla dos colores incluida su transparencia (así la tecla se apaga sin saltos) */
+    private fun mezclarConAlfa(a: Int, b: Int, f: Float): Int {
+        fun c(x: Int, y: Int) = (x + (y - x) * f).toInt().coerceIn(0, 255)
+        return Color.argb(c(Color.alpha(a), Color.alpha(b)), c(Color.red(a), Color.red(b)),
+            c(Color.green(a), Color.green(b)), c(Color.blue(a), Color.blue(b)))
+    }
+
     /** Apaga (suave) las teclas marcadas que ya no tiene ningún dedo encima */
     private fun apagarSueltas() {
         if (pulsos.isEmpty()) return
@@ -772,9 +786,11 @@ class KeyboardView(
             sinFondo -> if (presionada || f > 0f) tema.teclaPresionada else 0
             t.tipo == Tipo.LETRA && presionada && (!vistaPrevia || pad) -> tema.teclaPresionada
             t.tipo == Tipo.ESPACIO && presionada -> tema.teclaPresionada
-            f > 0f -> Tema.mezclar(base, tema.teclaPresionada, f)
+            f > 0f -> mezclarConAlfa(base, tema.teclaPresionada, f)
             else -> base
         }
+        // Cuánto está "encendida" la tecla ahora (para agrandar apenas su letra al tocarla)
+        val toque = if (presionada) 1f else f
         // Al presionar, la tecla apenas se hunde (no crece ni brilla)
         val r = if (f > 0f) rectPulso.apply { set(t.rect); inset(dp(0.6f) * f, dp(0.6f) * f) } else t.rect
         val forma = if (f > 0f) {
@@ -836,7 +852,9 @@ class KeyboardView(
 
         when (t.tipo) {
             Tipo.SHIFT -> Iconos.shift(c, cx, cy, tx(20f), pinturaIcono, shift > 0, shift == 2)
-            Tipo.BORRAR -> Iconos.borrar(c, cx, cy, tx(if (pad) 26f else 22f), pinturaIcono)
+            // Como en iPhone: al presionar borrar, el ícono se rellena (la X queda calada)
+            Tipo.BORRAR -> Iconos.borrar(c, cx, cy, tx(if (pad) 26f else 22f), pinturaIcono,
+                lleno = toque > 0.5f, hueco = Tema.sobreNegro(color) or (0xFF shl 24))
             Tipo.EMOJI -> {
                 // Carita de línea fina (como iOS): antes era una bola blanca rellena que
                 // llamaba más la atención que las letras
@@ -865,7 +883,7 @@ class KeyboardView(
             Tipo.LETRA -> {
                 if (pad) {
                     val conSub = t.sub.isNotEmpty()
-                    texto(c, t.texto, cx, if (conSub) cy - tx(5f) else cy, tx(26f), contenido)
+                    texto(c, t.texto, cx, if (conSub) cy - tx(5f) else cy, tx(26f) * (1f + 0.08f * toque), contenido)
                     if (conSub) {
                         pinturaSub.textSize = tx(9.5f)
                         pinturaSub.color = contenido
@@ -874,7 +892,9 @@ class KeyboardView(
                 } else {
                     val minuscula = modo == Modo.LETRAS && shift == 0
                     // La letra crece con el teclado, pero sin salirse del ancho de la tecla
-                    val tam = minOf(tx(23f), t.rect.width() * 0.78f)
+                    // Sin burbuja, la letra tocada crece un poquito: se siente el toque
+                    val crece = if (!vistaPrevia) 1f + 0.12f * toque else 1f
+                    val tam = minOf(tx(23f), t.rect.width() * 0.78f) * crece
                     texto(c, etiqueta(t), cx, if (minuscula) cy - tx(1.5f) else cy, tam, contenido)
                 }
             }
@@ -1157,6 +1177,12 @@ class KeyboardView(
                 // pierde el orden), pero su animación sigue hasta que ese dedo se levante
                 for ((k, previa) in presionadas.toList()) {
                     if (k in escritas) continue
+                    // El espacio que ya aceptó una sugerencia no escribe nada más
+                    if (k == punteroEspacio && espacioAcepto) {
+                        escritas.add(k)
+                        punteroEspacio = -1
+                        continue
+                    }
                     if (previa.tipo != Tipo.LETRA && previa.tipo != Tipo.ESPACIO) continue
                     if (k == punteroLargo) {
                         manejador.removeCallbacks(abrirVariantes)
@@ -1183,6 +1209,18 @@ class KeyboardView(
                         continue
                     }
                     if (id == punteroEspacio) {
+                        if (espacioAcepto) continue
+                        // Deslizar el espacio hacia arriba: se pone la sugerencia del centro
+                        // (más rápido que estirar el pulgar hasta la barra)
+                        if (aceptarDeslizando && !modoCursor && yCursor - y > altoFila * 0.7f &&
+                            Math.abs(x - xCursor) < unidad * 1.6f) {
+                            espacioAcepto = true
+                            manejador.removeCallbacks(activarCursor)
+                            acciones.retro(Tipo.ENTER)
+                            acciones.aceptarSugerencia()
+                            invalidate()
+                            continue
+                        }
                         if (modoCursor) {
                             val paso = dp(8f)
                             val n = ((x - xCursor) / paso).toInt()
@@ -1298,6 +1336,7 @@ class KeyboardView(
                         manejador.removeCallbacks(activarCursor)
                         punteroEspacio = -1
                         if (modoCursor) modoCursor = false
+                        else if (espacioAcepto) espacioAcepto = false
                         else if (t != null && !yaEscrita) soltar(t, id)
                     }
                     else -> {
@@ -1405,6 +1444,7 @@ class KeyboardView(
             }
             Tipo.ESPACIO -> {
                 punteroEspacio = id
+                espacioAcepto = false
                 espacioDesdeMs = SystemClock.uptimeMillis()
                 xCursor = x
                 yCursor = y

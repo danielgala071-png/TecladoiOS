@@ -27,7 +27,11 @@ object Iconos {
         }
     }
 
-    fun borrar(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
+    /**
+     * Borrar. [lleno]: presionada, como en iPhone (la tecla se rellena y la X queda calada
+     * con el color [hueco] de la tecla).
+     */
+    fun borrar(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint, lleno: Boolean = false, hueco: Int = 0) {
         val h = s * 0.36f
         path.reset()
         path.moveTo(cx - s * 0.55f, cy)
@@ -36,12 +40,16 @@ object Iconos {
         path.lineTo(cx + s * 0.5f, cy + h)
         path.lineTo(cx - s * 0.22f, cy + h)
         path.close()
-        p.style = Paint.Style.STROKE
+        p.style = if (lleno) Paint.Style.FILL_AND_STROKE else Paint.Style.STROKE
         c.drawPath(path, p)
+        p.style = Paint.Style.STROKE
+        val color = p.color
+        if (lleno) p.color = hueco
         val xc = cx + s * 0.13f
         val k = s * 0.13f
         c.drawLine(xc - k, cy - k, xc + k, cy + k, p)
         c.drawLine(xc - k, cy + k, xc + k, cy - k, p)
+        p.color = color
     }
 
     /** Lupa (buscar emoji) */

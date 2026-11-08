@@ -53,6 +53,23 @@ class TecladoService : InputMethodService(),
         private const val CLAVE_HISTORIAL = "historial_copiado"
         /** Lo aprendido se guarda como mucho cada tantos milisegundos (menos escrituras = menos batería) */
         private const val ESPERA_GUARDADO = 20_000L
+        /** Tildes que cambian el sentido: la barra ofrece la otra forma */
+        private val DIACRITICAS = mapOf(
+            "tu" to "tú", "tú" to "tu", "el" to "él", "él" to "el", "si" to "sí", "sí" to "si",
+            "mas" to "más", "más" to "mas", "se" to "sé", "sé" to "se", "mi" to "mí", "mí" to "mi",
+            "aun" to "aún", "aún" to "aun",
+            "que" to "qué", "qué" to "que", "como" to "cómo", "cómo" to "como", "donde" to "dónde",
+            "dónde" to "donde", "cuando" to "cuándo", "cuándo" to "cuando", "quien" to "quién",
+            "quién" to "quien", "cual" to "cuál", "cuál" to "cual", "cuanto" to "cuánto",
+            "cuánto" to "cuanto", "esta" to "está", "está" to "esta", "este" to "esté", "esté" to "este",
+        )
+        /** Apps de correo y de trabajo (ahí se escribe formal) */
+        private val APPS_FORMALES = listOf(
+            "com.google.android.gm", "com.microsoft.office.outlook", "com.microsoft.teams",
+            "com.linkedin.android", "com.Slack", "com.samsung.android.email", "com.yahoo.mobile.client.android.mail",
+            "ch.protonmail", "com.google.android.apps.docs", "com.microsoft.office.word",
+            "com.microsoft.office.officehubrow", "com.google.android.apps.meetings",
+        )
         /** Cuánto se queda la barra a la vista después de enviar o dejar de escribir */
         private const val SOSTENER_MS = 2600L
     }
@@ -302,6 +319,15 @@ class TecladoService : InputMethodService(),
 
     override fun onCreateInputView(): View = construir()
 
+    /** ¿Se escribe formal aquí? (correo, documentos, apps de trabajo o el asunto de un correo) */
+    private fun esFormal(info: EditorInfo): Boolean {
+        val paquete = info.packageName ?: ""
+        if (APPS_FORMALES.any { paquete.startsWith(it) }) return true
+        val variacion = info.inputType and InputType.TYPE_MASK_VARIATION
+        return (info.inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT &&
+            variacion == InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT
+    }
+
     /** Carga los 4 sonidos una sola vez (se reproducen sin demora en cada toque) */
     private fun cargarSonidos() {
         try {
@@ -476,6 +502,8 @@ class TecladoService : InputMethodService(),
             retroManejador.post { efectos.fill(null) }
         }
         barraSostenida = Ajustes.barraSostenida(this)
+        // Modo formal: en el correo y en apps de trabajo las sugerencias se vuelven formales
+        diccionario.formal = Ajustes.modoFormal(this) && esFormal(info)
         emojisFrecuentesActivo = Ajustes.emojisFrecuentes(this)
         manejador.removeCallbacks(tareaOcultarBarra)
         puntoDoble = Ajustes.puntoDoble(this)
@@ -546,6 +574,7 @@ class TecladoService : InputMethodService(),
             // Escritura rápida: sin burbuja ni acentos al mantener (nada se interpone al escribir)
             vistaPrevia = Ajustes.vistaPrevia(this@TecladoService) && !rapida
             acentosAlMantener = !rapida
+            aceptarDeslizando = Ajustes.aceptarDeslizando(this@TecladoService)
             bloqMayusPermitido = Ajustes.bloqMayus(this@TecladoService)
             soloNumeros = esFecha
             configurar(
@@ -1066,7 +1095,7 @@ class TecladoService : InputMethodService(),
         val t = diccionario.turno()
 
         // Campo vacío: tus 3 emojis más usados, a un toque
-        if (p.isEmpty() && emojisFrecuentesActivo && antes.isBlank()) {
+        if (p.isEmpty() && emojisFrecuentesActivo && !diccionario.formal && antes.isBlank()) {
             val frecuentes = EmojiPanel.recientes(this).take(3)
             if (frecuentes.size == 3) {
                 anticipo = null
@@ -1174,7 +1203,11 @@ class TecladoService : InputMethodService(),
         val emo = if (op.emojisBarra) EmojiPalabras.para(p) ?: EmojiPalabras.para(c) else null
         val derecha = emo?.let { Sugerencia(it, emoji = true) }
             ?: (if (c != null) lista.getOrNull(0) else lista.getOrNull(1))?.let { Sugerencia(it) }
-        b.mostrar(listOf(Sugerencia(p, literal = true), centro, derecha))
+        // Tildes que cambian el sentido (tu/tú, el/él, si/sí, mas/más...): la otra forma
+        // aparece a la derecha para elegirla de un toque, si no está ya en la barra
+        val otraForma = DIACRITICAS[p.lowercase()]?.let { o -> if (p[0].isUpperCase()) o.replaceFirstChar { it.uppercase() } else o }
+        val derechaFinal = if (otraForma != null && c == null && centro?.texto != otraForma) Sugerencia(otraForma) else derecha
+        b.mostrar(listOf(Sugerencia(p, literal = true), centro, derechaFinal))
     }
 
     /** El dedo tocó una letra: se calcula ya, como si estuviera escrita */
@@ -2180,6 +2213,17 @@ class TecladoService : InputMethodService(),
     }
 
     /** Mantener presionada una sugerencia → Borrar: el teclado olvida esa palabra */
+    /** Deslizaste la barra espaciadora hacia arriba: se pone la sugerencia del centro */
+    override fun aceptarSugerencia() {
+        val s = barra?.sugerenciaCentral()
+        if (s == null) {
+            // Sin sugerencia: se comporta como un espacio normal
+            espacio()
+            return
+        }
+        elegir(s)
+    }
+
     override fun olvidar(s: Sugerencia) {
         if (s.portapapeles) {
             // Mantener presionado lo copiado: se quita de la barra

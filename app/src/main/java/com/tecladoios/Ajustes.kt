@@ -66,6 +66,11 @@ object Ajustes {
     /** Qué tan visible es el filo de color de las teclas: "apagado", "sutil", "normal" o "vivo" */
     fun bordeTeclas(c: Context) = prefs(c).getString("borde_teclas", "normal") ?: "normal"
 
+    /** En correo y apps de trabajo, las sugerencias se vuelven formales (sin jerga) */
+    fun modoFormal(c: Context) = si(c, "modo_formal", true)
+    /** Deslizar la barra espaciadora hacia arriba pone la sugerencia del centro */
+    fun aceptarDeslizando(c: Context) = si(c, "aceptar_deslizando", true)
+
     /** Filas de emojis en el panel: 3 (grandes), 4 (normal) o 5 (más emojis a la vista) */
     fun filasEmoji(c: Context) = prefs(c).getInt("emoji_filas", 4).coerceIn(3, 5)
 
