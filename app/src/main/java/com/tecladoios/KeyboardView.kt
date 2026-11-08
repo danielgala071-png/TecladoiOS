@@ -123,7 +123,8 @@ class KeyboardView(
     // Teclas un poco más anchas y altas (huecos más finos) y esquinas más suaves, como iOS 26
     private val sepH = dp(2.7f)
     private val sepV = dp(5.2f)
-    private val radio = dp(7f)
+    // Esquinas un poco más redondas, como las teclas de iOS 26
+    private val radio = dp(8.5f)
     private val formaPulso = Path()
     private val rectPulso = RectF()
 
@@ -186,20 +187,33 @@ class KeyboardView(
     var modo = Modo.LETRAS
         set(value) {
             val cambia = field != value
+            val antes = field
             field = value
             filas = crearFilas(value)
             acomodar()
-            // Al pasar de letras a 123 (y al revés) las letras nuevas aparecen suavemente
-            if (cambia) animarEtiquetas() else invalidate()
+            // Al pasar de letras a 123 (y al revés) las letras nuevas entran deslizándose
+            // apenas de costado: hacia 123 desde la derecha, de vuelta a ABC desde la izquierda
+            if (cambia) animarEtiquetas(if (value == Modo.LETRAS || (antes == Modo.SIMBOLOS && value == Modo.NUMEROS)) -1 else 1)
+            else invalidate()
         }
+
+    /** Escritura rápida apaga los acentos al mantener presionado (lo pone el servicio) */
+    var acentosAlMantener = true
 
     // ---------- Transición suave de las letras (como iOS) ----------
 
     /** 0 = letras invisibles, 1 = a la vista. Solo cambia por un instante al cambiar de teclado. */
     private var aparicion = 1f
     private var animAparicion: ValueAnimator? = null
+    /** Hacia dónde se deslizan las letras al aparecer (1 = desde la derecha, -1 = izquierda, 0 = sin moverse) */
+    private var dirAparicion = 0
 
-    private fun animarEtiquetas() {
+    /** Corrimiento de las letras mientras aparecen */
+    private fun corrimientoEtiqueta(): Float =
+        if (aparicion >= 1f || dirAparicion == 0) 0f else (1f - aparicion) / 0.75f * dp(16f) * dirAparicion
+
+    private fun animarEtiquetas(direccion: Int = 0) {
+        dirAparicion = direccion
         animAparicion?.cancel()
         // Sin animación si el teclado no se ve (al abrirlo, por ejemplo): no gasta nada
         if (!isShown || width == 0) {
@@ -208,7 +222,7 @@ class KeyboardView(
             return
         }
         animAparicion = ValueAnimator.ofFloat(0.25f, 1f).apply {
-            duration = 110
+            duration = if (direccion == 0) 110 else 170
             interpolator = DecelerateInterpolator()
             addUpdateListener {
                 aparicion = it.animatedValue as Float
@@ -244,7 +258,10 @@ class KeyboardView(
     /** Dónde cayó cada dedo (para la autocorrección por posición, como Gboard) */
     private val puntosToque = HashMap<Int, FloatArray>()
     private val burbujas = KeyPreviewOverlay(this).apply { radioTecla = radio }
-    private val variantes = VariantesPopup(this)
+    private val variantes = VariantesPopup(this).apply {
+        // Un toquecito al pasar de un acento a otro (se siente qué estás eligiendo)
+        alCambiarSeleccion = { acciones.retro(Tipo.VACIO) }
+    }
 
     // Acentos al mantener presionado
     private var punteroLargo = -1
@@ -344,11 +361,13 @@ class KeyboardView(
             repeticiones++
             if (repeticiones > 14 && !esPad) {
                 acciones.borrarPalabra()
-                manejador.postDelayed(this, 150)
+                manejador.postDelayed(this, 160)
             } else {
                 acciones.borrar()
-                manejador.postDelayed(this, 65)
+                // Empieza más tranquilo y va acelerando (más control para borrar pocas letras)
+                manejador.postDelayed(this, if (repeticiones < 4) 85L else 60L)
             }
+            acciones.retro(Tipo.BORRAR)
         }
     }
     private val abrirVariantes = Runnable { mostrarVariantes() }
@@ -431,9 +450,11 @@ class KeyboardView(
         val r = t.rect
         // Filo del color de la app como luz que entra en diagonal: intenso arriba a la izquierda,
         // tenue al medio y un poco más vivo abajo (como el borde de un vidrio grueso)
-        t.shaderBorde = LinearGradient(r.left, r.top, r.left + r.width() * 0.35f, r.bottom,
-            intArrayOf(tema.borde, conAlfa(tema.borde, 0.22f), conAlfa(tema.borde, 0.45f)),
-            floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+        // Filo parejo en toda la tecla: un poco más vivo arriba (donde "pega la luz") y más
+        // tenue abajo. Antes iba en diagonal y la esquina de arriba a la izquierda se veía manchada.
+        t.shaderBorde = LinearGradient(0f, r.top, 0f, r.bottom,
+            intArrayOf(tema.borde, conAlfa(tema.borde, 0.5f), conAlfa(tema.borde, 0.32f)),
+            floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
         // Reflejo arriba de la tecla: le da el efecto translúcido de vidrio
         t.shaderBrillo = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.55f,
             tema.brillo, tema.brillo and 0x00FFFFFF, Shader.TileMode.CLAMP)
@@ -456,7 +477,8 @@ class KeyboardView(
         val dx = if (izquierda) t.rect.left else width - t.rect.right
         val dy = (alto() - t.rect.bottom) + navAbajo
         val concentrica = radioPantalla - maxOf(dx, dy)
-        return maxOf(concentrica, alto * 0.42f).coerceAtMost(alto * 0.5f)
+        // Curva suave: sigue la pantalla pero sin que la tecla parezca una pestaña
+        return maxOf(concentrica, alto * 0.26f).coerceAtMost(alto * 0.34f)
     }
 
     private fun acomodar() {
@@ -602,7 +624,18 @@ class KeyboardView(
         invalidate()
     }
 
+    private val tareaPrepararPreview = Runnable {
+        if (vistaPrevia && isAttachedToWindow && width > 0) burbujas.preparar()
+    }
+
+    /** Deja lista la capa de la vista previa antes del primer toque */
+    fun prepararVistaPrevia() {
+        removeCallbacks(tareaPrepararPreview)
+        postDelayed(tareaPrepararPreview, 90)
+    }
+
     fun ocultarPreview() {
+        removeCallbacks(tareaPrepararPreview)
         reiniciar()
         burbujas.cerrar()
     }
@@ -692,17 +725,33 @@ class KeyboardView(
 
     private fun animarPulso(t: Tecla, hasta: Float) {
         animPulsos.remove(t)?.cancel()
-        val anim = ValueAnimator.ofFloat(pulsos[t] ?: 0f, hasta).apply {
-            duration = if (hasta > 0f) 70 else 180
-            interpolator = DecelerateInterpolator()
+        if (hasta > 0f) {
+            // Al presionar la tecla se marca AL INSTANTE (sin animación de entrada): se siente
+            // más directa, como en iPhone. Solo la salida es suave.
+            pulsos[t] = hasta
+            invalidarTecla(t)
+            return
+        }
+        val desde = pulsos[t] ?: return
+        val anim = ValueAnimator.ofFloat(desde, 0f).apply {
+            duration = 150
+            interpolator = FRENO_PULSO
             addUpdateListener {
                 val v = it.animatedValue as Float
-                if (hasta == 0f && v <= 0f) pulsos.remove(t) else pulsos[t] = v
+                if (v <= 0f) pulsos.remove(t) else pulsos[t] = v
                 invalidarTecla(t)
             }
         }
         animPulsos[t] = anim
         anim.start()
+    }
+
+    /** Apaga (suave) las teclas marcadas que ya no tiene ningún dedo encima */
+    private fun apagarSueltas() {
+        if (pulsos.isEmpty()) return
+        for (t in pulsos.keys.toList()) {
+            if (presionadas.values.none { it === t } && animPulsos[t]?.isRunning != true) animarPulso(t, 0f)
+        }
     }
 
     /** Dibuja una tecla. [presionada] y [f] (animación del toque) vienen de afuera: en la capa fija van en reposo. */
@@ -760,15 +809,13 @@ class KeyboardView(
                 pinturaBorde.shader = t.shaderBorde
                 c.drawPath(forma, pinturaBorde)
                 pinturaBorde.shader = null
-                // Línea de luz en el filo de arriba (en reposo; al presionar la tecla se "hunde")
-                if (vidrio && f <= 0f && !presionada) {
-                    val y = r.top + pinturaBorde.strokeWidth + dp(0.35f)
-                    val k = radio * 1.4f
-                    if (r.right - r.left > k * 2.5f) {
-                        pinturaReflejo.shader = t.shaderReflejo
-                        c.drawLine(r.left + k, y, r.right - k, y, pinturaReflejo)
-                        pinturaReflejo.shader = null
-                    }
+                // Al presionar, el filo se enciende con el color de la app y se apaga suave
+                // (la línea de luz de arriba se quitó: se veía como un rayón en cada tecla)
+                val brilloFilo = if (presionada && t.tipo != Tipo.LETRA) 1f else f
+                if (brilloFilo > 0f) {
+                    pinturaBorde.color = conAlfa(tema.azul, 0.9f * brilloFilo)
+                    c.drawPath(forma, pinturaBorde)
+                    pinturaBorde.color = Color.BLACK
                 }
             }
         }
@@ -791,9 +838,9 @@ class KeyboardView(
             Tipo.SHIFT -> Iconos.shift(c, cx, cy, tx(20f), pinturaIcono, shift > 0, shift == 2)
             Tipo.BORRAR -> Iconos.borrar(c, cx, cy, tx(if (pad) 26f else 22f), pinturaIcono)
             Tipo.EMOJI -> {
-                // Los ojos y la boca del emoji se pintan del color que se ve en la tecla
-                val fondoOpaco = Tema.sobreNegro(color)
-                Iconos.emojiLleno(c, cx, cy, tx(23f), pinturaIcono, fondoOpaco)
+                // Carita de línea fina (como iOS): antes era una bola blanca rellena que
+                // llamaba más la atención que las letras
+                Iconos.emoji(c, cx, cy, tx(23f), pinturaIcono)
             }
             Tipo.MIC -> {}
             Tipo.ENTER -> if (pad) Iconos.visto(c, cx, cy, tx(22f), pinturaIcono)
@@ -810,7 +857,7 @@ class KeyboardView(
                     val hueco = tx(7f)
                     val izq = cx - (lado + hueco + ancho) / 2f
                     rectIcono.set(izq, cy - lado / 2f, izq + lado, cy + lado / 2f)
-                    pinturaIconoApp.alpha = (95 * aparicion).toInt().coerceIn(0, 255)
+                    pinturaIconoApp.alpha = (120 * aparicion).toInt().coerceIn(0, 255)
                     c.drawBitmap(icono, null, rectIcono, pinturaIconoApp)
                     texto(c, t.texto, izq + lado + hueco + ancho / 2f, cy, tx(16f), contenido)
                 }
@@ -846,17 +893,17 @@ class KeyboardView(
             pinturaTexto.getFontMetrics(medidasLetra)
             tamMedido = tam
         }
-        c.drawText(s, cx, cy - (medidasLetra.ascent + medidasLetra.descent) / 2f, pinturaTexto)
+        c.drawText(s, cx + corrimientoEtiqueta(), cy - (medidasLetra.ascent + medidasLetra.descent) / 2f, pinturaTexto)
     }
 
     // ---------- Acentos ----------
 
     private fun programarVariantes(t: Tecla, id: Int) {
         manejador.removeCallbacks(abrirVariantes)
-        if (t.tipo == Tipo.LETRA && !esPad && VARIANTES.containsKey(t.texto)) {
+        if (acentosAlMantener && t.tipo == Tipo.LETRA && !esPad && VARIANTES.containsKey(t.texto)) {
             teclaLarga = t
             punteroLargo = id
-            manejador.postDelayed(abrirVariantes, 480)
+            manejador.postDelayed(abrirVariantes, 430)
         } else {
             teclaLarga = null
             punteroLargo = -1
@@ -935,8 +982,9 @@ class KeyboardView(
     private fun conPrediccion(x: Float, y: Float, base: Tecla, fila: Int, p: FloatArray): Tecla {
         var mejor = base
         var mejorPuntaje = puntajeToque(base, x, y, p)
-        val zonaX = unidad * 0.2f
-        val zonaY = altoFila * 0.2f
+        // Zona donde la letra probable "crece" sin que se vea (como en iPhone)
+        val zonaX = unidad * 0.28f
+        val zonaY = altoFila * 0.24f
         for (f in maxOf(0, fila - 1)..minOf(filas.size - 1, fila + 1)) {
             for (t in filas[f]) {
                 if (t === base || t.letra < 0) continue
@@ -956,7 +1004,7 @@ class KeyboardView(
         val dy = (y - t.rect.centerY() - modelo.offY(t.letra) * altoFila) / unidad
         val d2 = dx * dx + dy * dy * 0.8f
         // Distancia al centro (en anchos de tecla) contra lo probable de la letra
-        return Math.log(prob + 0.02).toFloat() * 0.35f - d2 / (2f * 0.33f * 0.33f)
+        return Math.log(prob + 0.02).toFloat() * 0.45f - d2 / (2f * 0.33f * 0.33f)
     }
 
     private fun agregarPunto(x: Float, y: Float) {
@@ -977,6 +1025,7 @@ class KeyboardView(
         escritas.remove(id)
         puntosToque.remove(id)
         burbujas.quitar(id)
+        apagarSueltas()
         if (puntos.size >= 2) acciones.deslizar(puntos, altoFila / unidad, mayus)
         if (shift == 1 && modo == Modo.LETRAS) shift = 0
         invalidate()
@@ -1173,6 +1222,7 @@ class KeyboardView(
                         ) {
                             // Empezó a deslizar: ya no es un toque, es una palabra
                             deslizando = true
+                            presionadas[id]?.let { tk -> animPulsos.remove(tk)?.cancel(); pulsos.remove(tk) }
                             manejador.removeCallbacks(abrirVariantes)
                             punteroLargo = -1
                             teclaLarga = null
@@ -1198,6 +1248,8 @@ class KeyboardView(
                         if (x < t.rect.left + m || x > t.rect.right - m ||
                             y < t.rect.top + dp(3f) || y > t.rect.bottom - dp(3f)) continue
                         presionadas[id] = t
+                        // Sin vista previa: la tecla anterior se apaga y se marca la nueva
+                        if (!vistaPrevia) { apagarSueltas(); animarPulso(t, 1f) }
                         puntosToque[id] = floatArrayOf(x, y)
                         anticiparLetra(t, x, y)
                         programarVariantes(t, id)
@@ -1326,7 +1378,9 @@ class KeyboardView(
     private fun presionar(t: Tecla, id: Int, x: Float, y: Float) {
         if (t.tipo == Tipo.VACIO) return
         acciones.retro(t.tipo)
-        if (t.tipo != Tipo.LETRA && t.tipo != Tipo.UNA_MANO) animarPulso(t, 1f)
+        // Las letras con vista previa no se marcan (la burbuja ya muestra el toque). Sin vista
+        // previa, y en el teclado numérico, la tecla se marca y al soltarla se apaga suave.
+        if (t.tipo != Tipo.UNA_MANO && (t.tipo != Tipo.LETRA || !vistaPrevia || esPad)) animarPulso(t, 1f)
         when (t.tipo) {
             Tipo.LETRA -> {
                 puntosToque[id] = floatArrayOf(x, y)
@@ -1446,6 +1500,8 @@ class KeyboardView(
     }
 
     companion object {
+        private val FRENO_PULSO = DecelerateInterpolator(1.5f)
+
         /** Lo que aparece al mantener presionada cada tecla */
         private val VARIANTES = mapOf(
             // Lo del español primero; al final el número (como en Gboard: mantén la tecla)

@@ -85,14 +85,22 @@ data class Tema(
         @Suppress("UNUSED_PARAMETER")
         fun desde(context: Context, conDesenfoque: Boolean, acento: Int?): Tema {
             val color = (acento ?: acentoSistema(context)) or (0xFF shl 24)
+            // Filo de las teclas elegido en Ajustes (apagado, sutil, normal o vivo)
+            val alfaBorde = when (Ajustes.bordeTeclas(context)) {
+                "apagado" -> 0x00
+                "sutil" -> 0x55
+                "vivo" -> 0xD0
+                else -> 0x8C
+            }
             return Tema(
                 oscuro = true,
                 fondo = NEGRO,
                 fondoArriba = NEGRO,
                 // Vidrio translúcido: blanco muy tenue con un toque del color de la app
                 // Grafito neutro, apenas teñido: se lee mejor y se ve más fino
-                tecla = a(0x2B, mezclar(BLANCO, color, 0.10f)),
-                teclaFuncion = a(0x18, mezclar(BLANCO, color, 0.16f)),
+                // Letras un poco más claras que las teclas de función (se distinguen mejor, como en iOS)
+                tecla = a(0x31, mezclar(BLANCO, color, 0.08f)),
+                teclaFuncion = a(0x17, mezclar(BLANCO, color, 0.14f)),
                 teclaPresionada = a(0x5C, color),
                 teclaActiva = 0xFFEBEBF0.toInt(),
                 textoActivo = NEGRO,
@@ -101,7 +109,7 @@ data class Tema(
                 textoSecundario = 0xFF8E8E93.toInt(),
                 azul = color,
                 // Filo sutil: se nota el color de la app sin que "grite"
-                borde = a(0x80, mezclar(color, BLANCO, 0.18f)),
+                borde = a(alfaBorde, mezclar(color, BLANCO, 0.22f)),
                 bordePanel = a(0x80, color),
                 barra = a(0xF0, 0x0B0B0D),
                 enterAccion = a(0xD9, color),

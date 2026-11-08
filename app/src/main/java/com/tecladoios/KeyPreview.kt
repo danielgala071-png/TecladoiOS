@@ -86,6 +86,13 @@ class KeyPreviewOverlay(private val anchor: View) {
         vista.mostrar(id, rect, etiqueta, deslizando)
     }
 
+    /**
+     * Crea la capa de la vista previa por adelantado (vacía e invisible), apenas se abre el
+     * teclado. Antes se creaba con el primer toque: esa primera vez Android tarda en armar
+     * la ventanita y la siguiente tecla se sentía pegada.
+     */
+    fun preparar() { asegurar() }
+
     /** El dedo [id] se levantó: su burbuja se recoge en su propia tecla */
     fun soltar(id: Int) = vista.soltar(id)
 
@@ -175,7 +182,8 @@ class KeyPreviewOverlay(private val anchor: View) {
             val t = ahora()
             activas.remove(id) // si el mismo dedo cambió de tecla, la anterior desaparece en su sitio
             val b = Burbuja(RectF(rect), etiqueta)
-            if (deslizando) b.animar(0.86f, 1f, 90, true, t) else b.animar(0f, 1f, 120, true, t)
+            // Aparece casi al instante (como en iPhone): nace ya grande y termina con un rebote corto
+            if (deslizando) b.animar(0.9f, 1f, 70, true, t) else b.animar(0.55f, 1f, 85, true, t)
             activas[id] = b
             postInvalidateOnAnimation()
         }
@@ -183,7 +191,7 @@ class KeyPreviewOverlay(private val anchor: View) {
         fun soltar(id: Int) {
             val b = activas.remove(id) ?: return
             val t = ahora()
-            b.animar(b.valor(t), 0f, 90, false, t)
+            b.animar(b.valor(t), 0f, 75, false, t)
             saliendo.add(b)
             postInvalidateOnAnimation()
         }
@@ -295,7 +303,7 @@ class KeyPreviewOverlay(private val anchor: View) {
     }
 
     private companion object {
-        val REBOTE = OvershootInterpolator(1.4f)
+        val REBOTE = OvershootInterpolator(1.1f)
         val FRENO = DecelerateInterpolator()
 
         /** Color [a] (con transparencia) puesto encima de [b] (opaco) */

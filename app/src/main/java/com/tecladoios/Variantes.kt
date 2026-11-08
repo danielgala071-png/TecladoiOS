@@ -93,6 +93,8 @@ class VariantesPopup(private val anchor: View) {
     private var izquierda = 0f
 
     val abierto get() = popup.isShowing
+    /** Avisa cuando el dedo pasa a otra opción (para vibrar) */
+    var alCambiarSeleccion: (() -> Unit)? = null
 
     fun mostrar(r: RectF, opciones: List<String>, anchoTeclado: Float, oscuro: Boolean, acento: Int) {
         if (anchor.windowToken == null || opciones.isEmpty()) return
@@ -135,7 +137,10 @@ class VariantesPopup(private val anchor: View) {
     fun mover(x: Float) {
         if (!popup.isShowing || vista.celda <= 0f) return
         val i = ((x - izquierda) / vista.celda).toInt().coerceIn(0, vista.opciones.size - 1)
-        if (i != vista.seleccion) vista.seleccion = i
+        if (i != vista.seleccion) {
+            vista.seleccion = i
+            alCambiarSeleccion?.invoke()
+        }
     }
 
     fun elegido(): String? = vista.opciones.getOrNull(vista.seleccion)

@@ -52,6 +52,22 @@ object Ajustes {
     // Respuesta del teclado
     fun vibrar(c: Context) = si(c, "vibrar", true)
     fun sonido(c: Context) = si(c, "sonido", false)
+    /** Fuerza de la háptica: "suave", "media" o "fuerte" */
+    fun vibracion(c: Context) = prefs(c).getString("vibracion", "media") ?: "media"
+
+    // Escritura
+    /** Escritura rápida: sin vista previa ni acentos al mantener (para escribir muy rápido con los pulgares) */
+    fun escrituraRapida(c: Context) = si(c, "escritura_rapida", false)
+    /** La barra de sugerencias se queda unos segundos después de enviar o dejar de escribir */
+    fun barraSostenida(c: Context) = si(c, "barra_sostenida", true)
+    /** Con el campo vacío, la barra muestra tus emojis más usados */
+    fun emojisFrecuentes(c: Context) = si(c, "emojis_frecuentes", true)
+
+    /** Qué tan visible es el filo de color de las teclas: "apagado", "sutil", "normal" o "vivo" */
+    fun bordeTeclas(c: Context) = prefs(c).getString("borde_teclas", "normal") ?: "normal"
+
+    /** Filas de emojis en el panel: 3 (grandes), 4 (normal) o 5 (más emojis a la vista) */
+    fun filasEmoji(c: Context) = prefs(c).getInt("emoji_filas", 4).coerceIn(3, 5)
 
     /** Sustitución de texto: (función rápida, frase) */
     fun atajos(c: Context): MutableList<Pair<String, String>> {

@@ -13,7 +13,9 @@ import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
 import android.inputmethodservice.InputMethodService.Insets
+import android.media.AudioAttributes
 import android.media.AudioManager
+import android.media.SoundPool
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
@@ -51,6 +53,8 @@ class TecladoService : InputMethodService(),
         private const val CLAVE_HISTORIAL = "historial_copiado"
         /** Lo aprendido se guarda como mucho cada tantos milisegundos (menos escrituras = menos batería) */
         private const val ESPERA_GUARDADO = 20_000L
+        /** Cuánto se queda la barra a la vista después de enviar o dejar de escribir */
+        private const val SOSTENER_MS = 2600L
     }
 
     private var barra: SuggestionBar? = null
@@ -73,6 +77,19 @@ class TecladoService : InputMethodService(),
 
     private var vibrar = true
     private var sonido = false
+    /** Fuerza de la háptica elegida en Ajustes (suave / media / fuerte) */
+    @Volatile private var fuerzaVibracion = "media"
+    /** La barra se queda unos segundos después de enviar o de dejar de escribir */
+    private var barraSostenida = true
+    /** Con el campo vacío, la barra muestra los emojis que más usas */
+    private var emojisFrecuentesActivo = true
+    /** Esconde la barra cuando pasó el tiempo de "barra sostenida" */
+    private val tareaOcultarBarra = Runnable { actualizar() }
+
+    // Sonidos propios estilo iPhone (letra, borrar, espacio, intro): cortos y limpios
+    private var sonidos: SoundPool? = null
+    private val idSonido = IntArray(4)
+    private val sonidoListo = BooleanArray(4)
     private var sugerenciasActivas = true
     private var autocorreccionActiva = true
     /** Revisar ortografía: calcular correcciones (se aplican solas solo con Autocorrección) */
@@ -278,11 +295,36 @@ class TecladoService : InputMethodService(),
             getSystemService(Vibrator::class.java)
         }
         audio = getSystemService(AudioManager::class.java)
+        cargarSonidos()
         portapapeles = getSystemService(ClipboardManager::class.java)
         try { portapapeles?.addPrimaryClipChangedListener(alCambiarCopiado) } catch (_: Exception) { }
     }
 
     override fun onCreateInputView(): View = construir()
+
+    /** Carga los 4 sonidos una sola vez (se reproducen sin demora en cada toque) */
+    private fun cargarSonidos() {
+        try {
+            val sp = SoundPool.Builder()
+                .setMaxStreams(4)
+                .setAudioAttributes(AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build())
+                .build()
+            sp.setOnLoadCompleteListener { _, id, estado ->
+                if (estado == 0) for (i in 0 until 4) if (idSonido[i] == id) sonidoListo[i] = true
+            }
+            idSonido[0] = sp.load(this, R.raw.tecla, 1)
+            idSonido[1] = sp.load(this, R.raw.espacio, 1)
+            idSonido[2] = sp.load(this, R.raw.borrar, 1)
+            idSonido[3] = sp.load(this, R.raw.intro, 1)
+            sonidos = sp
+        } catch (e: Throwable) {
+            Registro.anotar("cargar sonidos", e)
+            sonidos = null
+        }
+    }
 
     /**
      * Al entrar a una conversación, muchas apps piden abrir el teclado solas. Eso llega sin la
@@ -319,7 +361,7 @@ class TecladoService : InputMethodService(),
     }
 
     /** Si cambia la orientación o el tamaño elegido en Ajustes, el teclado se vuelve a armar */
-    private fun firma() = "${Medidas.horizontal(this)}-${Ajustes.tamano(this)}-${Ajustes.filaNumeros(this)}"
+    private fun firma() = "${Medidas.horizontal(this)}-${Ajustes.tamano(this)}-${Ajustes.filaNumeros(this)}-${Ajustes.filasEmoji(this)}"
 
     private fun construir(): View {
         val t = Tema.desde(this, false, colorDeApp(appActual))
@@ -359,6 +401,9 @@ class TecladoService : InputMethodService(),
         // costados. Con la barra oculta, el teclado dibuja su propio filo recto arriba.
         p.lineaArriba = true
         b.alCambiar = { mostrando -> p.lineaArriba = !mostrando }
+        // La barra ya no cambia el alto del teclado: solo se avisa a Android hasta dónde llega
+        // el teclado (para que la caja de texto de la app quede justo encima de la barra)
+        b.alCambiarEstado = { b.requestLayout() }
 
         // La barra y el teclado son una sola pieza: la barra arriba (curva) y el teclado abajo (recto).
         val raiz = LinearLayout(this).apply {
@@ -392,7 +437,7 @@ class TecladoService : InputMethodService(),
         val arribaTeclado = pos[1]
         val abajo = pos[1] + p.height
         // Si la barra está oculta, la app llega hasta el borde de arriba del teclado
-        val arriba = if (b.visibility == View.VISIBLE && b.height > 0) {
+        val arriba = if (b.aLaVista && b.height > 0) {
             b.getLocationInWindow(pos)
             pos[1]
         } else arribaTeclado
@@ -424,6 +469,15 @@ class TecladoService : InputMethodService(),
 
         vibrar = Ajustes.vibrar(this)
         sonido = Ajustes.sonido(this)
+        val fuerza = Ajustes.vibracion(this)
+        if (fuerza != fuerzaVibracion) {
+            fuerzaVibracion = fuerza
+            // Los efectos guardados se vuelven a armar con la fuerza nueva
+            retroManejador.post { efectos.fill(null) }
+        }
+        barraSostenida = Ajustes.barraSostenida(this)
+        emojisFrecuentesActivo = Ajustes.emojisFrecuentes(this)
+        manejador.removeCallbacks(tareaOcultarBarra)
         puntoDoble = Ajustes.puntoDoble(this)
         atajosActivos = Ajustes.atajosActivos(this)
         val crudo = Ajustes.prefs(this).getString("atajos", null)
@@ -488,7 +542,10 @@ class TecladoService : InputMethodService(),
 
         teclado?.apply {
             probLetras = null
-            vistaPrevia = Ajustes.vistaPrevia(this@TecladoService)
+            val rapida = Ajustes.escrituraRapida(this@TecladoService)
+            // Escritura rápida: sin burbuja ni acentos al mantener (nada se interpone al escribir)
+            vistaPrevia = Ajustes.vistaPrevia(this@TecladoService) && !rapida
+            acentosAlMantener = !rapida
             bloqMayusPermitido = Ajustes.bloqMayus(this@TecladoService)
             soloNumeros = esFecha
             configurar(
@@ -530,15 +587,20 @@ class TecladoService : InputMethodService(),
         barra?.visible(false, animar = false)
         volverABC()
         actualizar()
+        // La vista previa de las teclas se prepara antes del primer toque (así la primera
+        // y la segunda letra no esperan a que Android cree su capa)
+        teclado?.prepararVistaPrevia()
     }
 
     override fun onWindowHidden() {
         super.onWindowHidden()
         barra?.visible(false, animar = false)
+        teclado?.ocultarPreview()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         manejador.removeCallbacks(tareaActualizar)
+        manejador.removeCallbacks(tareaOcultarBarra)
         anticipo = null
         buscandoEmoji = false
         consultaEmoji = ""
@@ -562,6 +624,8 @@ class TecladoService : InputMethodService(),
         motor.post { try { diccionario.guardar() } catch (_: Throwable) { } }
         hiloMotor.quitSafely()
         hiloRetro.quitSafely()
+        try { sonidos?.release() } catch (_: Throwable) { }
+        sonidos = null
         super.onDestroy()
     }
 
@@ -938,9 +1002,18 @@ class TecladoService : InputMethodService(),
         // La barra aparece cuando empiezas a escribir (no al abrir el teclado) y se esconde
         // al enviar, al mover el cursor o al cerrar el teclado. Mientras escribes funciona
         // completa: sugerencias, predicción de la siguiente palabra y deshacer la autocorrección.
-        if (!sugerenciasActivas || enEmojis || enPad || !escribiendo) {
+        // Barra sostenida: al enviar o dejar de escribir, la barra se queda unos segundos (con la
+        // predicción de lo que sigue) en vez de desaparecer de golpe. Así no "salta" tanto.
+        val desdeEscritura = SystemClock.uptimeMillis() - ultimaEscritura
+        val sostener = !escribiendo && barraSostenida && b.aLaVista && desdeEscritura < SOSTENER_MS
+        if (!sugerenciasActivas || enEmojis || enPad || (!escribiendo && !sostener)) {
+            manejador.removeCallbacks(tareaOcultarBarra)
             b.visible(false)
             return
+        }
+        if (sostener) {
+            manejador.removeCallbacks(tareaOcultarBarra)
+            manejador.postDelayed(tareaOcultarBarra, SOSTENER_MS - desdeEscritura + 20)
         }
         b.visible(true)
         // Recién deslizaste una palabra: la barra muestra las otras opciones
@@ -991,6 +1064,16 @@ class TecladoService : InputMethodService(),
         // El cálculo anterior (si aún corre) ya no sirve: se corta y se pide uno nuevo
         diccionario.interrumpir()
         val t = diccionario.turno()
+
+        // Campo vacío: tus 3 emojis más usados, a un toque
+        if (p.isEmpty() && emojisFrecuentesActivo && antes.isBlank()) {
+            val frecuentes = EmojiPanel.recientes(this).take(3)
+            if (frecuentes.size == 3) {
+                anticipo = null
+                b.mostrar(frecuentes.map { Sugerencia(it, emoji = true) })
+                return
+            }
+        }
 
         if (p.isEmpty()) {
             // Predicción de la siguiente palabra, como en iPhone
@@ -1736,8 +1819,10 @@ class TecladoService : InputMethodService(),
         if (!sinAccion && accion != EditorInfo.IME_ACTION_NONE && accion != EditorInfo.IME_ACTION_UNSPECIFIED) {
             toques.clear()
             ultimaCerrada = null
-            // Enviaste o buscaste: dejaste de escribir, la barra se esconde
+            // Enviaste o buscaste: dejaste de escribir. La barra se queda un momento (con tus
+            // emojis frecuentes o la predicción) y luego se esconde sola
             escribiendo = false
+            ultimaEscritura = SystemClock.uptimeMillis()
             ic.performEditorAction(accion)
             // Enviar/buscar suele limpiar el campo: se vuelve a leer cuando haga falta
             olvidarEspejo()
@@ -1763,7 +1848,7 @@ class TecladoService : InputMethodService(),
         teclado?.let {
             it.modo = Modo.LETRAS
             it.mayusAuto(false)
-            aparecer(it)
+            aparecer(it, desdeDerecha = false)
         }
         actualizarBarra()
     }
@@ -1900,7 +1985,7 @@ class TecladoService : InputMethodService(),
         teclado?.ocultarPreview()
         emojis?.refrescar()
         teclado?.visibility = View.INVISIBLE
-        emojis?.let { aparecer(it) }
+        emojis?.let { aparecer(it, desdeDerecha = true) }
         actualizarBarra()
     }
 
@@ -1972,19 +2057,23 @@ class TecladoService : InputMethodService(),
         val estabaEnEmojis = emojis?.visibility == View.VISIBLE
         emojis?.animate()?.cancel()
         emojis?.visibility = View.GONE
-        teclado?.let { if (estabaEnEmojis) aparecer(it) else { it.animate().cancel(); it.alpha = 1f; it.visibility = View.VISIBLE } }
+        teclado?.let { if (estabaEnEmojis) aparecer(it, desdeDerecha = false) else { it.animate().cancel(); it.alpha = 1f; it.translationX = 0f; it.visibility = View.VISIBLE } }
         actualizarBarra()
     }
 
-    /** Muestra una vista con un fundido rápido (cambio entre letras y emojis, como en iOS) */
-    /** Aparece con un fundido y subiendo apenas, como los cambios de teclado de iOS */
-    private fun aparecer(v: View) {
+    /**
+     * Cambio entre letras y emojis: la vista nueva entra deslizándose de costado con un
+     * fundido, como en iOS (los emojis desde la derecha, las letras desde la izquierda).
+     */
+    private fun aparecer(v: View, desdeDerecha: Boolean) {
         v.animate().cancel()
+        val d = resources.displayMetrics.density
         v.alpha = 0f
-        v.translationY = 6f * resources.displayMetrics.density
+        v.translationY = 0f
+        v.translationX = (if (desdeDerecha) 28f else -28f) * d
         v.visibility = View.VISIBLE
-        v.animate().alpha(1f).translationY(0f).setDuration(170)
-            .setInterpolator(DecelerateInterpolator(1.8f)).withLayer().start()
+        v.animate().alpha(1f).translationX(0f).setDuration(200)
+            .setInterpolator(DecelerateInterpolator(2f)).withLayer().start()
     }
 
     override fun emoji(s: String) {
@@ -2164,13 +2253,24 @@ class TecladoService : InputMethodService(),
     }
 
     /** Como en iPhone: el espacio y el intro se sienten un poco más firmes, las de función más suaves */
-    private fun crearEfecto(clase: Int): VibrationEffect = if (toqueFino == true) {
-        val fuerza = when (clase) { 1 -> 0.72f; 2 -> 0.6f; 3 -> 0.38f; else -> 0.5f }
-        VibrationEffect.startComposition()
-            .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, fuerza)
-            .compose()
-    } else {
-        VibrationEffect.createPredefined(if (clase == 1) VibrationEffect.EFFECT_CLICK else VibrationEffect.EFFECT_TICK)
+    private fun crearEfecto(clase: Int): VibrationEffect {
+        val nivel = fuerzaVibracion
+        return if (toqueFino == true) {
+            val base = when (clase) { 1 -> 0.72f; 2 -> 0.6f; 3 -> 0.38f; else -> 0.5f }
+            val por = when (nivel) { "suave" -> 0.55f; "fuerte" -> 1.5f; else -> 1f }
+            val fuerza = (base * por).coerceIn(0.08f, 1f)
+            // En "fuerte" el toque usa CLICK (más firme) en lugar de TICK
+            val primitivo = if (nivel == "fuerte") VibrationEffect.Composition.PRIMITIVE_CLICK
+                else VibrationEffect.Composition.PRIMITIVE_TICK
+            VibrationEffect.startComposition().addPrimitive(primitivo, fuerza).compose()
+        } else {
+            val efecto = when (nivel) {
+                "suave" -> VibrationEffect.EFFECT_TICK
+                "fuerte" -> if (clase == 1) VibrationEffect.EFFECT_HEAVY_CLICK else VibrationEffect.EFFECT_CLICK
+                else -> if (clase == 1) VibrationEffect.EFFECT_CLICK else VibrationEffect.EFFECT_TICK
+            }
+            VibrationEffect.createPredefined(efecto)
+        }
     }
 
     override fun retro(tipo: Tipo) {
@@ -2180,16 +2280,36 @@ class TecladoService : InputMethodService(),
         // En su propio hilo: la tecla se dibuja y se escribe sin esperar a la vibración
         retroManejador.post {
             if (conVibrar) vibrarAhora(tipo)
-            if (conSonido) {
-                val efecto = when (tipo) {
-                    Tipo.BORRAR -> AudioManager.FX_KEYPRESS_DELETE
-                    Tipo.ESPACIO -> AudioManager.FX_KEYPRESS_SPACEBAR
-                    Tipo.ENTER -> AudioManager.FX_KEYPRESS_RETURN
-                    else -> AudioManager.FX_KEYPRESS_STANDARD
-                }
-                try { audio?.playSoundEffect(efecto, -1f) } catch (_: Exception) { }
-            }
+            if (conSonido) sonar(tipo)
         }
+    }
+
+    /** Sonido de la tecla: los propios (estilo iPhone) o, si no cargaron, los del sistema */
+    private fun sonar(tipo: Tipo) {
+        val a = audio
+        // Como en iPhone: en silencio o vibración, el teclado no suena
+        if (a != null && a.ringerMode != AudioManager.RINGER_MODE_NORMAL) return
+        val i = when (tipo) {
+            Tipo.ESPACIO -> 1
+            Tipo.BORRAR -> 2
+            Tipo.ENTER -> 3
+            else -> 0
+        }
+        val sp = sonidos
+        if (sp != null && sonidoListo[i]) {
+            try {
+                val vol = if (i == 0) 0.5f else 0.58f
+                sp.play(idSonido[i], vol, vol, 1, 0, 1f)
+                return
+            } catch (_: Throwable) { }
+        }
+        val efecto = when (tipo) {
+            Tipo.BORRAR -> AudioManager.FX_KEYPRESS_DELETE
+            Tipo.ESPACIO -> AudioManager.FX_KEYPRESS_SPACEBAR
+            Tipo.ENTER -> AudioManager.FX_KEYPRESS_RETURN
+            else -> AudioManager.FX_KEYPRESS_STANDARD
+        }
+        try { a?.playSoundEffect(efecto, -1f) } catch (_: Exception) { }
     }
 
     private fun vibrarAhora(tipo: Tipo) {

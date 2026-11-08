@@ -409,7 +409,8 @@ class BarraCategorias(
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
-        if (e.actionMasked == MotionEvent.ACTION_UP && width > 0) {
+        // Responde al apoyar el dedo (no al soltarlo): el salto a la categoría se siente inmediato
+        if (e.actionMasked == MotionEvent.ACTION_DOWN && width > 0) {
             val i = (e.x / (width / CATEGORIAS.size.toFloat())).toInt().coerceIn(0, CATEGORIAS.size - 1)
             marcado = i
             alElegir(i)
@@ -439,8 +440,8 @@ class EmojiGrid(
         set(v) { if (v != field) { field = v; invalidate() } }
 
     private val d = Medidas.escala(context)
-    /** 4 filas (antes 5): cada emoji tiene más espacio y se ve grande y nítido */
-    private val filas = 4
+    /** Filas elegidas en Ajustes: 3 (emojis grandes), 4 (normal) o 5 (más emojis a la vista) */
+    private val filas = Ajustes.filasEmoji(context)
     private val altoTitulo = 22f * d
     private val margen = 10f * d
     private val separacion = 12f * d
@@ -501,7 +502,11 @@ class EmojiGrid(
         val x = (inicios.getOrElse(p.first) { 0f }) + col * anchoCelda - desplazamiento
         val y = altoTitulo + fila * altoCelda
         rectTonos.set(x, y, x + anchoCelda, y + altoCelda)
-        val popup = popupTonos ?: VariantesPopup(ancla).also { popupTonos = it }
+        val popup = popupTonos ?: VariantesPopup(ancla).also {
+            popupTonos = it
+            // Un toquecito al pasar de un tono a otro
+            it.alCambiarSeleccion = { alAbrirTonos?.invoke() }
+        }
         popup.mostrar(rectTonos, opciones, ancla.width.toFloat(), tema.oscuro, tema.azul)
         baseTonos = base
         tonosAbiertos = true
@@ -527,7 +532,9 @@ class EmojiGrid(
 
     init {
         val m = resources.displayMetrics
-        val columnasVisibles = if (Medidas.horizontal(context)) 13.5f else 7.5f
+        // Con menos filas cada emoji es más grande, así que caben menos columnas (y al revés)
+        val extra = (filas - 4) * 1f
+        val columnasVisibles = (if (Medidas.horizontal(context)) 13.5f else 7.5f) + extra
         anchoCelda = (m.widthPixels - margen) / columnasVisibles
     }
 
@@ -608,6 +615,12 @@ class EmojiGrid(
                         fondo.color = (tema.teclaPresionada and 0x00FFFFFF) or 0x80000000.toInt()
                         val r = 12f * d
                         c.drawRoundRect(x + 3f * d, y + 1f * d, x + anchoCelda - 3f * d, y + altoCelda - 1f * d, r, r, fondo)
+                        // El emoji que tocas crece un poquito (se siente el toque)
+                        val tam = pintura.textSize
+                        pintura.textSize = tam * 1.14f
+                        c.drawText(conTono(s.emojis[j]), x + anchoCelda / 2f, y + altoCelda / 2f + centroY * 1.14f, pintura)
+                        pintura.textSize = tam
+                        continue
                     }
                     c.drawText(conTono(s.emojis[j]), x + anchoCelda / 2f, y + altoCelda / 2f + centroY, pintura)
                 }

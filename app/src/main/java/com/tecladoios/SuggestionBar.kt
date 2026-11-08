@@ -1,5 +1,7 @@
 package com.tecladoios
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
@@ -15,6 +17,7 @@ import android.text.TextUtils
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 
 data class Sugerencia(
     val texto: String,
@@ -134,11 +137,21 @@ class SuggestionBar(
 
     /** Avisa cuando la barra aparece o desaparece (para que el teclado ponga su filo de arriba) */
     var alCambiar: ((Boolean) -> Unit)? = null
+    /**
+     * Avisa apenas cambia si la barra se puede tocar o no (antes de la animación), para que
+     * la app de atrás sepa hasta dónde llega el teclado.
+     */
+    var alCambiarEstado: (() -> Unit)? = null
 
-    init {
-        // Empieza oculta: aparece recién al escribir
-        visibility = GONE
-    }
+    /**
+     * true = las sugerencias están a la vista (y se pueden tocar).
+     *
+     * La barra NUNCA cambia de tamaño ni se quita del teclado (antes pasaba de GONE a VISIBLE
+     * con la primera letra): eso hacía que toda la ventana del teclado cambiara de alto justo
+     * mientras escribías, y la segunda tecla se "pegaba". Ahora siempre ocupa su lugar y solo
+     * se dibuja (o no) encima; mientras está oculta es transparente y los toques pasan a la app.
+     */
+    val aLaVista: Boolean get() = mostrando
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
@@ -273,32 +286,36 @@ class SuggestionBar(
         if (!si) cancelar()
         val destino = if (si) 1f else 0f
         if (si == mostrando && (animar || opacidad == destino)) return
+        val cambia = si != mostrando
         mostrando = si
         animador?.cancel()
-        val vis = if (si) VISIBLE else GONE
-        if (visibility != vis) {
-            visibility = vis
-            alCambiar?.invoke(si)
-        }
-        if (!si) {
-            opacidad = 0f
-            invalidate()
-            return
-        }
-        // Al volver a aparecer no se ven las sugerencias de la palabra anterior
-        items = listOf(null, null, null)
+        animador = null
         presionado = -1
-        if (!animar) {
+        if (si) {
+            // Al volver a aparecer no se ven las sugerencias de la palabra anterior
+            items = listOf(null, null, null)
+            if (cambia) alCambiar?.invoke(true)
+        }
+        if (cambia) alCambiarEstado?.invoke()
+        if (!animar || !isShown || width == 0) {
             opacidad = destino
+            if (!si) alCambiar?.invoke(false)
             invalidate()
             return
         }
+        // Aparece subiendo apenas desde el teclado y se apaga suave (como en iOS)
         animador = ValueAnimator.ofFloat(opacidad, destino).apply {
-            duration = if (si) 130 else 120
+            duration = if (si) 150 else 120
+            interpolator = FRENO_BARRA
             addUpdateListener {
                 opacidad = it.animatedValue as Float
                 invalidate()
             }
+            if (!si) addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (!mostrando) alCambiar?.invoke(false)
+                }
+            })
             start()
         }
     }
@@ -339,6 +356,12 @@ class SuggestionBar(
     }
 
     override fun onDraw(c: Canvas) {
+        // Oculta: no se dibuja nada (es transparente y se ve la app de atrás)
+        if (opacidad <= 0f && confirmar == null) return
+        val o = if (confirmar != null) 1f else opacidad.coerceIn(0f, 1f)
+        // Toda la barra (fondo, filo y sugerencias) se enciende y apaga junta, subiendo apenas
+        val capa = if (o < 1f) c.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), (o * 255).toInt()) else -1
+        if (o < 1f) c.translate(0f, (1f - o) * 6f * d)
         // Fondo negro como el teclado (curvo arriba) y el filo del color de la app
         pinturaFondo.color = tema.fondo
         c.drawPath(forma, pinturaFondo)
@@ -353,11 +376,8 @@ class SuggestionBar(
         pinturaBorde.color = tema.bordePanel
         c.drawPath(filo, pinturaBorde)
 
-        confirmar?.let { dibujarConfirmar(c, it); return }
-        if (opacidad <= 0f) return
-        // Las sugerencias se encienden y apagan suavemente
-        val capa = if (opacidad < 1f) c.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), (opacidad * 255).toInt()) else -1
-        dibujarSugerencias(c)
+        val conf = confirmar
+        if (conf != null) dibujarConfirmar(c, conf) else dibujarSugerencias(c)
         if (capa >= 0) c.restoreToCount(capa)
     }
 
@@ -432,12 +452,21 @@ class SuggestionBar(
                 val arriba = 6 * d
                 val abajo = height - 10 * d
                 val rc = (abajo - arriba) / 2f
-                pintura.color = tema.tecla
+                // Vidrio apenas teñido del color de la app: se nota que es la que se pondrá sola
+                pintura.color = Tema.mezclar(tema.tecla, tema.azul, 0.22f)
                 c.drawRoundRect(x0 + 6 * d, arriba, x0 + ancho - 6 * d, abajo, rc, rc, pintura)
                 val previo = pinturaBorde.color
                 pinturaBorde.color = (tema.borde and 0x00FFFFFF) or 0x8C000000.toInt()
                 c.drawRoundRect(x0 + 6 * d, arriba, x0 + ancho - 6 * d, abajo, rc, rc, pinturaBorde)
                 pinturaBorde.color = previo
+            }
+            // Emoji sugerido: se dibuja grande y nítido (antes salía del tamaño de las letras)
+            if (s.emoji) {
+                pinturaEmoji.textSize = 24f * d
+                val fe = pinturaEmoji.fontMetrics
+                val cyE = (6 * d + height - 10 * d) / 2f - (fe.ascent + fe.descent) / 2f
+                c.drawText(s.texto, x0 + ancho / 2f, cyE, pinturaEmoji)
+                continue
             }
             grosor(if (s.destacada) 500 else 400)
             val cy = centroY()
@@ -459,8 +488,16 @@ class SuggestionBar(
             }
             pinturaTexto.color = tema.texto
             val crudo = if (s.literal) "\u201C${s.texto}\u201D" else s.texto
-            val txt = TextUtils.ellipsize(crudo, pinturaTexto, ancho - 16 * d, TextUtils.TruncateAt.END).toString()
+            // Palabras largas: primero se achica un poco la letra (hasta 13) y solo si aun así
+            // no cabe se corta con "…" (como en iPhone, casi nunca se ve cortada)
+            val disponible = ancho - 16 * d
+            val medida = pinturaTexto.measureText(crudo)
+            if (medida > disponible) {
+                pinturaTexto.textSize = maxOf(13f * d, 17f * d * disponible / medida)
+            }
+            val txt = TextUtils.ellipsize(crudo, pinturaTexto, disponible, TextUtils.TruncateAt.END).toString()
             c.drawText(txt, x0 + ancho / 2f, cy, pinturaTexto)
+            pinturaTexto.textSize = 17f * d
         }
         // Separadores finos entre las casillas, como en la imagen
         pintura.color = (tema.textoSecundario and 0x00FFFFFF) or 0x55000000
@@ -558,6 +595,7 @@ class SuggestionBar(
     }
 
     private companion object {
+        val FRENO_BARRA = DecelerateInterpolator(1.6f)
         /** Debajo de este tiempo tras tocar una letra, un toque en la barra se ignora */
         const val GUARDA_MS = 130L
         /** Buscando emojis: la cápsula de búsqueda y cuántos emojis caben al lado */

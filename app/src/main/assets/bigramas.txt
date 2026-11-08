@@ -440,3 +440,62 @@ ahorita voy: amor, saliendo, para
 dónde estás: amor, tú, ahorita
 cuándo vienes: amor, a, para
 cuánto cuesta: el, la, eso, esto
+# ---- Perú: sector público y trámites (versión 7) ----
+resolución: directoral, ministerial, jefatural, gerencial, de, ejecutiva, administrativa
+decreto: supremo, legislativo, de
+mesa de: partes
+recibo por: honorarios
+orden de: servicio, compra
+términos de: referencia
+carné de: extranjería
+licencia de: funcionamiento, conducir
+días: hábiles, calendario
+visto: bueno
+área: usuaria
+rendición de: cuentas
+servidor: público
+servidores: públicos
+gobierno: regional, local, central
+poder: judicial, ejecutivo, legislativo
+ministerio: público, de
+procedimiento: administrativo
+el presente: documento, año, mes
+sin otro: particular
+otro: particular
+es grato: dirigirme
+me dirijo: a, usted, ustedes
+dirijo: a
+hago: llegar
+para su: conocimiento, atención, conformidad, revisión, evaluación
+y fines: pertinentes
+fines: pertinentes
+en el marco: de
+de acuerdo: a, con
+solicito: a, se, la, el, su, que
+adjunto: el, la, al, a
+expediente: técnico, de, administrativo
+informe: técnico, legal, de, final
+orden: de
+buena pro: a
+la buena: pro
+certificación: presupuestal
+mesa: de
+boleta: de, electrónica
+factura: electrónica
+firma: digital
+# ---- Perú: chat y jerga ----
+al: toque, toquecito, costo, contado, fin, final
+a la: firme, mala, buena, hora, casa, chamba
+ya: fue, está, llegué, voy, salgo, pe, nada
+qué: roche, palta, piña, fue, hubo
+de: una, ley, todas
+habla: causa, bro, pe, mano, mi, choche
+mi: causa, pata, bro, amor, vida, choche, yunta, gordo, gorda, flaca, flaco
+mis: patas, causas
+estoy: en, saliendo, llegando, misio, palteado, palteada, cansado, cansada
+me: llega, da, pasa, avisas, yapeas, plineas
+te: yapeo, plineo, paso, llamo, aviso, escribo
+yapéame: lo, a, por
+pásame: el, la, tu, tus
+nos: vemos, hablamos, jateamos, juntamos
+por: favor, si, las, la

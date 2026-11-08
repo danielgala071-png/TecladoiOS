@@ -178,6 +178,9 @@ class SettingsActivity : Activity() {
             "una_mano" -> paginaUnaMano()
             "palabras" -> paginaPalabras()
             "gestos" -> paginaGestos()
+            "vibracion" -> paginaVibracion()
+            "emojis" -> paginaEmojis()
+            "borde" -> paginaBorde()
             else -> paginaPrincipal()
         }
     }
@@ -494,9 +497,34 @@ class SettingsActivity : Activity() {
                 "si las pegas con el teclado, se borran solas del portapapeles al minuto. El historial " +
                 "guarda lo último que copiaste (botón 📋 en el panel de emojis); las contraseñas nunca se guardan.")
 
+        val fuerza = when (Ajustes.vibracion(this)) { "suave" -> "Suave"; "fuerte" -> "Fuerte"; else -> "Media" }
         grupo("Respuesta del teclado", listOf(
             filaInterruptor("Sonido", "sonido", false),
             filaInterruptor("Háptica", "vibrar", true),
+            filaAccion("Intensidad de la háptica", derecha = "$fuerza  ›") { irA("vibracion") },
+        ), pie = "El sonido es un clic corto como el del iPhone (uno para letras, otro para borrar, " +
+                "espacio e intro). Con el celular en silencio o vibración, el teclado no suena.")
+
+        grupo("Escritura", listOf(
+            filaInterruptor("Escritura rápida", "escritura_rapida", false),
+            filaInterruptor("Mantener la barra unos segundos", "barra_sostenida", true),
+            filaInterruptor("Emojis frecuentes con el campo vacío", "emojis_frecuentes", true),
+        ), pie = "Escritura rápida quita la burbuja de las letras y los acentos al mantener presionado: " +
+                "nada se interpone si escribes muy rápido con los pulgares (los acentos los pone la " +
+                "autocorrección). Con “Mantener la barra”, al enviar un mensaje la barra se queda un " +
+                "momento en vez de desaparecer de golpe.")
+
+        val borde = when (Ajustes.bordeTeclas(this)) {
+            "apagado" -> "Apagado"; "sutil" -> "Sutil"; "vivo" -> "Vivo"; else -> "Normal"
+        }
+        grupo("Diseño", listOf(
+            filaAccion("Filo de color de las teclas", derecha = "$borde  ›") { irA("borde") },
+        ), pie = "El filo de cada tecla toma el color de la app donde escribes (verde en WhatsApp, " +
+                "rosado en Instagram…). Al presionar una tecla, su filo se enciende un instante.")
+
+        val filasEmoji = Ajustes.filasEmoji(this)
+        grupo("Emojis", listOf(
+            filaAccion("Tamaño de los emojis", derecha = "${nombreFilas(filasEmoji)}  ›") { irA("emojis") },
         ))
 
         grupo("Tamaño del teclado", listOf(filaTamano()),
@@ -573,7 +601,7 @@ class SettingsActivity : Activity() {
             packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
         } catch (_: Exception) { "?" }
         contenedor.addView(TextView(this).apply {
-            text = "TecladoiOS versión $version · AMOLED v5"
+            text = "TecladoiOS versión $version · AMOLED v8"
             Fuentes.aplicar(this, 400)
             textSize = 13f
             setTextColor(gris)
@@ -796,6 +824,55 @@ class SettingsActivity : Activity() {
             },
         ), pie = "")
         actualizarEstado()
+    }
+
+    // ---------- Intensidad de la háptica ----------
+
+    private fun paginaVibracion() {
+        volver()
+        tituloGrande("Intensidad de la háptica")
+        val actual = Ajustes.vibracion(this)
+        grupo(null, listOf(
+            filaCheck("Suave", actual == "suave") { elegir("vibracion", "suave") },
+            filaCheck("Media", actual == "media") { elegir("vibracion", "media") },
+            filaCheck("Fuerte", actual == "fuerte") { elegir("vibracion", "fuerte") },
+        ), pie = "Cambia qué tan fuerte se siente cada tecla. El espacio y el intro siempre se sienten " +
+                "un poco más firmes que las letras, como en el iPhone.")
+    }
+
+    // ---------- Filo de color de las teclas ----------
+
+    private fun paginaBorde() {
+        volver()
+        tituloGrande("Filo de color")
+        val actual = Ajustes.bordeTeclas(this)
+        grupo(null, listOf(
+            filaCheck("Apagado", actual == "apagado") { elegir("borde_teclas", "apagado") },
+            filaCheck("Sutil", actual == "sutil") { elegir("borde_teclas", "sutil") },
+            filaCheck("Normal", actual == "normal") { elegir("borde_teclas", "normal") },
+            filaCheck("Vivo", actual == "vivo") { elegir("borde_teclas", "vivo") },
+        ), pie = "Qué tanto se nota el color de la app en el borde de cada tecla. El cambio se ve " +
+                "la próxima vez que abras el teclado.")
+    }
+
+    // ---------- Tamaño de los emojis ----------
+
+    private fun nombreFilas(n: Int) = when (n) { 3 -> "Grandes"; 5 -> "Pequeños"; else -> "Normal" }
+
+    private fun paginaEmojis() {
+        volver()
+        tituloGrande("Tamaño de los emojis")
+        val actual = Ajustes.filasEmoji(this)
+        fun poner(n: Int) {
+            prefs.edit().putInt("emoji_filas", n).apply()
+            dibujar()
+        }
+        grupo(null, listOf(
+            filaCheck("Grandes (3 filas)", actual == 3) { poner(3) },
+            filaCheck("Normal (4 filas)", actual == 4) { poner(4) },
+            filaCheck("Pequeños (5 filas)", actual == 5) { poner(5) },
+        ), pie = "Con menos filas cada emoji se ve más grande; con más filas ves más emojis a la vez. " +
+                "El cambio se ve la próxima vez que abras el teclado.")
     }
 
     // ---------- Teclado con una mano ----------

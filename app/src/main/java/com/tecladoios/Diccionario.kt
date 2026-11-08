@@ -262,6 +262,7 @@ class Diccionario(context: Context) {
         // 2) El diccionario grande, de la palabra más común a la menos común.
         //    En "@fijas" entran las listas del código (chat peruano, tildes, jerga).
         var conFijas = false
+        var conMedio = false
         try {
             c.assets.open("diccionario.txt").bufferedReader().useLines { lineas ->
                 for (linea in lineas) {
@@ -269,14 +270,21 @@ class Diccionario(context: Context) {
                     if (p.isEmpty() || p[0] == '#') continue
                     if (p == "@fijas") {
                         conFijas = true
-                        for (w in (BASE + " " + BASE_TILDES + " " + BASE_EXTRA + " " + JERGA).trim().split(ESPACIOS)) sumar(w)
+                        for (w in (BASE + " " + BASE_TILDES + " " + BASE_EXTRA + " " + JERGA + " " + JERGA_MAS).trim().split(ESPACIOS)) sumar(w)
                         continue
                     }
                     sumar(p)
+                    // Sector público, comida, lugares y marcas: entran con una frecuencia media
+                    // (se conocen y se sugieren, pero no tapan a las palabras de todos los días)
+                    if (!conMedio && lista.size >= POS_MEDIO) {
+                        conMedio = true
+                        for (w in MEDIO.split(ESPACIOS)) sumar(w)
+                    }
                 }
             }
         } catch (_: Exception) { }
-        if (!conFijas) for (w in (BASE + " " + BASE_TILDES + " " + BASE_EXTRA + " " + JERGA).trim().split(ESPACIOS)) sumar(w)
+        if (!conFijas) for (w in (BASE + " " + BASE_TILDES + " " + BASE_EXTRA + " " + JERGA + " " + JERGA_MAS).trim().split(ESPACIOS)) sumar(w)
+        if (!conMedio) for (w in MEDIO.split(ESPACIOS)) sumar(w)
         vistos.clear()
 
         val palabras = lista.toTypedArray()
@@ -369,6 +377,24 @@ class Diccionario(context: Context) {
     private fun palabraDe(clave: String) = clave.substring(clave.indexOf('\u0000') + 1)
 
     private fun bloqueada(p: String) = bloqueadas.isNotEmpty() && p.lowercase() in bloqueadas
+
+    /** ¿Es una lisura? ("huevón", "carajo"...) */
+    private fun esLisura(w: String): Boolean {
+        val l = w.lowercase()
+        return l in LISURAS || sinTildes(l) in LISURAS
+    }
+
+    /**
+     * Una lisura que todavía no usaste: el teclado la conoce (nunca te la cambia por otra
+     * palabra), pero no te la sugiere ni corrige hacia ella hasta que tú la escribas.
+     * Como el iPhone: no te aparece una grosería si tú no las usas.
+     */
+    private fun lisuraAjena(w: String): Boolean {
+        if (w.contains(' ')) return w.split(' ').any { lisuraAjena(it) }
+        if (!esLisura(w)) return false
+        // Recién cuando la usaste un par de veces se te sugiere (una sola vez puede ser un descuido)
+        return (aprendidas[w.lowercase()] ?: 0) < 2
+    }
 
     /** Más alto = más común (escala logarítmica, como la frecuencia real de las palabras) */
     private fun frec(i: Int): Int = (1000.0 - 85.0 * Math.log(i + 1.0)).toInt().coerceAtLeast(1)
@@ -744,12 +770,18 @@ class Diccionario(context: Context) {
                 res[w] = (res[w] ?: 0) + 520
             }
         }
-        return res.entries.sortedByDescending { it.value }
+        return res.entries.asSequence()
+            .filter { !lisuraAjena(it.key) }
+            .sortedByDescending { it.value }
+            // Siglas y marcas con su forma correcta (SUNAT, EsSalud, WhatsApp) y sin repetir
+            .map { FORMAS[sinTildes(it.key)] ?: it.key }
+            .distinct()
             .take(max)
-            .map {
-                val s = igualarMayus(it.key, prefijo)
-                if (esContacto(it.key.lowercase())) s.replaceFirstChar { c -> c.uppercase() } else s
+            .map { w ->
+                val s = if (w.any { it.isUpperCase() }) w else igualarMayus(w, prefijo)
+                if (esContacto(w.lowercase())) s.replaceFirstChar { c -> c.uppercase() } else s
             }
+            .toList()
     }
 
     /**
@@ -816,13 +848,24 @@ class Diccionario(context: Context) {
             }
         }
         pares[l]?.forEach { (w, c) -> if (!bloqueada(w)) res[w] = (res[w] ?: 0) + c * 10 + recencia(w) / 10 }
-        val fijas = if (l.isEmpty()) INICIO else paresFijos(l)
+        val fijas = if (l.isEmpty()) inicioAhora() else paresFijos(l)
         fijas?.forEachIndexed { i, w -> if (!bloqueada(w)) res[w] = (res[w] ?: 0) + (8 - i).coerceAtLeast(1) }
         // El cerebro: tu manera de seguir esta frase (hasta tres palabras atrás, y en esta app)
         val ixC = indice
         for ((w, pr) in cerebro.candidatos(previa, previa2, app, "", 8)) {
             if (bloqueada(w) || (ixC != null && !conoce(ixC, w))) continue
             res[w] = (res[w] ?: 0) + (pr * 160f).toInt()
+        }
+        // Saludo según la hora: "buenas" → "tardes" de día y "noches" de noche
+        if (l == "buenas" || l == "buenos") {
+            val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+            val toca = when {
+                l == "buenos" -> "días"
+                h in 12..18 -> "tardes"
+                h >= 19 || h < 5 -> "noches"
+                else -> null
+            }
+            if (toca != null) res[toca] = (res[toca] ?: 0) + 60
         }
         // Las que siempre ignoras después de esta palabra bajan
         if (res.isNotEmpty()) {
@@ -833,15 +876,23 @@ class Diccionario(context: Context) {
         }
         // Siempre 3 opciones, como en iPhone: si no hay nada para esa palabra, las más comunes
         if (res.size < max) {
-            val generales = if (l.isEmpty()) INICIO else GENERALES
+            val generales = if (l.isEmpty()) inicioAhora() else GENERALES
             for (w in generales) {
                 if (res.size >= max) break
                 if (!res.containsKey(w) && w != l && !bloqueada(w)) res[w] = 0
             }
         }
-        val lista = res.entries.sortedByDescending { it.value }.take(max).map { it.key }
+        val lista = res.entries.filter { !lisuraAjena(it.key) }
+            .sortedByDescending { it.value }.take(max).map { FORMAS[sinTildes(it.key)] ?: it.key }
         ultimasPredichas = l to lista
         return lista.map { if (esNombre(it)) it.replaceFirstChar { c -> c.uppercase() } else it }
+    }
+
+    /** Cómo empiezan los mensajes, según la hora: de mañana "buenos", de tarde y noche "buenas" */
+    private fun inicioAhora(): List<String> {
+        val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        val saludo = if (h in 5..11) "buenos" else "buenas"
+        return listOf("hola", saludo) + INICIO.filter { it != "hola" && it != saludo }
     }
 
     // ---------- Autocorrección ----------
@@ -858,6 +909,8 @@ class Diccionario(context: Context) {
         val encontrada: String? = try { corregirSinFiltro(p, previa, previa2) } finally { toq = null; sinCorte = false }
         val r = encontrada ?: return null
         if (cortado()) return null
+        // Nunca se corrige HACIA una lisura que no usas ("pura" mal tocado no se vuelve otra cosa)
+        if (!esLisura(p) && lisuraAjena(r)) return null
         // Una corrección que ya deshiciste no se vuelve a hacer
         if (rechazos.isNotEmpty() && (p.lowercase() + ">" + r.lowercase()) in rechazos) return null
         return r
@@ -981,6 +1034,9 @@ class Diccionario(context: Context) {
     private fun corregirSinFiltro(p: String, previa: String, previa2: String): String? {
         if (p.length < 2) return null
         val l = p.lowercase()
+        // Siglas, instituciones, lugares y marcas con su forma correcta:
+        // "sunat" → "SUNAT", "essalud" → "EsSalud", "whatsapp" → "WhatsApp", "cusco" → "Cusco"
+        FORMAS[sinTildes(p)]?.let { f -> return if (f == p || bloqueada(f)) null else f }
         // Palabras en inglés que se usan en el chat ("ok", "link", "story"): no se tocan
         if (l in INGLES) return null
         // Nombres de tus contactos: nunca se corrigen, solo se les pone mayúscula
@@ -1007,6 +1063,9 @@ class Diccionario(context: Context) {
             }
             return null
         }
+
+        // Siglas que escribiste en mayúsculas a propósito ("UPC", "SJL", "PUCP"): no se tocan
+        if (p.length in 2..5 && p.all { it.isUpperCase() }) return null
 
         // 0) Tu error de siempre (el cerebro lo vio varias veces): "qje" → "que"
         cerebro.errorTipico(l)?.let { e ->
@@ -1868,6 +1927,23 @@ class Diccionario(context: Context) {
             confirmacion:confirmación cotizacion:cotización explicacion:explicación participacion:participación
             documentacion:documentación capacitacion:capacitación coordinacion:coordinación gestion:gestión
             opcion:opción  razon:razón corazon:corazón tambien:también despues:después
+            haigan:hayan nadies:nadie vistes:viste dentrar:entrar dentra:entra ecepto:excepto abía:había
+            ablar:hablar ablamos:hablamos ablas:hablas abla:habla iendo:yendo travez:través decicion:decisión
+            dicision:decisión precion:presión ancioso:ansioso anciosa:ansiosa ijo:hijo ija:hija ijos:hijos
+            ermano:hermano ermana:hermana ermanos:hermanos orario:horario ospital:hospital ambre:hambre
+            onesto:honesto acer:hacer mui:muy voi:voy estoi:estoy soi:soy doi:doy llo:yo yegue:llegué yego:llego
+            yegar:llegar yamar:llamar yamame:llámame yave:llave yaves:llaves yuvia:lluvia cayate:cállate
+            uste:usted esamen:examen sertificado:certificado sertificados:certificados resivo:recibo
+            resivi:recibí resibi:recibí resivir:recibir recivo:recibo solisito:solicito solisitud:solicitud
+            espediente:expediente expedente:expediente notificasion:notificación aprovasion:aprobación
+            aprovacion:aprobación aprovado:aprobado aprovada:aprobada aprovar:aprobar provar:probar
+            provando:probando berdad:verdad boi:voy nobio:novio nobia:novia ebento:evento llebar:llevar
+            llebo:llevo lleba:lleva deverias:deberías devo:debo deves:debes deve:debe deveria:debería
+            travajo:trabajo travajar:trabajar isquierda:izquierda ezo:eso conose:conoce paresido:parecido
+            parese:parece diferiencia:diferencia intelijente:inteligente imajen:imagen imajenes:imágenes
+            jente:gente jenial:genial jeneral:general felis:feliz felises:felices desirle:decirle asme:hazme
+            aslo:hazlo asle:hazle hiso:hizo hise:hice hisiste:hiciste cojudes:cojudez talves:tal_vez
+            porsupuesto:por_supuesto encerio:en_serio alomejor:a_lo_mejor
         """.trim().split(ESPACIOS).mapNotNull { par ->
             val i = par.indexOf(':')
             if (i <= 0) null else par.substring(0, i) to par.substring(i + 1).replace('_', ' ')
@@ -2406,5 +2482,164 @@ yapéame: porfa, cuando, la, el, ahorita
             dijiste digo creo crees parece gusta gustó encanta necesito necesitas podemos puedes tienes
             tiene tenemos hay había habías avísame avísale espérame ven vente vengo
         """
+
+        // ---------- Más Perú (versión 7) ----------
+
+        /** Más jerga peruana del día a día: barrio, chat, familia y verbos bien nuestros */
+        private const val JERGA_MAS = """
+            malogrado malograda malogrados malogradas malograr malogra malogran malogró malogré
+            malograste malograron malogrando malograrse malogrón huachimán huachimanes guachimán
+            yapear yapeo yapeas yapea yapeamos yapean yapeé yapeó yapeaste yapéame yapeame yapéale
+            yapeale plinear plineo plinea plineé plineó plinéame plineame plinéale
+            fono fonito celu celular germa germita chongo chongos chongazo chongón chongona
+            mancar mancado mancada mancó mancaste mancaron pasumare pasumadre puchica puchamadre
+            asumadre joya joyita joyaza monstruo monstruazo terrible terribles huasca huasquiado
+            huasqueado huasqueada nave naves navecita cuete cuetazo chupetín chupetines tajador
+            carpeta carpetas cachito cachitos ñañito ñañita cuñao cuñis cuñadito cuñadita sobri
+            primito primita primazo suegri seño señito compañerito compañerita maridito esposita
+            gordo gorda gordito gordita gordis flaquis bebito bebita amorcito amorcita mor
+            corazoncito cielito princesa reina papi mami papis mamis viejita viejito
+            achorarse achorao apanado apanada apanar apanaron apanado pechar pecha pechó pechada
+            cuadrar cuadra cuadró cuadrado cuadrarse fregar friega friegas fregado fregada fregó
+            piconear picón picona piconazo picona renegar reniega reniegas renegó renegón renegona
+            atorrante atorrantes pavo pava paveo apurar apúrate apurate apura aguanta aguántame
+            aguantame aguantar chévere cheverísimo bacanazo bacanaza ojito ojitos tranquilazo
+            relajado relajada relajo relajito pendejeo palomilla palomillas palomillada travieso
+            traviesa churro churra churrazo guapo guapa guapetón guapetona guapachoso pitazo
+            pitear pitea pitearon pucho puchos fumar tono tonazo chupódromo tragos chelita
+            jarana jaranero jaranera jaranear huayno huaynito cumbia cumbión chicha festejo
+            marinera polka vals criollo criolla criollada cajón peña peñas
+            chamba chambita chambón chambona chancón chamberos chambero chambera
+            habla hablaste hablamos bróder broder hermanito causita mancha manchita pata patita
+            yala yalas yapo yapa yapita ñatito plata platita billete billetes billetón
+            sencillito tarjetita cuenta cuentita deposito depósito transferencia transferí
+            transferir transfiéreme transfiereme depósitame depositame
+            micro combi combis combi colectivo colectivero mototaxi mototaxista bici bicis
+            paradero paraderos cobrador cobradora chofer choferes jirón cuadra cuadras esquina
+            pasaje pasajes pasajero pasajera tráfico trafico tráfico atoro atorado atorada
+            carro carros carrito taxi taxis taxista delivery
+            chibolada chiboladas chiboleo jatearse jateando jateo
+            bacilar vacilando vacilón quemado quemada quemadazo roche rochazo roches
+            palta paltazo paltas paltear palteado palteada
+            ampay misio misios chancar chanqué chancando floro florero
+            bamba cachina cachinero mercadillo galería galerías emporio
+            imbécil imbéciles idiota idiotas estúpido estúpida estúpidos estúpidas tarado tarada
+            tarados baboso babosa babosos cachudo cachuda cachudos pezuñento pezuñenta sacavuelta
+            sacavueltas sacavueltero sacavueltera mamarracho mamarrachos lacra lacras
+            """
+
+        /**
+         * Lisuras peruanas. Se conocen (el teclado nunca te las cambia por otra palabra), pero no se
+         * sugieren ni se corrige hacia ellas hasta que tú las uses (ver [lisuraAjena]).
+         */
+        private const val LISURAS_TXT = """
+            huevón huevona huevones huevonas huevonazo huevonaza huevonada huevonadas huevada
+            huevadas huevear hueveando huevea hueveas huevas ahuevado ahuevada ahuevados ahuevonado
+            ahuevonada webón webona webones webonas webada webadas weón weona weones
+            cojudo cojuda cojudos cojudas cojudazo cojudaza cojudez cojudeces cojudear cojudeando
+            acojudado acojudada conchatumadre conchatumare conchasumadre conchesumare conchesumadre
+            conchuda conchudazo conchudaza csm ctm ptm hdp ptmr mrd
+            carajo carajos carajazo carajete mierda mierdas mierdita mierdoso mierdosa
+            puta puto putas putos putamadre putamare putear puteada puteadas puteando puteó puteaste
+            pendejo pendeja pendejos pendejas pendejada pendejadas pendejear pendejeando pendejazo
+            chucha chuchasumare chuchatumare chuchasumadre rechucha
+            cagada cagadas cagado cagados cagar cagué cagaste cagó cagón cagona cagones cagazo cagarla
+            jodido jodida jodidos jodidas jode jodes jodiste jodió jodiendo jódete jodete
+            """
+
+        /** Palabras del Estado peruano: trámites, documentos, contrataciones y gestión pública */
+        private const val SECTOR_PUBLICO = """
+            expediente expedientes oficio oficios memorando memorandos memorándum informe informes
+            resolución resoluciones directoral directorales ministerial ministeriales jefatural
+            gerencial gerenciales ejecutiva ejecutivo administrativa administrativo administrativos
+            decreto decretos supremo legislativo ordenanza ordenanzas acuerdo acuerdos trámite
+            trámites tramitar tramitando tramitado tramitación locación locador locadora servicios
+            requerimiento requerimientos referencia términos certificación presupuestal presupuesto
+            presupuestos devengado devengados girado viáticos rendición conformidad conformidades
+            usuaria logística abastecimiento tesorería contabilidad planilla planillas boleta boletas
+            honorarios constancia constancias certificado certificados notificación notificaciones
+            notificar notificado notificada apelación apelaciones reconsideración recurso recursos
+            procedimiento procedimientos plazo plazos hábiles hábil subsanar subsanación subsanado
+            subsanada observación observaciones observado observada proveído despacho gerencia
+            gerencias subgerencia subgerencias jefatura jefaturas dirección direcciones oficina
+            unidad orgánica órgano servidor servidora servidores funcionario funcionaria funcionarios
+            autoridad autoridades alcalde alcaldesa alcaldía regidor regidora regidores gobernador
+            gobernadora prefecto prefectura subprefecto congresista congresistas congreso fiscal
+            fiscalía fiscales juzgado juzgados judicial denuncia denuncias comisaría licencia
+            licencias funcionamiento arbitrios predial autovalúo impuesto impuestos tributo tributos
+            tributario tributaria fraccionamiento multa multas papeleta papeletas brevete pasaporte
+            migraciones padrón elecciones personero personera nombramiento nombrado nombrada
+            contratado contratada docente docentes convocatoria convocatorias bases postor postores
+            postulante postulantes adjudicación adjudicado contratación contrataciones licitación
+            licitaciones concurso concursos adenda adendas penalidad penalidades garantía cotización
+            cotizaciones proforma proformas proveedor proveedores entregable entregables cronograma
+            valorización valorizaciones liquidación obra obras supervisor supervisora residente
+            municipalidad municipalidades municipal municipales distrital distritales provincial
+            provinciales regional regionales sectorial ministerio ministerios viceministerio
+            viceministro viceministra ministra ministro gobierno estatal entidad entidades públicos
+            públicas institución institucional dependencia dependencias sede sedes ventanilla
+            ciudadano ciudadana ciudadanos administrado administrada administrados solicitante
+            solicitud solicitudes solicito solicita formulario formato formatos anexo anexos folio
+            folios foliado foliada sello sellos firmado firmada visado visación rubricado acta actas
+            derivar derivado derivada derivó archivar archivado elevar elevado remitir remito remite
+            remitido remitida adjunto adjunta adjuntos adjuntar dirigirme dirijo cordialmente
+            atentamente pertinente pertinentes asimismo mediante cumplimiento disposición
+            disposiciones normativa normativas reglamento reglamentos directiva directivas
+            lineamientos protocolo protocolos competencia competente viabilidad sustento sustentar
+            sustentado justificación vigente vigencia disponibilidad meta metas indicador indicadores
+            pliego programación ejecución gasto gastos inversión inversiones proyecto proyectos
+            componente actividad actividades capacitación capacitaciones taller talleres comisión
+            comisiones comité comités sesión sesiones quórum votación agenda técnico técnica legal
+            asesoría asesor asesora asesores procurador procuraduría auditoría auditor contraloría
+            defensoría transparencia acceso inciso incisos numeral literal considerando
+            considerandos resuelve regístrese comuníquese publíquese cúmplase archívese
+            nombramiento ascenso escalafón legajo legajos vacaciones licencia permiso permisos
+            descanso médico subsidio bonificación aguinaldo gratificación cts remuneración
+            remuneraciones sueldo sueldos haber haberes descuento descuentos retención retenciones
+            """
+
+        /** Comida, lugares y cosas muy peruanas */
+        private const val COMIDA_LUGARES = """
+            huancaína ají gallina lomo saltado rocoto relleno tacu carapulcra pachamanca juane tamal
+            tamales humita humitas morada mazamorra suspiro limeña turrón papa rellena cau seco
+            cabrito tiradito leche tigre jalea butifarra salchipollo broaster brasa mostrito
+            chicharrón chilcano pisco sour causa limeña olluquito ollucos sopa menestrón aguadito
+            chupe chupe camarones arroz chaufa aeropuerto sanguche alfajor alfajores king kong
+            picarones queque keke empanada empanadas pan chancay tostadas emoliente maca quinua
+            kiwicha cancha choclo chocho cebiche ceviche leche tigre aguaymanto lúcuma chirimoya
+            granadilla tuna pacay camu camu cocona aguaje
+            serranía selva sierra costa provincia provincias distrito distritos asentamiento
+            humano pueblo joven pueblos jóvenes urbanización urbanizaciones centro poblado caserío
+            anexo comunidad campesina nativa
+            """
+
+        /**
+         * Nombres con su forma exacta (siglas, instituciones, lugares y marcas). Al escribirlos en
+         * minúsculas se corrigen solos: "sunat" → "SUNAT", "essalud" → "EsSalud".
+         * (Solo nombres que no se confunden con una palabra común: por eso no están Lima, Surco o Tumbes.)
+         */
+        private const val FORMAS_TXT = """
+            SUNAT RENIEC EsSalud DNI RUC SOAT AFP ONP PNP SUNARP SUNAFIL SUNEDU Indecopi Osinergmin
+            Osiptel Minsa Minedu MTC MEF UGEL ONPE JNE SEACE OSCE SIAF TUPA TDR Pronabec SAT INPE INEI
+            Senamhi Sedapal ITSE PCM Mininter MIMP Midis Sunass Digesa SIS Qali Warma
+            Perú Arequipa Cusco Trujillo Chiclayo Piura Iquitos Huancayo Tacna Puno Callao Ayacucho
+            Cajamarca Huánuco Pucallpa Moquegua Huaraz Tarapoto Juliaca Chimbote Chincha Miraflores
+            Chorrillos Rímac Carabayllo Pachacámac Lurín Gamarra Larcomar Surquillo Ica Paracas
+            Huacachina Máncora Titicaca Kuélap Chachapoyas Machu Picchu Nasca Ucayali Loreto Lambayeque
+            Apurímac Huancavelica Amazonas
+            WhatsApp Facebook Instagram YouTube TikTok Yape Plin BCP Interbank BBVA Scotiabank Netflix
+            Google Gmail Rappi Uber inDrive Cabify Spotify Telegram Messenger Movistar Entel Bitel
+            Falabella Ripley Oechsle Tottus Wong Promart Sodimac Inkafarma Mifarma
+            """
+
+        /** Dónde entran (en el orden de frecuencia) las palabras de [MEDIO] */
+        private const val POS_MEDIO = 12_000
+        private val MEDIO = (SECTOR_PUBLICO + " " + COMIDA_LUGARES + " " + FORMAS_TXT + " " + LISURAS_TXT).trim()
+
+        private val LISURAS: HashSet<String> = HashSet<String>().apply {
+            for (w in LISURAS_TXT.trim().split(ESPACIOS)) { add(w.lowercase()); add(sinTildes(w)) }
+        }
+
+        private val FORMAS: Map<String, String> = FORMAS_TXT.trim().split(ESPACIOS).associateBy { sinTildes(it) }
     }
 }

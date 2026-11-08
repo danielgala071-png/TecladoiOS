@@ -187,5 +187,22 @@ silencio, secreto, shh: 🤫
 abrazo, abrazos: 🤗
 guiño, guino: 😉
 llamas, alpaca: 🦙
+palta, paltazo, palteado, palteada: 😬
+yape, yapeo, yapear, yapéame, plin, plinear, transferencia: 📲
+chamba, chambear, chambeando, trabajo: 💼
+causa, pata, bro, broder, yunta, choche, compadre: 🤝
+bacán, bacan, chévere, chevere, mostro, bravazo, firme: 😎
+misio, misia: 🥲
+pisco, chilcano, sour: 🍸
+pollada, broaster, brasa: 🍗
+peña, jarana, juerga, tono: 🎉
+combi, micro, colectivo: 🚌
+mototaxi: 🛺
+tombo, tombos, comisaría: 🚓
+huevón, huevon, cojudo, carajo, csm, ctm: 😤
+trámite, trámites, expediente, oficio, informe, documento: 📄
+sunat, impuesto, impuestos: 🧾
+dni, pasaporte, brevete: 🪪
+reunión, sesión, comité: 🗓️
 """
 }
