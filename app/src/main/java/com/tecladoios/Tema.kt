@@ -90,17 +90,19 @@ data class Tema(
                 fondo = NEGRO,
                 fondoArriba = NEGRO,
                 // Vidrio translúcido: blanco muy tenue con un toque del color de la app
-                tecla = a(0x2E, mezclar(BLANCO, color, 0.22f)),
-                teclaFuncion = a(0x1C, mezclar(BLANCO, color, 0.34f)),
-                teclaPresionada = a(0x66, color),
+                // Grafito neutro, apenas teñido: se lee mejor y se ve más fino
+                tecla = a(0x2B, mezclar(BLANCO, color, 0.10f)),
+                teclaFuncion = a(0x18, mezclar(BLANCO, color, 0.16f)),
+                teclaPresionada = a(0x5C, color),
                 teclaActiva = 0xFFEBEBF0.toInt(),
                 textoActivo = NEGRO,
                 sombra = 0,
                 texto = BLANCO,
                 textoSecundario = 0xFF8E8E93.toInt(),
                 azul = color,
-                borde = a(0xE6, mezclar(color, BLANCO, 0.10f)),
-                bordePanel = a(0xB3, color),
+                // Filo sutil: se nota el color de la app sin que "grite"
+                borde = a(0x80, mezclar(color, BLANCO, 0.18f)),
+                bordePanel = a(0x80, color),
                 barra = a(0xF0, 0x0B0B0D),
                 enterAccion = a(0xD9, color),
                 textoAcento = textoSobre(color),
@@ -108,10 +110,10 @@ data class Tema(
                 bordeBurbuja = a(0xE6, color),
                 desenfoque = 0,
                 // Se dibujan con opacidad propia (no dependen de la transparencia de la tecla)
-                brillo = a(0x16, BLANCO),
-                profundidad = a(0x38, NEGRO),
-                reflejo = a(0x5C, mezclar(BLANCO, color, 0.25f)),
-                resplandor = a(0x26, color),
+                brillo = a(0x10, BLANCO),
+                profundidad = a(0x2C, NEGRO),
+                reflejo = a(0x2E, mezclar(BLANCO, color, 0.15f)),
+                resplandor = a(0x14, color),
             )
         }
     }

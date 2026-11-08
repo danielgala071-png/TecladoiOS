@@ -44,6 +44,29 @@ object Iconos {
         c.drawLine(xc - k, cy + k, xc + k, cy - k, p)
     }
 
+    /** Lupa (buscar emoji) */
+    fun lupa(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
+        p.style = Paint.Style.STROKE
+        val r = s * 0.30f
+        val ox = cx - s * 0.08f
+        val oy = cy - s * 0.08f
+        c.drawCircle(ox, oy, r, p)
+        val k = r * 0.7071f
+        c.drawLine(ox + k, oy + k, cx + s * 0.42f, cy + s * 0.42f, p)
+    }
+
+    /** Portapapeles (historial de lo copiado) */
+    fun portapapeles(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
+        p.style = Paint.Style.STROKE
+        val w = s * 0.36f
+        val h = s * 0.46f
+        val r = s * 0.08f
+        c.drawRoundRect(cx - w, cy - h + s * 0.06f, cx + w, cy + h, r, r, p)
+        c.drawRoundRect(cx - w * 0.5f, cy - h - s * 0.04f, cx + w * 0.5f, cy - h + s * 0.14f, r * 0.6f, r * 0.6f, p)
+        c.drawLine(cx - w * 0.55f, cy - s * 0.02f, cx + w * 0.55f, cy - s * 0.02f, p)
+        c.drawLine(cx - w * 0.55f, cy + s * 0.18f, cx + w * 0.25f, cy + s * 0.18f, p)
+    }
+
     /** Flecha de "intro" (⏎) como en iOS 26/27 */
     fun enter(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
         p.style = Paint.Style.STROKE

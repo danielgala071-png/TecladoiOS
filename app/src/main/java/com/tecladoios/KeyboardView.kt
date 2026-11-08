@@ -120,9 +120,10 @@ class KeyboardView(
     private var altoFila = altoBase
     private val margenArriba = dp(8f)
     private val margenAbajo = dp(6f)
-    private val sepH = dp(3f)
-    private val sepV = dp(5.5f)
-    private val radio = dp(5.6f)
+    // Teclas un poco más anchas y altas (huecos más finos) y esquinas más suaves, como iOS 26
+    private val sepH = dp(2.7f)
+    private val sepV = dp(5.2f)
+    private val radio = dp(7f)
     private val formaPulso = Path()
     private val rectPulso = RectF()
 
@@ -255,6 +256,8 @@ class KeyboardView(
     private var modoCursor = false
     private var xCursor = 0f
     private var yCursor = 0f
+    /** Cuándo se apoyó el dedo en el espacio: un toque rápido que "barre" no mueve el cursor */
+    private var espacioDesdeMs = 0L
 
     // Deslizar desde 123 (o ABC, #+=): eliges un número o signo sin soltar el dedo,
     // se escribe y vuelve solo al teclado de antes, como en iPhone
@@ -283,7 +286,7 @@ class KeyboardView(
     private val pintura = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pinturaBorde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = maxOf(1f, dp(0.7f))
+        strokeWidth = maxOf(1f, dp(0.6f))
     }
     private val pinturaTexto = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
@@ -429,7 +432,7 @@ class KeyboardView(
         // Filo del color de la app como luz que entra en diagonal: intenso arriba a la izquierda,
         // tenue al medio y un poco más vivo abajo (como el borde de un vidrio grueso)
         t.shaderBorde = LinearGradient(r.left, r.top, r.left + r.width() * 0.35f, r.bottom,
-            intArrayOf(tema.borde, conAlfa(tema.borde, 0.32f), conAlfa(tema.borde, 0.62f)),
+            intArrayOf(tema.borde, conAlfa(tema.borde, 0.22f), conAlfa(tema.borde, 0.45f)),
             floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
         // Reflejo arriba de la tecla: le da el efecto translúcido de vidrio
         t.shaderBrillo = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.55f,
@@ -1145,7 +1148,10 @@ class KeyboardView(
                                 acciones.moverCursorVertical(m)
                                 yCursor += m * pasoY
                             }
-                        } else if (Math.abs(x - xCursor) > dp(16f)) {
+                        } else if (Math.abs(x - xCursor) > dp(18f) &&
+                            SystemClock.uptimeMillis() - espacioDesdeMs > 140) {
+                            // Escribiendo rápido con los pulgares el dedo a veces barre el espacio:
+                            // solo se activa el cursor si el dedo se quedó un instante apoyado
                             manejador.removeCallbacks(activarCursor)
                             modoCursor = true
                             xCursor = x
@@ -1345,6 +1351,7 @@ class KeyboardView(
             }
             Tipo.ESPACIO -> {
                 punteroEspacio = id
+                espacioDesdeMs = SystemClock.uptimeMillis()
                 xCursor = x
                 yCursor = y
                 manejador.postDelayed(activarCursor, 450)

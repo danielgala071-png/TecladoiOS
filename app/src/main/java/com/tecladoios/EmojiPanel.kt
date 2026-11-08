@@ -172,37 +172,26 @@ class EmojiPanel(
         visibility = View.GONE
         addView(listaCopiado, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }
-    private val buscador: TextView
-    private val botonCopiado: TextView
+    private val buscador: BotonIcono
+    private val botonCopiado: BotonIcono
     private var enCopiado = false
 
     /** Fondo de vidrio con el filo de la app (como las teclas) */
     private fun vidrio(radio: Float, conBorde: Boolean = true) = GradientDrawable().apply {
         setColor(tema.tecla)
         cornerRadius = radio
-        if (conBorde) setStroke(maxOf(1, dp(0.7f)), (tema.borde and 0x00FFFFFF) or 0x99000000.toInt())
+        if (conBorde) setStroke(maxOf(1, dp(0.6f)), (tema.borde and 0x00FFFFFF) or 0x4D000000)
     }
 
     init {
         orientation = VERTICAL
 
-        // "Buscar emoji" arriba, como en iOS: al tocarlo vuelven las letras y escribes para buscar
-        buscador = TextView(context).apply {
-            text = "\uD83D\uDD0D  Buscar emoji"
-            textSize = 14f
-            setTextColor(tema.textoSecundario)
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12f), 0, dp(12f), 0)
-            Fuentes.aplicar(this, 400)
-            background = vidrio(dp(16f).toFloat())
-            setOnClickListener {
-                acciones.retro(Tipo.A_LETRAS)
-                acciones.buscarEmoji()
-            }
+        // "Buscar emoji" ahora es una lupa abajo (junto al portapapeles): así los emojis
+        // ganan todo el alto del panel y se ven mucho más grandes
+        buscador = BotonIcono(context, tema, BotonIcono.LUPA) {
+            acciones.retro(Tipo.A_LETRAS)
+            acciones.buscarEmoji()
         }
-        addView(buscador, LayoutParams(LayoutParams.MATCH_PARENT, dp(32f)).apply {
-            setMargins(dp(10f), dp(6f), dp(10f), dp(2f))
-        })
 
         scroll.isHorizontalScrollBarEnabled = false
         scroll.overScrollMode = View.OVER_SCROLL_NEVER
@@ -211,7 +200,7 @@ class EmojiPanel(
             grilla.desplazamiento = x
             categorias.marcado = grilla.seccionEn(x)
         }
-        addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+        addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f).apply { topMargin = dp(2f) })
         addView(scrollCopiado, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
 
         val abajo = LinearLayout(context).apply {
@@ -229,22 +218,18 @@ class EmojiPanel(
                 acciones.volverABC()
             }
         }
-        abajo.addView(abc, LayoutParams(dp(52f), LayoutParams.MATCH_PARENT))
+        abajo.addView(abc, LayoutParams(dp(46f), LayoutParams.MATCH_PARENT))
+        abajo.addView(buscador, LayoutParams(dp(36f), LayoutParams.MATCH_PARENT))
         // Portapapeles: lo último que copiaste, para pegarlo con un toque
-        botonCopiado = TextView(context).apply {
-            text = "\uD83D\uDCCB"
-            textSize = 16f
-            gravity = Gravity.CENTER
-            setOnClickListener {
-                acciones.retro(Tipo.A_LETRAS)
-                mostrarCopiado(!enCopiado)
-            }
+        botonCopiado = BotonIcono(context, tema, BotonIcono.PORTAPAPELES) {
+            acciones.retro(Tipo.A_LETRAS)
+            mostrarCopiado(!enCopiado)
         }
-        abajo.addView(botonCopiado, LayoutParams(dp(40f), LayoutParams.MATCH_PARENT))
+        abajo.addView(botonCopiado, LayoutParams(dp(36f), LayoutParams.MATCH_PARENT))
         abajo.addView(categorias, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
         val borrar = BotonBorrar(context, tema, { acciones.retro(Tipo.BORRAR) }, { acciones.borrar() })
-        abajo.addView(borrar, LayoutParams(dp(52f), LayoutParams.MATCH_PARENT))
-        addView(abajo, LayoutParams(LayoutParams.MATCH_PARENT, dp(44f)))
+        abajo.addView(borrar, LayoutParams(dp(46f), LayoutParams.MATCH_PARENT))
+        addView(abajo, LayoutParams(LayoutParams.MATCH_PARENT, dp(40f)))
 
         refrescar()
     }
@@ -271,9 +256,9 @@ class EmojiPanel(
         enCopiado = si
         grilla.cerrarTonos()
         scroll.visibility = if (si) View.GONE else View.VISIBLE
-        buscador.visibility = if (si) View.GONE else View.VISIBLE
+        buscador.alpha = if (si) 0.45f else 1f
         scrollCopiado.visibility = if (si) View.VISIBLE else View.GONE
-        botonCopiado.background = if (si) vidrio(dp(14f).toFloat(), conBorde = false) else null
+        botonCopiado.activo = si
         categorias.alpha = if (si) 0.45f else 1f
         if (si) armarCopiado()
     }
@@ -360,7 +345,7 @@ class EmojiPanel(
         private fun recientesDe(prefs: android.content.SharedPreferences): List<String> {
             val guardados = prefs.getString("recientes", null)
             return if (guardados.isNullOrBlank()) lista("😂 ❤️ 😍 🙏 😭 👍 😊 🔥 🥰 😅 🤣 💀 😘 🥺 😁 ✨ 😎 🤔 😢 👀")
-            else guardados.split(" ").filter { it.isNotBlank() }.take(30)
+            else guardados.split(" ").filter { it.isNotBlank() }.take(32)
         }
 
         /** Suma un emoji a "Usados frecuentemente" (también los que eliges en la barra de sugerencias) */
@@ -369,8 +354,8 @@ class EmojiPanel(
             val nuevos = recientesDe(prefs).toMutableList()
             nuevos.remove(e)
             nuevos.add(0, e)
-            // Como en iPhone: hasta 30 (6 columnas de 5)
-            prefs.edit().putString("recientes", nuevos.take(30).joinToString(" ")).apply()
+            // Hasta 32 (8 columnas de 4)
+            prefs.edit().putString("recientes", nuevos.take(32).joinToString(" ")).apply()
         }
     }
 }
@@ -402,7 +387,7 @@ class BarraCategorias(
         if (n == 0 || width == 0) return
         val ancho = width / n.toFloat()
         val cy = height / 2f
-        gris.textSize = 17f * d
+        gris.textSize = 16.5f * d
         textoSimbolos.textSize = 13f * d
         textoSimbolos.color = tema.textoSecundario
         val fm = gris.fontMetrics
@@ -410,8 +395,8 @@ class BarraCategorias(
         CATEGORIAS.forEachIndexed { i, cat ->
             val cx = ancho * i + ancho / 2f
             if (i == marcado) {
-                circulo.color = (tema.teclaPresionada and 0x00FFFFFF) or 0x66000000
-                c.drawCircle(cx, cy, minOf(ancho, height.toFloat()) * 0.40f, circulo)
+                circulo.color = (tema.teclaPresionada and 0x00FFFFFF) or 0x4D000000
+                c.drawCircle(cx, cy, minOf(ancho, height.toFloat()) * 0.42f, circulo)
             }
             gris.alpha = if (i == marcado) 255 else 150
             if (cat.icono == "&%") {
@@ -454,14 +439,16 @@ class EmojiGrid(
         set(v) { if (v != field) { field = v; invalidate() } }
 
     private val d = Medidas.escala(context)
-    /** Igual que el iPhone: 5 filas, con aire entre emoji y emoji */
-    private val filas = 5
-    private val altoTitulo = 30f * d
+    /** 4 filas (antes 5): cada emoji tiene más espacio y se ve grande y nítido */
+    private val filas = 4
+    private val altoTitulo = 22f * d
     private val margen = 10f * d
     private val separacion = 12f * d
-    /** Ancho de cada columna: se ven unas 8 columnas y media (la media invita a deslizar) */
+    /** Ancho de cada columna: se ven unas 7 columnas y media (la media invita a deslizar) */
     private val anchoCelda: Float
     private var altoCelda = 0f
+    /** Tamaño de letra que hace que el emoji ocupe lo que debe (se mide con el emoji real) */
+    private var tamEmoji = 0f
     private val inicios = ArrayList<Float>()
     private val finales = ArrayList<Float>()
     private val pintura = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -469,8 +456,8 @@ class EmojiGrid(
         color = Color.BLACK
     }
     private val pinturaTitulo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 12.5f * d
-        letterSpacing = 0.02f
+        textSize = 11.5f * d
+        letterSpacing = 0.04f
     }.also { Fuentes.aplicar(it, 600) }
     private val fondo = Paint(Paint.ANTI_ALIAS_FLAG)
     private var presionado: Pair<Int, Int>? = null
@@ -540,7 +527,7 @@ class EmojiGrid(
 
     init {
         val m = resources.displayMetrics
-        val columnasVisibles = if (Medidas.horizontal(context)) 14.5f else 8.5f
+        val columnasVisibles = if (Medidas.horizontal(context)) 13.5f else 7.5f
         anchoCelda = (m.widthPixels - margen) / columnasVisibles
     }
 
@@ -556,7 +543,13 @@ class EmojiGrid(
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val alto = MeasureSpec.getSize(heightMeasureSpec)
-        altoCelda = ((alto - altoTitulo - 6f * d) / filas).coerceAtLeast(1f)
+        altoCelda = ((alto - altoTitulo - 4f * d) / filas).coerceAtLeast(1f)
+        // Cada fuente de emojis dibuja distinto a igual tamaño de letra: se mide el emoji real
+        // y se ajusta para que llene ~82% de la celda (antes quedaban chiquitos)
+        val objetivo = minOf(altoCelda * 0.82f, anchoCelda * 0.78f)
+        pintura.textSize = 100f
+        val medido = pintura.measureText("\uD83D\uDE00")
+        tamEmoji = if (medido > 1f) 100f * objetivo / medido else objetivo * 0.85f
         inicios.clear()
         finales.clear()
         var x = margen
@@ -576,8 +569,8 @@ class EmojiGrid(
         val anchoVisible = (parent as? View)?.width?.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
         val visIzq = desplazamiento - anchoCelda
         val visDer = desplazamiento + anchoVisible + anchoCelda
-        // Emoji grande y con aire alrededor, como en el iPhone
-        pintura.textSize = minOf(altoCelda * 0.80f, anchoCelda * 0.70f)
+        // Emoji grande, con el tamaño medido en onMeasure
+        pintura.textSize = if (tamEmoji > 0f) tamEmoji else minOf(altoCelda * 0.80f, anchoCelda * 0.70f)
         val fm = pintura.fontMetrics
         val centroY = -(fm.ascent + fm.descent) / 2f
         pinturaTitulo.color = tema.textoSecundario
@@ -612,9 +605,9 @@ class EmojiGrid(
                     if (j >= s.emojis.size) break
                     val y = altoTitulo + fila * altoCelda
                     if (pi == i && pj == j) {
-                        fondo.color = (tema.teclaPresionada and 0x00FFFFFF) or 0x99000000.toInt()
-                        val r = 9f * d
-                        c.drawRoundRect(x + 2f * d, y + 1f * d, x + anchoCelda - 2f * d, y + altoCelda - 1f * d, r, r, fondo)
+                        fondo.color = (tema.teclaPresionada and 0x00FFFFFF) or 0x80000000.toInt()
+                        val r = 12f * d
+                        c.drawRoundRect(x + 3f * d, y + 1f * d, x + anchoCelda - 3f * d, y + altoCelda - 1f * d, r, r, fondo)
                     }
                     c.drawText(conTono(s.emojis[j]), x + anchoCelda / 2f, y + altoCelda / 2f + centroY, pintura)
                 }
@@ -753,6 +746,62 @@ class BotonBorrar(
                 manejador.removeCallbacks(repetir)
                 invalidate()
             }
+        }
+        return true
+    }
+}
+
+/** Botón con ícono dibujado (lupa, portapapeles), gris como los de iOS */
+@SuppressLint("ViewConstructor")
+class BotonIcono(
+    context: Context,
+    private val tema: Tema,
+    private val icono: Int,
+    private val alTocar: () -> Unit,
+) : View(context) {
+
+    companion object {
+        const val LUPA = 0
+        const val PORTAPAPELES = 1
+    }
+
+    /** Marcado con un círculo (por ejemplo, cuando el historial está abierto) */
+    var activo = false
+        set(v) { if (v != field) { field = v; invalidate() } }
+
+    private val d = Medidas.escala(context)
+    private val pintura = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        strokeWidth = 1.6f * d
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+    private val circulo = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var presionado = false
+
+    override fun onDraw(c: Canvas) {
+        val cx = width / 2f
+        val cy = height / 2f
+        if (activo || presionado) {
+            circulo.color = (tema.teclaPresionada and 0x00FFFFFF) or 0x4D000000
+            c.drawCircle(cx, cy, minOf(width, height) * 0.42f, circulo)
+        }
+        pintura.color = if (activo) tema.texto else tema.textoSecundario
+        when (icono) {
+            LUPA -> Iconos.lupa(c, cx, cy, 18f * d, pintura)
+            else -> Iconos.portapapeles(c, cx, cy, 18f * d, pintura)
+        }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { presionado = true; invalidate() }
+            MotionEvent.ACTION_UP -> {
+                presionado = false
+                invalidate()
+                if (e.x in 0f..width.toFloat() && e.y in 0f..height.toFloat()) alTocar()
+            }
+            MotionEvent.ACTION_CANCEL -> { presionado = false; invalidate() }
         }
         return true
     }
