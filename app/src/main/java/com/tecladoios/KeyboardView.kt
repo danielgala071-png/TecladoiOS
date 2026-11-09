@@ -173,7 +173,7 @@ class KeyboardView(
     /** "pin", "telefono", "decimal" o "accion": qué va abajo a la izquierda del teclado numérico */
     var pinTipo = "pin"
     private var unaMano = "no"
-    private var deslizarActivo = true
+    private var deslizarActivo = false
 
     /** Ícono de la app donde escribes, muy tenue en la barra espaciadora (null = sin ícono) */
     var iconoApp: Bitmap? = null
@@ -286,7 +286,7 @@ class KeyboardView(
     /** Este toque del espacio ya aceptó la sugerencia (al soltarlo no escribe espacio) */
     private var espacioAcepto = false
     /** Deslizar el espacio hacia arriba acepta la sugerencia del centro (lo pone el servicio) */
-    var aceptarDeslizando = true
+    var aceptarDeslizando = false
 
     // Deslizar desde 123 (o ABC, #+=): eliges un número o signo sin soltar el dedo,
     // se escribe y vuelve solo al teclado de antes, como en iPhone
@@ -1382,7 +1382,7 @@ class KeyboardView(
                         if (e.eventTime - (bajadaMs[id] ?: 0L) < TOQUE_RAPIDO_MS) continue
                         // Un temblor del dedo no cambia la tecla
                         val p0 = puntosToque[id]
-                        if (p0 != null && Math.hypot((x - p0[0]).toDouble(), (y - p0[1]).toDouble()) < dp(9f)) continue
+                        if (p0 != null && Math.hypot((x - p0[0]).toDouble(), (y - p0[1]).toDouble()) < dp(12f)) continue
                         // Solo cambia de tecla si el dedo entró de verdad en la otra (no por rozar
                         // el borde al escribir rápido): así no salen letras vecinas por error
                         val m = dp(5f)
@@ -1647,7 +1647,7 @@ class KeyboardView(
     companion object {
         private val FRENO_PULSO = Movimiento.SUAVE
         /** Un toque más corto que esto es "tocar y soltar": no cambia de tecla ni desliza */
-        private const val TOQUE_RAPIDO_MS = 120L
+        private const val TOQUE_RAPIDO_MS = 170L
 
         /** Lo que aparece al mantener presionada cada tecla */
         private val VARIANTES = mapOf(

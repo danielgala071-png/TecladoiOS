@@ -2495,7 +2495,7 @@ class TecladoService : InputMethodService(),
     private fun crearEfecto(clase: Int): VibrationEffect {
         val nivel = fuerzaVibracion
         return if (toqueFino == true) {
-            val base = when (clase) { 1 -> 0.8f; 2 -> 0.66f; 3 -> 0.45f; else -> 0.6f }
+            val base = when (clase) { 1 -> 0.85f; 2 -> 0.7f; 3 -> 0.5f; else -> 0.7f }
             val por = when (nivel) { "suave" -> 0.55f; "fuerte" -> 1.45f; else -> 1f }
             val fuerza = (base * por).coerceIn(0.08f, 1f)
             // Toque con más cuerpo: las letras, el espacio y el intro usan CLICK (firme, se

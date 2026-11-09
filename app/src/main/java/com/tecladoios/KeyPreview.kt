@@ -194,7 +194,7 @@ class KeyPreviewOverlay(private val anchor: View) {
             // y recién ahí se recoge, un poco más despacio.
             val visto = t - b.inicio
             val espera = (VISIBLE_MINIMO - visto).coerceAtLeast(0L)
-            b.animar(if (espera > 0L) 1f else b.valor(t), 0f, 100, false, t + espera)
+            b.animar(if (espera > 0L) 1f else b.valor(t), 0f, 115, false, t + espera)
             saliendo.add(b)
             postInvalidateOnAnimation()
         }
@@ -307,7 +307,7 @@ class KeyPreviewOverlay(private val anchor: View) {
 
     private companion object {
         /** Lo mínimo que se ve la burbuja de una tecla, aunque el toque sea cortísimo (ms) */
-        const val VISIBLE_MINIMO = 90L
+        const val VISIBLE_MINIMO = 115L
         val REBOTE = Movimiento.REBOTE
         val FRENO = Movimiento.SUAVE
 

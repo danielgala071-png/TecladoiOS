@@ -213,7 +213,7 @@ def main():
     candidatos = defaultdict(list)  # error -> [(peso, destino)]
     usadas = 0
     for p, i in sorted(rango.items(), key=lambda x: x[1]):
-        if i > 50000:
+        if i > 60000:
             break
         np_ = normal(p)
         if len(np_) < 3 or not LETRAS.match(np_):

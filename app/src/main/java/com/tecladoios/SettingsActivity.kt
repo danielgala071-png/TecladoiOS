@@ -476,9 +476,6 @@ class SettingsActivity : Activity() {
             filaInterruptor("Mostrar predicciones en línea", "en_linea", false),
             filaInterruptor("Puntuación inteligente", "puntuacion", true),
             filaInterruptor("Signos de apertura ¿ ¡", "apertura", true),
-            filaInterruptor("Sugerir emojis", "emojis_barra", true),
-            filaInterruptor("Deslizar para escribir", "deslizar", true),
-            filaInterruptor("Borrar con Deslizar para escribir por palabra", "borrar_deslizado", true),
             filaInterruptor("Previsualización de caracteres", "vista_previa", true),
             filaInterruptor("Atajo con “.”", "punto_doble", true),
             filaInterruptor("Fila de números", "fila_numeros", false),
@@ -510,16 +507,10 @@ class SettingsActivity : Activity() {
                 "espacio e intro). Con el celular en silencio o vibración, el teclado no suena.")
 
         grupo("Escritura", listOf(
-            filaInterruptor("Escritura rápida", "escritura_rapida", false),
             filaInterruptor("Mantener la barra unos segundos", "barra_sostenida", true),
-            filaInterruptor("Emojis frecuentes con el campo vacío", "emojis_frecuentes", true),
-            filaInterruptor("Deslizar el espacio para aceptar", "aceptar_deslizando", true),
             filaInterruptor("Modo formal automático", "modo_formal", true),
-        ), pie = "Escritura rápida quita la burbuja de las letras y los acentos al mantener presionado: " +
-                "nada se interpone si escribes muy rápido con los pulgares (los acentos los pone la " +
-                "autocorrección). Con “Mantener la barra”, al enviar un mensaje la barra se queda un " +
-                "momento en vez de desaparecer de golpe. “Deslizar el espacio”: desliza la barra " +
-                "espaciadora hacia arriba y se pone la sugerencia del centro. “Modo formal”: en el " +
+        ), pie = "Con “Mantener la barra”, al enviar un mensaje la barra se queda un " +
+                "momento en vez de desaparecer de golpe. “Modo formal”: en el " +
                 "correo y en apps de trabajo, el teclado propone saludos formales y casi no sugiere jerga.")
 
         val borde = when (Ajustes.bordeTeclas(this)) {

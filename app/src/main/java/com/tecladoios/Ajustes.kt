@@ -22,8 +22,10 @@ object Ajustes {
     /** Separa palabras pegadas mientras escribes, sin esperar el espacio ("yanpodemos" → "ya podemos") */
     fun separarVivo(c: Context) = si(c, "separar_vivo", true)
     fun puntuacionInteligente(c: Context) = si(c, "puntuacion", true)
-    fun deslizar(c: Context) = si(c, "deslizar", true)
-    fun borrarDeslizado(c: Context) = si(c, "borrar_deslizado", true)
+    /** Quitado: deslizar para escribir ya no existe (se escribe tecla por tecla) */
+    @Suppress("UNUSED_PARAMETER") fun deslizar(c: Context) = false
+    /** Quitado junto con deslizar para escribir */
+    @Suppress("UNUSED_PARAMETER") fun borrarDeslizado(c: Context) = false
     fun vistaPrevia(c: Context) = si(c, "vista_previa", true)
     fun puntoDoble(c: Context) = si(c, "punto_doble", true)
     /** Lo copiado aparece en la barra de sugerencias para pegarlo con un toque */
@@ -33,7 +35,7 @@ object Ajustes {
     /** Al cerrar con ? o ! se pone el signo de apertura (¿ ¡) al inicio, como se escribe en español */
     fun apertura(c: Context) = si(c, "apertura", true)
     /** Emojis en la barra de sugerencias según lo que escribes ("jaja" → 😂) */
-    fun emojisBarra(c: Context) = si(c, "emojis_barra", true)
+    @Suppress("UNUSED_PARAMETER") fun emojisBarra(c: Context) = false // quitado: la barra solo sugiere palabras
     /** Fila de números siempre a la vista arriba de las letras (como Gboard) */
     fun filaNumeros(c: Context) = si(c, "fila_numeros", false)
     /** Guarda lo último que copiaste (hasta 10) para pegarlo desde el panel de emojis */
@@ -59,11 +61,11 @@ object Ajustes {
 
     // Escritura
     /** Escritura rápida: sin vista previa ni acentos al mantener (para escribir muy rápido con los pulgares) */
-    fun escrituraRapida(c: Context) = si(c, "escritura_rapida", false)
+    @Suppress("UNUSED_PARAMETER") fun escrituraRapida(c: Context) = false // quitado: siempre hay burbuja y acentos
     /** La barra de sugerencias se queda unos segundos después de enviar o dejar de escribir */
     fun barraSostenida(c: Context) = si(c, "barra_sostenida", true)
     /** Con el campo vacío, la barra muestra tus emojis más usados */
-    fun emojisFrecuentes(c: Context) = si(c, "emojis_frecuentes", true)
+    @Suppress("UNUSED_PARAMETER") fun emojisFrecuentes(c: Context) = false // quitado: sin emojis en la barra
 
     /** Qué tan visible es el filo de color de las teclas: "apagado", "sutil", "normal" o "vivo" */
     fun bordeTeclas(c: Context) = prefs(c).getString("borde_teclas", "normal") ?: "normal"
@@ -71,7 +73,7 @@ object Ajustes {
     /** En correo y apps de trabajo, las sugerencias se vuelven formales (sin jerga) */
     fun modoFormal(c: Context) = si(c, "modo_formal", true)
     /** Deslizar la barra espaciadora hacia arriba pone la sugerencia del centro */
-    fun aceptarDeslizando(c: Context) = si(c, "aceptar_deslizando", true)
+    @Suppress("UNUSED_PARAMETER") fun aceptarDeslizando(c: Context) = false // quitado
 
     /** Filas de emojis en el panel: 3 (grandes), 4 (normal) o 5 (más emojis a la vista) */
     fun filasEmoji(c: Context) = prefs(c).getInt("emoji_filas", 4).coerceIn(3, 5)

@@ -102,7 +102,7 @@ data class Tema(
                 teclaFuncion = a(0x1D, mezclar(BLANCO, color, 0.10f)),
                 // Tecla presionada: el vidrio se ilumina en gris claro con un toque de la app
                 // (antes era un bloque verde oscuro y pesado)
-                teclaPresionada = a(0x5A, mezclar(BLANCO, color, 0.14f)),
+                teclaPresionada = a(0x60, mezclar(BLANCO, color, 0.2f)),
                 // Mayúsculas activadas: blanco suave, no encandila sobre el negro
                 teclaActiva = 0xFFE3E3E8.toInt(),
                 textoActivo = 0xFF0A0A0B.toInt(),
