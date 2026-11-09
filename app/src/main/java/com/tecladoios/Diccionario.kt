@@ -182,7 +182,30 @@ class Diccionario(context: Context) {
             if (it.palabras.size > 1000) escribirIndice(archivoIndice, version, it)
         }
         val (pares, trios) = armarPredicciones(c)
+        tipeos = leerTipeos(c)
         return Indice(base.palabras, base.normal, base.orden, base.ordenTop, base.grupos, pares, trios)
+    }
+
+    /**
+     * Errores de tipeo ya aprendidos de fábrica (assets/errores.txt): los dedazos más comunes
+     * de las palabras más usadas ("tranajo" → "trabajo", "nafie" → "nadie"). Solo los que no
+     * se pueden confundir con otra palabra; se corrigen al instante, sin calcular nada.
+     */
+    @Volatile private var tipeos: Map<String, String> = emptyMap()
+
+    private fun leerTipeos(c: Context): Map<String, String> {
+        val m = HashMap<String, String>(24_000)
+        try {
+            c.assets.open("errores.txt").bufferedReader().useLines { lineas ->
+                for (linea in lineas) {
+                    if (linea.isEmpty() || linea[0] == '#') continue
+                    val i = linea.indexOf(':')
+                    if (i <= 0 || i >= linea.length - 1) continue
+                    m[linea.substring(0, i)] = linea.substring(i + 1).trim()
+                }
+            }
+        } catch (_: Exception) { }
+        return m
     }
 
     /** Cambia con cada instalación: así el índice guardado nunca queda viejo */
@@ -1110,10 +1133,11 @@ class Diccionario(context: Context) {
 
         var mejor: String? = null
         var mejorS = 0f
-        var mejorCtx = 0f
         for (k in 2..n - 3) {
             for (conSep in 0..1) {
-                if (conSep == 1 && np[k] !in JUNTO_AL_ESPACIO) continue
+                // La letra que cayó en lugar del espacio: se mira la tecla de verdad (la ñ
+                // tiene su propia tecla y nunca es un espacio, aunque sin tilde sea "n")
+                if (conSep == 1 && l[k] !in JUNTO_AL_ESPACIO) continue
                 val desdeB = k + conSep
                 val largoB = n - desdeB
                 // Lo que sigue tiene que tener sustancia: 3 letras (4 si la primera es cortita)
@@ -1127,17 +1151,26 @@ class Diccionario(context: Context) {
                 if (ra < 0) ra = mejorPorNormal(ix, na)
                 val fa: Int
                 val formaA: String
-                if (ra in 0..COMUN) {
+                // Con una letra en lugar del espacio (sobre todo la n, que está en casi todas
+                // las palabras) la primera parte tiene que ser una palabra bien común
+                val tope = if (conSep == 1) COMUN_SEPARADOR else COMUN
+                if (ra in 0..tope) {
                     fa = frec(ra)
                     formaA = if (ix.palabras[ra].equals(a, ignoreCase = true)) p.substring(0, k)
                     else igualarMayus(ix.palabras[ra], p.substring(0, k))
                 } else {
+                    // Una palabra tuya solo sirve como primera parte si la usas de verdad
+                    // (y nunca con una letra en lugar del espacio)
                     val c = aprendidas[a] ?: 0
-                    if (!propia(a, c)) continue
+                    if (conSep == 1 || c < 4 || !propia(a, c)) continue
                     fa = 450 + minOf(c, 30) * 5
                     formaA = p.substring(0, k)
                 }
                 if (bloqueada(formaA) || lisuraAjena(formaA)) continue
+                // "ve" + n + "tamas": si la primera parte con esa letra sigue siendo el comienzo
+                // de una palabra ("ven…" → "ventanas"), lo más probable es un error de tipeo
+                // dentro de una sola palabra, no un espacio fallado
+                if (conSep == 1 && esComienzoComun(ix, np.substring(0, k + 1))) continue
 
                 // Segunda parte: tiene que empezar una palabra común (o una tuya)
                 val nb = np.substring(desdeB)
@@ -1149,23 +1182,26 @@ class Diccionario(context: Context) {
                 }
 
                 // Lo aprendido: ¿después de esa palabra sueles escribir una que empieza así?
+                // Solo suma puntos (antes también saltaba la revisión del error de tipeo, y con
+                // mucho aprendido terminaba separando casi cualquier palabra con n)
                 val la = formaA.lowercase()
                 var ctx = 0f
                 for ((w, pr) in cerebro.candidatos(la, previa, app, nb, 1)) {
                     if (conoce(ix, w)) ctx = maxOf(ctx, minOf(1f, pr * 1.5f))
                 }
-                if (pares[la]?.keys?.any { normalDe(it).startsWith(nb) } == true) ctx = maxOf(ctx, 0.5f)
                 if (paresFijos(la)?.any { normal(it).startsWith(nb) } == true) ctx = maxOf(ctx, 0.35f)
+                if (ctx < 0.2f && pares[la]?.keys?.any { normalDe(it).startsWith(nb) } == true) ctx = 0.2f
 
                 // Las palabras largas casi nunca son un accidente: suman
                 val faL = fa + minOf(250, maxOf(0, 60 * (k - 3)))
                 var s = minOf(faL, fb) + (faL + fb) / 4f
                 if (conSep == 0) s -= 40f
-                s += ctx * 300f
+                s += ctx * 250f
                 if (previa.isNotEmpty()) s += contexto(previa, formaA, previa2) * 120f
+                // Con una letra en lugar del espacio se pide más seguridad
+                if (conSep == 1) s -= 60f
                 if (s > mejorS) {
                     mejorS = s
-                    mejorCtx = ctx
                     mejor = formaA + " " + p.substring(desdeB)
                 }
             }
@@ -1173,9 +1209,9 @@ class Diccionario(context: Context) {
         }
         val res = mejor ?: return null
         if (mejorS < 600f) return null
-        // ¿Era una palabra a medias mal tocada? Ante la duda, no se separa (salvo que lo
-        // aprendido diga claramente que ahí van dos palabras)
-        if (mejorCtx < 0.35f && pareceErrorDeTipeo(ix, np)) return null
+        // ¿Era una palabra a medias mal tocada ("entones", "conntrol", "encientra")?
+        // Ante la duda, nunca se separa: separar mal molesta mucho más que no separar
+        if (pareceErrorDeTipeo(ix, np)) return null
         return if (cortado()) null else res
     }
 
@@ -1189,6 +1225,8 @@ class Diccionario(context: Context) {
         val np = normal(p)
         val n = np.length
         if (n < 7 || n > 30 || n != p.length) return null
+        val l = p.lowercase()
+        if (l.length != n) return null
         // Desde cada posición hasta el final: cuántas palabras como mínimo (-1 = imposible),
         // la menos común de ellas y dónde empieza la siguiente
         val partes = IntArray(n + 1) { -1 }
@@ -1205,7 +1243,8 @@ class Diccionario(context: Context) {
                 for (opcion in 0..1) {
                     val nx = if (opcion == 0) e else e + 1
                     // Con una letra en lugar del espacio, tiene que haber algo después
-                    if (opcion == 1 && (e >= n - 1 || np[e] !in JUNTO_AL_ESPACIO)) continue
+                    // (la tecla de verdad: la ñ nunca hace de espacio)
+                    if (opcion == 1 && (e >= n - 1 || l[e] !in JUNTO_AL_ESPACIO)) continue
                     if (nx > n || partes[nx] < 0) continue
                     val cuantas = partes[nx] + 1
                     val m = minOf(fr, menor[nx])
@@ -1256,6 +1295,20 @@ class Diccionario(context: Context) {
         for (w in INGLES) if (w.startsWith(np)) return true
         for (f in FORMAS.keys) if (f.startsWith(np)) return true
         for (e in ERRORES_COMUNES.keys) if (e.startsWith(np)) return true
+        return false
+    }
+
+    /** ¿[np] es el comienzo de una palabra muy común? ("ven" → venir, ventana) */
+    private fun esComienzoComun(ix: Indice, np: String): Boolean {
+        val orden = ix.ordenTop
+        var k = desde(ix, np, orden)
+        var vistas = 0
+        while (k < orden.size && vistas < 3000) {
+            val i = orden[k++]
+            if (!ix.normal[i].startsWith(np)) return false
+            if (i <= MUY_COMUN) return true
+            vistas++
+        }
         return false
     }
 
@@ -1317,6 +1370,39 @@ class Diccionario(context: Context) {
         return false
     }
 
+    /**
+     * Al cerrar la palabra que quedó después de separar mientras escribías: ¿la separación fue
+     * un error? Sí, si [segunda] no es una palabra y todo junto ([unida]) sí lo es, o se parece
+     * a una palabra al menos tanto como [segunda] ("en tones" → "entones" ≈ "entonces").
+     */
+    @Synchronized
+    fun reunirSeparacion(segunda: String, unida: String): Boolean {
+        val ix = indice ?: return false
+        if (segunda.length < 2 || unida.length > MAX_LARGO) return false
+        toq = null
+        sinCorte = true
+        return try {
+            when {
+                conoce(ix, segunda) -> false
+                conoce(ix, unida) -> true
+                else -> {
+                    val nu = normal(unida)
+                    val ns = normal(segunda)
+                    val cu = masParecida(ix, nu, limitePara(nu.length), "", "")
+                    if (cu == null) false
+                    else {
+                        val du = distancia(nu, normal(cu), normal(cu).length, 3f)
+                        val cs = masParecida(ix, ns, limitePara(ns.length), "", "")
+                        val ds = if (cs == null) 99f else distancia(ns, normal(cs), normal(cs).length, 3f)
+                        du <= ds
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            Registro.anotar("reunir", e); false
+        } finally { sinCorte = false }
+    }
+
     /** Separaciones que deshiciste: lo que empieza así ya no se separa */
     private fun separacionRechazada(np: String): Boolean {
         if (rechazos.isEmpty()) return false
@@ -1345,7 +1431,7 @@ class Diccionario(context: Context) {
         if (esContacto(l)) return if (p[0].isLowerCase()) p.replaceFirstChar { it.uppercase() } else null
         // Errores comunes al escribir rápido o de oído: "aser" → "hacer", "nesecito" → "necesito"
         if (!propia(l, aprendidas[l] ?: 0)) {
-            ERRORES_COMUNES[l]?.let { if (!bloqueada(it)) return igualarMayus(it, p).takeIf { c -> c != p } }
+            (ERRORES_COMUNES[l] ?: tipeos[l])?.let { if (!bloqueada(it)) return igualarMayus(it, p).takeIf { c -> c != p } }
         }
         if (expresiva(l)) return null
         val ix = indice ?: return null // aún cargando: mejor no tocar nada
@@ -1391,15 +1477,21 @@ class Diccionario(context: Context) {
         }
 
         // 2) Tocaste la b, la n o la v en vez del espacio: "quebhago" → "que hago".
-        //    Si esas dos palabras suelen ir juntas, es casi seguro: va antes que lo demás.
-        if (mejor == null && np.length >= 4) {
-            separarEspacio(ix, p, soloSeguro = true)?.let { s -> return conMayus(s, p) }
-        }
+        //    Solo si esas dos palabras suelen ir juntas (lo tuyo o lo del diccionario).
+        val sepSegura = if (mejor == null && np.length >= 4) separarEspacio(ix, p, soloSeguro = true) else null
         // 3) Errores de tipeo con la distribución del teclado
         // (una palabra rara escrita una sola vez puede ser un error; cuando la repites ya es tuya)
         if (mejor == null && np.length >= 3) {
             // El límite se calibra solo según qué tan seguido deshaces la autocorrección
             mejor = masParecida(ix, np, limitePara(np.length) * cerebro.audacia(), previa, previa2)
+        }
+        // La separación gana solo si lo escrito no se parece mucho a UNA palabra: "entones"
+        // es "entonces" (no "en tones") y "ventamas" es "ventanas" (no "ve tamas")
+        if (sepSegura != null) {
+            val m = mejor
+            if (m == null) return conMayus(sepSegura, p)
+            val nm = normal(m)
+            if (distancia(np, nm, nm.length, 2f) > 0.9f) return conMayus(sepSegura, p)
         }
         // 4) Palabras pegadas: "estoybien" → "estoy bien", "yonsoy" → "yo soy"
         if (mejor == null && np.length >= 4) {
@@ -1914,6 +2006,8 @@ class Diccionario(context: Context) {
         private const val COMUN = 15000
         /** Hasta esta posición la palabra es muy común (para separar tres o más palabras pegadas) */
         private const val MUY_COMUN = 2600
+        /** Hasta aquí puede ir la primera palabra si una letra (b, n, v, m, c) cayó en lugar del espacio */
+        private const val COMUN_SEPARADOR = 6000
         /** Veces que hay que usar una palabra que no está en el diccionario para que sea tuya */
         private const val MIN_PROPIA = 3
         /** Lo mismo para palabras de dos letras ("yq", "jj" casi siempre son errores) */
@@ -2267,6 +2361,290 @@ class Diccionario(context: Context) {
             jente:gente jenial:genial jeneral:general felis:feliz felises:felices desirle:decirle asme:hazme
             aslo:hazlo asle:hazle hiso:hizo hise:hice hisiste:hiciste cojudes:cojudez talves:tal_vez
             porsupuesto:por_supuesto encerio:en_serio alomejor:a_lo_mejor
+            abiamos:habíamos abian:habían abias:habías abida:habida abidas:habidas abido:habido abidos:habidos
+            abiendo:habiendo abil:hábil abilidad:habilidad abilidades:habilidades abilitar:habilitar
+            abitacion:habitación abitaciones:habitaciones abitante:habitante abitantes:habitantes
+            abitar:habitar abito:hábito abitos:hábitos abitual:habitual abituar:habituar ablan:hablan
+            ablando:hablando ablaste:hablaste able:hablé ablemos:hablemos abremos:habremos acabao:acabado
+            acanpar:acampar ace:hace aceder:acceder acemos:hacemos acen:hacen acerlo:hacerlo aces:haces
+            acesible:accesible aceso:acceso acesorio:accesorio acesos:accesos aciamos:hacíamos acian:hacían
+            acias:hacías acidente:accidente acidentes:accidentes acienda:hacienda aciendo:haciendo
+            acion:acción acionar:accionar aciones:acciones acionista:accionista aconpaña:acompaña
+            aconpañame:acompáñame aconpañamiento:acompañamiento aconpañar:acompañar aconpaño:acompañó
+            acostunbrar:acostumbrar acseder:acceder acsesible:accesible acseso:acceso acsesorio:accesorio
+            acsesos:accesos acsidente:accidente acsidentes:accidentes acsion:acción acsionar:accionar
+            acsiones:acciones acsionista:accionista adicsion:adicción adkirir:adquirir adkisicion:adquisición
+            aflicion:aflicción aflicsion:aflicción ago:hago aka:acá akel:aquel akella:aquella akellas:aquellas
+            akello:aquello akellos:aquellos alcantariya:alcantarilla alfonbra:alfombra alkilar:alquilar
+            alkiler:alquiler allar:hallar allazgo:hallazgo aller:ayer alluda:ayuda alludame:ayúdame
+            alludar:ayudar alludas:ayudas allude:ayudé alluno:ayuno alrato:al_rato altok:al_toque
+            altoke:al_toque altoqe:al_toque alunbrado:alumbrado alunbrar:alumbrar amariya:amarilla
+            amariyo:amarillo amburguesa:hamburguesa ametrayadora:ametralladora   ampallada:ampayada
+            ampallado:ampayado ampallar:ampayar ampallaron:ampayaron anbicion:ambición anbiciones:ambiciones
+            anbicioso:ambicioso anbientar:ambientar anbiente:ambiente anbientes:ambientes anbito:ámbito
+            anbitos:ámbitos anbulancia:ambulancia anesar:anexar aniyo:anillo anparar:amparar anpay:ampay
+            anpayada:ampayada anpayado:ampayado anpayar:ampayar anpayaron:ampayaron anpliacion:ampliación
+            anpliar:ampliar anplio:amplio anplitud:amplitud antealler:anteayer apeyido:apellido
+            apeyidos:apellidos apollar:apoyar apollo:apoyo apollos:apoyos aprosimacion:aproximación
+            aqueya:aquella aqueyas:aquellas aqueyo:aquello aqueyos:aquellos arciya:arcilla ardiya:ardilla
+            argoya:argolla   ariamos:haríamos arian:harían arias:harías arina:harina arkero:arquero
+            arkitecto:arquitecto arkitectos:arquitectos arkitectura:arquitectura arkitecturas:arquitecturas
+            arranke:arranque arreglao:arreglado arrollo:arroyo asanblea:asamblea asanbleas:asambleas
+            asen:hacen asfisiar:asfixiar asila:axila asonbrar:asombrar asonbro:asombro asonbroso:asombroso
+            asustao:asustado atake:ataque atracion:atracción atracsion:atracción aunke:aunque ausilio:auxilio
+            autoalluda:autoayuda aveer:a_ver aveyana:avellana avisastes:avisaste   ayamos:hayamos
+            ayan:hayan ayas:hayas ayi:allí azaña:hazaña bachiyer:bachiller bachiyerato:bachillerato
+            banba:bamba banbas:bambas banbear:bambear banbera:bambera banbero:bambero banketa:banqueta
+            barbiya:barbilla bas:vas bataya:batalla batayas:batallas baya:vaya bayena:ballena benga:venga
+            bengan:vengan bengo:vengo benir:venir bente:vente bernos:vernos berte:verte bes:ves beyeza:belleza
+            biene:viene bienen:vienen bienes:vienes bimos:vimos biste:viste biyete:billete biyetera:billetera
+            biyetes:billetes biyeton:billetón biyon:billón blankiazul:blanquiazul blankirroja:blanquirroja
+            bloke:bloque blokear:bloquear bocadiyo:bocadillo bolsiyo:bolsillo bolsiyos:bolsillos
+            bombiya:bombilla bonbero:bombero bonbilla:bombilla boseo:boxeo boske:bosque boskejo:bosquejo
+            boskes:bosques boteya:botella boteyas:botellas botikin:botiquín boy:voy briyante:brillante
+            briyar:brillar briyo:brillo buhardiya:buhardilla buske:busqué buskeda:búsqueda buskedas:búsquedas
+            cabayero:caballero cabayeros:caballeros cabeyo:cabello cabeyos:cabellos cachinba:cachimba
+            cachinbo:cachimbo cachinbos:cachimbos calefacion:calefacción calefacsion:calefacción
+            callera:cayera calleramos:cayéramos calleran:cayeran calleras:cayeras cameyo:camello
+            camiya:camilla canbia:cambia canbiar:cambiar canbie:cambié canbios:cambios canpana:campana
+            canpaña:campaña canpañas:campañas canpeon:campeón canpeonato:campeonato canpeonatos:campeonatos
+            canpesino:campesino canpestre:campestre canpo:campo canpos:campos canpus:campus capiya:capilla
+            casiya:casilla casteyano:castellano castiyo:castillo cayado:callado cayar:callar caye:calle
+            cayejon:callejón cayes:calles ceboya:cebolla cepiyar:cepillar cepiyo:cepillo chaketa:chaqueta
+            chanba:chamba chanbas:chambas chanbea:chambea chanbeador:chambeador chanbeadora:chambeadora
+            chanbeamos:chambeamos chanbean:chambean chanbeando:chambeando chanbear:chambear chanbeas:chambeas
+            chanbee:chambeé chanbera:chambera chanbero:chambero chanberos:chamberos chanbita:chambita
+            chanbon:chambón chanbona:chambona chanke:chanqué chanpu:champú cheke:cheque chekear:chequear
+            chikilla:chiquilla chikillas:chiquillas chikillo:chiquillo chikillos:chiquillos chiquiya:chiquilla
+            chiquiyas:chiquillas chiquiyo:chiquillo chiquiyos:chiquillos choke:choque chonpa:chompa
+            chonpita:chompita cokito:coquito colecion:colección colecionar:coleccionar coleciones:colecciones
+            colecsion:colección colecsionar:coleccionar colecsiones:colecciones coliya:colilla
+            colokio:coloquio colonbiano:colombiano colunpio:columpio complicao:complicado comprastes:compraste
+            conbate:combate conbatir:combatir conbativo:combativo conbi:combi conbinacion:combinación
+            conbinaciones:combinaciones conbinar:combinar conbis:combis conbustible:combustible
+            conducion:conducción conducsion:conducción conesion:conexión conesiones:conexiones
+            confecion:confección confecionar:confeccionar confecsion:confección confecsionar:confeccionar
+            conke:conque conkista:conquista conkistar:conquistar conocistes:conociste conosemos:conocemos
+            conoser:conocer conosi:conocí conpa:compa conpadre:compadre conparacion:comparación
+            conparaciones:comparaciones conparar:comparar conpartir:compartir conpas:compás
+            conpasion:compasión conpasivo:compasivo conpatibilidad:compatibilidad conpatible:compatible
+            conpañera:compañera conpañeras:compañeras conpañerita:compañerita conpañerito:compañerito
+            conpañero:compañero conpañeros:compañeros conpañia:compañía conpañias:compañías
+            conpensacion:compensación conpensaciones:compensaciones conpensar:compensar
+            conpetencia:competencia conpetencias:competencias conpetente:competente conpeticion:competición
+            conpeticiones:competiciones conpetidor:competidor conpetir:competir conpetitivo:competitivo
+            conplacer:complacer conplejidad:complejidad conplejidades:complejidades conplejo:complejo
+            conplementar:complementar conplementario:complementario conplemento:complemento conpleta:completa
+            conpletamente:completamente conpletar:completar conpleto:completo conplicado:complicado
+            conplicar:complicar conplicidad:complicidad conponente:componente conponer:componer
+            conportamiento:comportamiento conportamientos:comportamientos conportarse:comportarse
+            conpositor:compositor conpostura:compostura conpra:compra conpralo:cómpralo conprar:comprar
+            conpras:compras conpre:compré conprende:comprende conprender:comprender conprendio:comprendió
+            conprensible:comprensible conprensivo:comprensivo conpresion:compresión conprimir:comprimir
+            conpro:compró conprobar:comprobar conprometer:comprometer conprometido:comprometido
+            conpromiso:compromiso conpromisos:compromisos conpu:compu conpulsivo:compulsivo
+            conputacion:computación conputadora:computadora conputadoras:computadoras conputar:computar
+            conputo:cómputo construcion:construcción construciones:construcciones construcsion:construcción
+            construcsiones:construcciones construlle:construye construllo:construyó
+            contenplacion:contemplación contenplar:contemplar contenporaneo:contemporáneo contestos:contextos
+            contracion:contracción contracsion:contracción contradicion:contradicción
+            contradicsion:contradicción contratienpo:contratiempo convicion:convicción
+            conviciones:convicciones convicsion:convicción convicsiones:convicciones conyevar:conllevar
+            cordiyera:cordillera correcion:corrección correciones:correcciones correcsion:corrección
+            correcsiones:correcciones costiya:costilla costunbre:costumbre costunbres:costumbres
+            cremayera:cremallera crioya:criolla crioyada:criollada crioyo:criollo cuadriya:cuadrilla
+            cualkier:cualquier cualkiera:cualquiera cuchiyo:cuchillo cueyo:cuello culla:cuya cullas:cuyas
+            cullo:cuyo cullos:cuyos cunbia:cumbia cunbion:cumbión cunbre:cumbre cunpa:cumpa cunpita:cumpita
+            cunple:cumple cunpleaños:cumpleaños cunplido:cumplido cunplimiento:cumplimiento
+            cunplimientos:cumplimientos cunplio:cumplió cunplir:cumplir deducion:deducción deducsion:deducción
+            dejastes:dejaste derrunbe:derrumbe desalluno:desayuno desallunos:desayunos desanparo:desamparo
+            desarroya:desarrolla desarroyar:desarrollar desarroyos:desarrollos desblokear:desbloquear
+            desconponer:descomponer desconposicion:descomposición desenbarco:desembarco desenpacar:desempacar
+            desenpeñar:desempeñar desenpeño:desempeño desenpeños:desempeños desenpleo:desempleo desia:decía
+            desian:decían desias:decías desimos:decimos desteyo:destello destrucion:destrucción
+            destrucsion:destrucción detayado:detallado detayar:detallar detaye:detalle detayes:detalles
+            dicienbre:diciembre dicienbres:diciembres direcion:dirección direciones:direcciones
+            direcsion:dirección direcsiones:direcciones distracion:distracción distracsion:distracción
+            dormistes:dormiste echos:hechos ectarea:hectárea ejenplo:ejemplo ejenplos:ejemplos ekidad:equidad
+            ekilibrado:equilibrado ekilibrar:equilibrar ekilibrio:equilibrio ekilibrios:equilibrios
+            ekipaje:equipaje ekipamiento:equipamiento ekipar:equipar ekipo:equipo ekipos:equipos
+            ekitativo:equitativo ekivalencia:equivalencia ekivocacion:equivocación ekivocado:equivocado
+            ekivocarse:equivocarse elado:helado elecion:elección eleciones:elecciones elecsion:elección
+            elecsiones:elecciones elicoptero:helicóptero emisferio:hemisferio emocionao:emocionado emos:hemos
+            enamorao:enamorado enbajada:embajada enbajador:embajador enbarazo:embarazo enbarcacion:embarcación
+            enbarcar:embarcar enbargo:embargo enblema:emblema enblematico:emblemático enboscada:emboscada
+            enbrion:embrión enfoke:enfoque enfokes:enfoques enpacar:empacar enpanada:empanada enpatar:empatar
+            enpate:empate enpatico:empático enpatizar:empatizar enpece:empecé enpeorar:empeorar
+            enperador:emperador enpezar:empezar enpezo:empezó enpeño:empeño enpieza:empieza enpiezo:empiezo
+            enpleado:empleado enpleador:empleador enpleados:empleados enplear:emplear enpleo:empleo
+            enpleos:empleos enpoderar:empoderar enporio:emporio enprendedor:emprendedor enprender:emprender
+            enprendimiento:emprendimiento enpresa:empresa enpresarial:empresarial enpresario:empresario
+            enpresarios:empresarios enpresas:empresas enpujar:empujar enpuje:empuje enrikecer:enriquecer
+            ensallar:ensayar ensallo:ensayo ensanblar:ensamblar entendistes:entendiste eredar:heredar
+            eredero:heredero erencia:herencia erencias:herencias erida:herida eridas:heridas erir:herir
+            ermandad:hermandad ermanita:hermanita ermanito:hermanito ermosa:hermosa ermoso:hermoso eroe:héroe
+            eroico:heroico eroina:heroína erramienta:herramienta erramientas:herramientas errero:herrero
+            ervir:hervir esactitud:exactitud esageracion:exageración esagerar:exagerar esamenes:exámenes
+            esaminar:examinar escavacion:excavación escedente:excedente esceder:exceder escelencia:excelencia
+            escelencias:excelencias escepcion:excepción escepcional:excepcional escepciones:excepciones
+            escepto:excepto esceptuar:exceptuar escesivo:excesivo escluir:excluir esclusivo:exclusivo
+            escribistes:escribiste escursion:excursión escusa:excusa eshaustivo:exhaustivo eshibir:exhibir
+            eshortar:exhortar esigencia:exigencia esigencias:exigencias esigente:exigente esigir:exigir
+            esiliar:exiliar esilio:exilio esiste:existe esisten:existen esistencia:existencia
+            esistencias:existencias esistir:existir esito:éxito esitos:éxitos esitoso:exitoso
+            eskeleto:esqueleto eskema:esquema eskemas:esquemas esotico:exótico espandir:expandir
+            espansion:expansión espedicion:expedición espedientes:expedientes espedir:expedir
+            esperiencia:experiencia esperiencias:experiencias esperimental:experimental
+            esperimentar:experimentar esperimento:experimento esperto:experto espertos:expertos
+            esplica:explica esplicacion:explicación esplicaciones:explicaciones esplicame:explícame
+            esplicar:explicar esplicito:explícito esplorar:explorar esplosion:explosión esplosivo:explosivo
+            esplotar:explotar esponente:exponente esponer:exponer esportacion:exportación
+            esportaciones:exportaciones esportar:exportar esposicion:exposición esposiciones:exposiciones
+            espositor:expositor espresar:expresar espresion:expresión espresiones:expresiones
+            espulsar:expulsar esquisito:exquisito estanpa:estampa estava:estaba estavamos:estábamos
+            estavan:estaban estavas:estabas estayar:estallar estayido:estallido estender:extender
+            estension:extensión estensiones:extensiones estenso:extenso estenuante:extenuante
+            esterior:exterior esterno:externo estincion:extinción estracto:extracto estraer:extraer
+            estraida:extraída estraidas:extraídas estraidos:extraídos estranjero:extranjero
+            estraordinario:extraordinario estrañas:extrañas estrañe:extrañé estremo:extremo estreya:estrella
+            etiketa:etiqueta exkisito:exquisito eya:ella eyas:ellas eyo:ello eyos:ellos faya:falla
+            fayar:fallar fayas:fallas fayecer:fallecer fayido:fallido ficion:ficción ficsion:ficción
+            flakis:flaquis flakita:flaquita flakito:flaquito flesibilidad:flexibilidad
+            flesibilidades:flexibilidades flesible:flexible foyeto:folleto fracion:fracción fracsion:fracción
+            frankeza:franqueza gacias:gracias galasia:galaxia ganba:gamba gayeta:galleta gayina:gallina
+            gayo:gallo gracas:gracias grcias:gracias hablastes:hablaste haigamos:hayamos haigas:hayas
+            hanbre:hambre hanburguesa:hamburguesa hayar:hallar hayazgo:hallazgo honbre:hombre honbro:hombro
+            huarike:huarique huarikes:huariques huaskeada:huasqueada huaskeado:huasqueado huaskiado:huasquiado
+            hueya:huella hueyas:huellas humiyar:humillar icieramos:hiciéramos icieran:hicieran
+            icieras:hicieras icieron:hicieron icimos:hicimos iciste:hiciste idratar:hidratar ielo:hielo
+            ierba:hierba ierro:hierro igado:hígado imno:himno inbecil:imbécil inbeciles:imbéciles
+            inborrable:imborrable incertidunbre:incertidumbre incha:hincha inchas:hinchas
+            inconpleto:incompleto inesperto:inexperto infecion:infección infecsion:infección
+            inflesible:inflexible influllente:influyente inkietar:inquietar inkieto:inquieto
+            inkietud:inquietud inkietudes:inquietudes inkilino:inquilino inlleccion:inyección
+            inpaciencia:impaciencia inpaciente:impaciente inpactante:impactante inpacto:impacto
+            inpactos:impactos inparcial:imparcial inpartir:impartir inpecable:impecable
+            inpedimento:impedimento inpedir:impedir inpensable:impensable inperfecto:imperfecto
+            inperio:imperio inpermeable:impermeable inplacable:implacable inplementar:implementar
+            inplicar:implicar inplicito:implícito inplorar:implorar inponer:imponer inporta:importa
+            inportancia:importancia inportancias:importancias inportantes:importantes inportar:importar
+            inporte:importe inportes:importes inporto:importó inpredecible:impredecible inprenta:imprenta
+            inpresion:impresión inpresionante:impresionante inpresionar:impresionar inpresiones:impresiones
+            inprimida:imprimida inprimidas:imprimidas inprimidos:imprimidos inproductivo:improductivo
+            inprovisacion:improvisación inprovisar:improvisar inpuesto:impuesto inpuestos:impuestos
+            inpulsar:impulsar inpulsivo:impulsivo inpulso:impulso inpulsos:impulsos inspecion:inspección
+            inspecionar:inspeccionar inspecsion:inspección inspecsionar:inspeccionar instrucion:instrucción
+            instrucsion:instrucción intenperie:intemperie interacion:interacción interaciones:interacciones
+            interacsion:interacción interacsiones:interacciones intercanbiar:intercambiar
+            intercanbio:intercambio intercanbios:intercambios interesao:interesado interrunpir:interrumpir
+            introducion:introducción introduciones:introducciones introducsion:introducción
+            introducsiones:introducciones inyecion:inyección inyecsion:inyección ipoteca:hipoteca
+            ipotesis:hipótesis ipotetico:hipotético irrenplazable:irremplazable irrunpir:irrumpir
+            istoria:historia istorias:historias istorico:histórico jerarkia:jerarquía jerarkizar:jerarquizar
+            jolla:joya jollaza:joyaza jolleria:joyería jollita:joyita jurisdicion:jurisdicción
+            jurisdicsion:jurisdicción kasa:casa kebrada:quebrada kebrantar:quebrantar kebrar:quebrar
+            kedan:quedan kedar:quedar kedas:quedas kede:quedé keja:queja kejarse:quejarse kejas:quejas
+            kema:quema kemada:quemada kemadazo:quemadazo kemado:quemado kemadura:quemadura kemar:quemar
+            kemaste:quemaste keme:quemé kemo:quemó keremos:queremos kerer:querer keria:quería
+            keriamos:queríamos kerian:querían kerias:querías kerida:querida keridas:queridas kerido:querido
+            keridos:queridos kerra:querrá kerran:querrán kerras:querrás kerremos:querremos kerria:querría
+            kerriamos:querríamos kerrian:querrían kerrias:querrías keso:queso kiebra:quiebra kien:quién
+            kienes:quiénes kiera:quiera kiero:quiero kietud:quietud kimera:quimera kimica:química
+            kimicas:químicas kince:quince kinceañera:quinceañera kinceañero:quinceañero kinientas:quinientas
+            kinientos:quinientos kinta:quinta kinto:quinto kiosco:quiosco kirofano:quirófano kise:quise
+            kisieramos:quisiéramos kisieran:quisieran kisieras:quisieras kiso:quiso kitar:quitar kiza:quizá
+            kizas:quizás kuando:cuándo kuanto:cuánto ladriyo:ladrillo lanpara:lámpara lecion:lección
+            leciones:lecciones lecsion:lección lecsiones:lecciones legunbre:legumbre lellenda:leyenda
+            lelles:leyes lello:leyó likidar:liquidar likido:líquido linpiar:limpiar linpieza:limpieza
+            linpiezas:limpiezas linpio:limpio llala:yala llalas:yalas llamastes:llamaste llapa:yapa llape:yapé
+            llapea:yapea llapeamos:yapeamos llapean:yapean llapear:yapear llapeas:yapeas llapeaste:yapeaste
+            llapee:yapeé llapita:yapita llapo:yapo llara:yara llegua:yegua llema:yema llerno:yerno lleso:yeso
+            llogur:yogur lluca:yuca llucazo:yucazo llunta:yunta lluntas:yuntas lonbriz:lombriz
+            makillar:maquillar makina:máquina makinaria:maquinaria mallo:mayo mallor:mayor mallores:mayores
+            malloria:mayoría mallorias:mayorías mallos:mayos maniki:maniquí manlla:manya manllado:manyado
+            manllamos:manyamos manllan:manyan manllando:manyando manllar:manyar manllas:manyas
+            manllaste:manyaste mantekilla:mantequilla mantequiya:mantequilla maquiyar:maquillar
+            maraviya:maravilla maraviyoso:maravilloso martiyo:martillo masimizar:maximizar masimo:máximo
+            medaya:medalla mejiya:mejilla menbrana:membrana mercadiyo:mercadillo mesicano:mexicano
+            mienbro:miembro mienbros:miembros miyon:millón mojao:mojado moskita:mosquita mototasi:mototaxi
+            mototasis:mototaxis mototasista:mototaxista mueye:muelle nesecitamos:necesitamos
+            nesecitan:necesitan nesesidades:necesidades nesesitan:necesitan nonbramiento:nombramiento
+            nonbrar:nombrar nonbre:nombre nonbres:nombres nose:no_sé novienbre:noviembre novienbres:noviembres
+            obsekiar:obsequiar obsekio:obsequio ocupao:ocupado ogar:hogar ogares:hogares oguera:hoguera
+            oie:oye ojas:hojas olis:holis ollera:oyera olleramos:oyéramos olleran:oyeran olleras:oyeras
+            olvidao:olvidado ombre:hombre ombres:hombres ombro:hombro omenaje:homenaje omenajear:homenajear
+            omenajes:homenajes omicidio:homicidio omologar:homologar onbligo:ombligo onestidad:honestidad
+            onestidades:honestidades onor:honor onorable:honorable onores:honores onradez:honradez
+            onrado:honrado onrar:honrar orarios:horarios orguyo:orgullo orguyos:orgullos orguyoso:orgulloso
+            oriya:orilla orizonte:horizonte orkesta:orquesta ormiga:hormiga ornear:hornear orno:horno
+            orrible:horrible orror:horror osigenar:oxigenar osigeno:oxígeno ospedar:hospedar
+            ospitalario:hospitalario ospitales:hospitales ospitalidad:hospitalidad
+            ospitalizacion:hospitalización ospitalizada:hospitalizada ospitalizado:hospitalizado ostil:hostil
+            otel:hotel oya:olla pabeyon:pabellón pagastes:pagaste pakete:paquete pallaso:payaso
+            palomiya:palomilla palomiyada:palomillada palomiyas:palomillas pantaya:pantalla paresen:parecen
+            paresia:parecía parke:parque parriya:parrilla pasatienpo:pasatiempo pasiyo:pasillo
+            pastiya:pastilla patruya:patrulla pekeña:pequeña pekeñas:pequeñas pekeño:pequeño pekeños:pequeños
+            pelukeria:peluquería pensastes:pensaste perdistes:perdiste perfecion:perfección
+            perfecionar:perfeccionar perfecsion:perfección perfecsionar:perfeccionar pesadiya:pesadilla
+            pidistes:pediste pitukeria:pituquería plalla:playa poliya:polilla poyada:pollada poyadas:polladas
+            poyeria:pollería poyo:pollo predicion:predicción predicsion:predicción pretesto:pretexto
+            producion:producción produciones:producciones producsion:producción producsiones:producciones
+            prollectar:proyectar prollecto:proyecto prollectos:proyectos prononbre:pronombre prosima:próxima
+            prosimidad:proximidad prosimo:próximo protecion:protección proteciones:protecciones
+            protecsion:protección protecsiones:protecciones pusistes:pusiste quisistes:quisiste ralla:raya
+            rallo:rayo reacion:reacción reacionar:reaccionar reaciones:reacciones reacsion:reacción
+            reacsionar:reaccionar reacsiones:reacciones recolecion:recolección recolecsion:recolección
+            reconpensa:recompensa redacion:redacción redacsion:redacción reducion:reducción
+            reduciones:reducciones reducsion:reducción reducsiones:reducciones reenbolsar:reembolsar
+            reenbolso:reembolso reenplazar:reemplazar reenplazo:reemplazo reenplazos:reemplazos
+            reflesion:reflexión reflesionar:reflexionar reflesiones:reflexiones reflesivo:reflexivo
+            rekerimiento:requerimiento rekerimientos:requerimientos rekerir:requerir rekisar:requisar
+            rekisito:requisito rekisitos:requisitos relanpago:relámpago remolke:remolque repoyo:repollo
+            restricion:restricción restriciones:restricciones restricsion:restricción
+            restricsiones:restricciones resurrecion:resurrección resurrecsion:resurrección reyenar:rellenar
+            reyeno:relleno rikeza:riqueza rodiya:rodilla ronpecabezas:rompecabezas ronper:romper runbo:rumbo
+            runbos:rumbos   sakear:saquear saranpion:sarampión satisfacio:satisfizo
+            satisfacion:satisfacción satisfaciones:satisfacciones satisfacsion:satisfacción
+            satisfacsiones:satisfacciones   saver:saber saves:sabes secion:sección seciones:secciones
+            secsion:sección secsiones:secciones sekia:sequía selecion:selección selecionar:seleccionar
+            seleciones:selecciones selecsion:selección selecsionar:seleccionar selecsiones:selecciones
+            semiya:semilla sena:cena senar:cenar senbrar:sembrar senciyito:sencillito senciyo:sencillo
+            sentistes:sentiste sentro:centro septienbre:septiembre septienbres:septiembres serca:cerca
+            sercana:cercana sercano:cercano serviyeta:servilleta sesta:sexta sesto:sexto sesual:sexual
+            setienbre:setiembre setienbres:setiembres seyar:sellar sielo:cielo sienpre:siempre
+            sinbolico:simbólico sinbolo:símbolo sinbolos:símbolos sinco:cinco sine:cine sinpatia:simpatía
+            sinpatico:simpático sinple:simple sinplemente:simplemente sinples:simples sinplicidad:simplicidad
+            sinplicidades:simplicidades sinplificar:simplificar siudad:ciudad siya:silla siyon:sillón
+            sobrenonbre:sobrenombre sonbra:sombra sonbras:sombras sonbrero:sombrero sonbrio:sombrío
+            subrallar:subrayar sucunbir:sucumbir sulla:suya sullas:suyas sullo:suyo sullos:suyos
+            supistes:supiste takilla:taquilla tambn:también tanbien:también tanbor:tambor tanpoco:tampoco
+            taquiya:taquilla tasi:taxi tasis:taxis tasista:taxista tayarines:tallarines tayer:taller
+            tayo:tallo tekeños:tequeños tenblar:temblar tenblor:temblor tenperamental:temperamental
+            tenperatura:temperatura tenperaturas:temperaturas tenplo:templo tenporada:temporada
+            tenporadas:temporadas tenporal:temporal tenprano:temprano testo:texto testos:textos tienpo:tiempo
+            tienpos:tiempos tinbrar:timbrar tinbre:timbre toaya:toalla tobiyo:tobillo toke:toqué tonba:tomba
+            tonbo:tombo tonbos:tombos torniyo:tornillo tosico:tóxico trabajastes:trabajaste trallecto:trayecto
+            trallectoria:trayectoria tranki:tranqui trankila:tranquila trankilazo:tranquilazo
+            trankilidad:tranquilidad trankilizar:tranquilizar trankilo:tranquilo trankis:tranquis
+            tranpa:trampa tranposa:tramposa tranposo:tramposo tronpeta:trompeta tube:tuve tubieron:tuvieron
+            tubimos:tuvimos tulla:tuya tullas:tuyas tullo:tuyo tullos:tuyos tunba:tumba uachafa:huachafa
+            uachafas:huachafas uachaferia:huachafería uachafo:huachafo uachafos:huachafos uachiman:huachimán
+            uachimanes:huachimanes uarique:huarique uariques:huariques uasca:huasca uasqueada:huasqueada
+            uasqueado:huasqueado uasquiado:huasquiado uaynito:huaynito uayno:huayno ubieramos:hubiéramos
+            ubieran:hubieran ubieron:hubieron ubimos:hubimos ubiste:hubiste ueco:hueco uelga:huelga
+            uella:huella uellas:huellas ueso:hueso uesped:huésped uevada:huevada uevear:huevear uevo:huevo
+            uevos:huevos uida:huida umana:humana umanas:humanas umanidad:humanidad umanidades:humanidades
+            umano:humano umanos:humanos umedad:humedad umedo:húmedo umildad:humildad umildades:humildades
+            umilde:humilde umillar:humillar umor:humor umores:humores unbral:umbral vajiya:vajilla valla:vaya
+            vaye:valle vendistes:vendiste ventaniya:ventanilla viajastes:viajaste videoyamada:videollamada
+            vinistes:viniste vislunbrar:vislumbrar vivistes:viviste viya:villa yama:llama yamada:llamada
+            yamadas:llamadas yamado:llamado yamamos:llamamos yamare:llamaré yamas:llamas yamativo:llamativo
+            yame:llamé yanto:llanto yanura:llanura yavero:llavero yega:llega yegada:llegada yegadas:llegadas
+            yegamos:llegamos yegan:llegan yegando:llegando yegara:llegará yegaron:llegaron yegas:llegas
+            yegaste:llegaste yegues:llegues yenar:llenar yeno:lleno yeva:lleva yevamos:llevamos yevan:llevan
+            yevar:llevar yevas:llevas yeve:llevé yorar:llorar yoro:lloro yover:llover yovizna:llovizna
+            zanpada:zampada zanpado:zampado zanpar:zampar zanparse:zamparse zanpon:zampón zanpona:zampona
+            zapatiyas:zapatillas
         """.trim().split(ESPACIOS).mapNotNull { par ->
             val i = par.indexOf(':')
             if (i <= 0) null else par.substring(0, i) to par.substring(i + 1).replace('_', ' ')

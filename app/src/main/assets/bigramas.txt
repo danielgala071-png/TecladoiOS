@@ -505,3 +505,48 @@ son las: 8, 9, 10, 3, 4, 5, 6, 7
 nos vemos a: las
 hasta las: 8, 9, 10, 11, 12, 6, 7
 desde las: 8, 9, 10, 3, 4
+# Más del chat peruano
+manyas: a, que, lo, al, cómo, quién
+te yapeo: ahorita, al toque, mañana, en la noche, cuando
+te wasapeo: ahorita, al toque, luego, cuando, en la noche
+chambeando: en, todo, desde, hasta, hoy, mañana
+estoy chambeando: en, todo, hasta, desde
+pollada: en, de, bailable, pro, el
+cebiche: de, con, mixto, en
+lomo: saltado
+pollo: a la brasa, broaster, frito, saltado
+tejas: de, para
+voy a: chambear, yapearte, wasapearte, pasar, llegar
+
+# Frases del día a día (chat y trabajo)
+ya: llegué, voy, estoy, está, sé, fue, no, salí, terminé
+ya voy: para, a, saliendo, llegando, bajando
+ahorita: voy, te, salgo, llego, estoy, no, vengo
+me: avisas, dices, mandas, pasas, llamas, escribes, confirmas, ayudas, esperas
+avísame: cuando, si, para, cualquier, apenas
+mándame: la, el, tu, una, foto, ubicación
+pásame: la, el, tu, una, foto
+dónde: estás, están, queda, es, vas, nos
+a qué: hora
+qué: tal, haces, pasó, fue, hora, día, bueno, chévere, bacán
+cómo: estás, te, así, vas, está, están, sigue, fue
+estás: bien, en, ocupado, ocupada, libre, ahí, despierto, despierta
+llego: en, tarde, a, como, temprano, mañana
+salgo: de, en, a, temprano, tarde, ahorita
+en: casa, camino, la, el, un, una, el trabajo, la chamba, la oficina
+vamos: a, al, a la, de, pe, pues, nomás
+buen: día, provecho, viaje, fin de semana, trabajo
+feliz: cumpleaños, día, año, navidad, viaje
+gracias: por, a, amor, causa, de verdad, igual
+de: nada, verdad, acuerdo, una, todas maneras, ahí
+todo: bien, tranquilo, ok, listo, chévere, normal
+nada: que, de, más, mal, ver
+oye: y, una, qué, te, causa, amor
+hola: amor, cómo, buenos, buenas, qué, causa, mami, papi
+buenos: días
+buenas: tardes, noches
+estimado: señor, señora, ingeniero, doctor, licenciado
+adjunto: el, la, los, las, documento, archivo
+quedo: atento, atenta, a la espera, pendiente
+saludos: cordiales, a, y
+sin: otro, problema, embargo, duda, más

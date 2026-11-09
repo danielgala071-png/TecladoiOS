@@ -23,7 +23,6 @@ import android.view.RoundedCorner
 import android.view.View
 import android.view.WindowInsets
 import android.view.accessibility.AccessibilityManager
-import android.view.animation.DecelerateInterpolator
 
 enum class Tipo { LETRA, SHIFT, BORRAR, A_NUMEROS, A_SIMBOLOS, A_LETRAS, EMOJI, ESPACIO, ENTER, MIC, UNA_MANO, VACIO }
 
@@ -126,7 +125,7 @@ class KeyboardView(
     private val sepH = dp(2.7f)
     private val sepV = dp(5.2f)
     // Esquinas un poco más redondas, como las teclas de iOS 26
-    private val radio = dp(8.5f)
+    private val radio = dp(9.5f)
     private val formaPulso = Path()
     private val rectPulso = RectF()
 
@@ -223,9 +222,9 @@ class KeyboardView(
             invalidate()
             return
         }
-        animAparicion = ValueAnimator.ofFloat(0.25f, 1f).apply {
-            duration = if (direccion == 0) 110 else 170
-            interpolator = DecelerateInterpolator()
+        animAparicion = ValueAnimator.ofFloat(0.15f, 1f).apply {
+            duration = if (direccion == 0) Movimiento.LETRAS else Movimiento.LETRAS_DESLIZAR
+            interpolator = if (direccion == 0) Movimiento.SUAVE else Movimiento.DESLIZAR
             addUpdateListener {
                 aparicion = it.animatedValue as Float
                 invalidate()
@@ -461,8 +460,8 @@ class KeyboardView(
         // Filo parejo en toda la tecla: un poco más vivo arriba (donde "pega la luz") y más
         // tenue abajo. Antes iba en diagonal y la esquina de arriba a la izquierda se veía manchada.
         t.shaderBorde = LinearGradient(0f, r.top, 0f, r.bottom,
-            intArrayOf(tema.borde, conAlfa(tema.borde, 0.5f), conAlfa(tema.borde, 0.32f)),
-            floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
+            intArrayOf(tema.borde, conAlfa(tema.borde, 0.55f), conAlfa(tema.borde, 0.22f)),
+            floatArrayOf(0f, 0.38f, 1f), Shader.TileMode.CLAMP)
         // Reflejo arriba de la tecla: le da el efecto translúcido de vidrio
         t.shaderBrillo = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.55f,
             tema.brillo, tema.brillo and 0x00FFFFFF, Shader.TileMode.CLAMP)
@@ -743,7 +742,7 @@ class KeyboardView(
         }
         val desde = pulsos[t] ?: return
         val anim = ValueAnimator.ofFloat(desde, 0f).apply {
-            duration = 150
+            duration = Movimiento.TOQUE_SALIDA
             interpolator = FRENO_PULSO
             addUpdateListener {
                 val v = it.animatedValue as Float
@@ -794,7 +793,7 @@ class KeyboardView(
         // Cuánto está "encendida" la tecla ahora (para agrandar apenas su letra al tocarla)
         val toque = if (presionada) 1f else f
         // Al presionar, la tecla apenas se hunde (no crece ni brilla)
-        val r = if (f > 0f) rectPulso.apply { set(t.rect); inset(dp(0.6f) * f, dp(0.6f) * f) } else t.rect
+        val r = if (f > 0f) rectPulso.apply { set(t.rect); inset(dp(1.1f) * f, dp(1.1f) * f) } else t.rect
         val forma = if (f > 0f) {
             Formas.suave(formaPulso, r.left, r.top, r.right, r.bottom, radio, 0f, t.curvaDer, t.curvaIzq)
             formaPulso
@@ -1625,7 +1624,7 @@ class KeyboardView(
     }
 
     companion object {
-        private val FRENO_PULSO = DecelerateInterpolator(1.5f)
+        private val FRENO_PULSO = Movimiento.SUAVE
 
         /** Lo que aparece al mantener presionada cada tecla */
         private val VARIANTES = mapOf(

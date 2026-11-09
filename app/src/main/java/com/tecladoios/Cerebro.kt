@@ -379,7 +379,8 @@ class Cerebro(private val archivo: File) {
             total += v
             if (v > max) { max = v; mejor = w }
         }
-        return if (max >= 3f && max >= total * 0.75f) mejor else null
+        // Desde 2.5: dos correcciones elegidas o reescritas bastan (antes hacían falta más)
+        return if (max >= 2.5f && max >= total * 0.75f) mejor else null
     }
 
     /** Mostraste [mostradas] después de [previa] y escribiste [elegida] */

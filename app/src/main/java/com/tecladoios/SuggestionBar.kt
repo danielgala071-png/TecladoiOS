@@ -18,7 +18,6 @@ import android.text.TextUtils
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
-import android.view.animation.DecelerateInterpolator
 
 data class Sugerencia(
     val texto: String,
@@ -282,7 +281,7 @@ class SuggestionBar(
         if (!alguna) return
         animCambio?.cancel()
         animCambio = ValueAnimator.ofFloat(0.25f, 1f).apply {
-            duration = 150
+            duration = 190
             interpolator = FRENO_BARRA
             addUpdateListener {
                 cambio = it.animatedValue as Float
@@ -349,7 +348,7 @@ class SuggestionBar(
         }
         // Aparece subiendo apenas desde el teclado y se apaga suave (como en iOS)
         animador = ValueAnimator.ofFloat(opacidad, destino).apply {
-            duration = if (si) 150 else 120
+            duration = if (si) Movimiento.BARRA_APARECE else Movimiento.BARRA_SE_VA
             interpolator = FRENO_BARRA
             addUpdateListener {
                 opacidad = it.animatedValue as Float
@@ -524,7 +523,7 @@ class SuggestionBar(
         if (i < 0 || !isShown) { soltado = -1; brilloSoltado = 0f; return }
         soltado = i
         animSoltado = ValueAnimator.ofFloat(1f, 0f).apply {
-            duration = 160
+            duration = Movimiento.TOQUE_SALIDA
             interpolator = FRENO_BARRA
             addUpdateListener {
                 brilloSoltado = it.animatedValue as Float
@@ -700,7 +699,7 @@ class SuggestionBar(
     }
 
     private companion object {
-        val FRENO_BARRA = DecelerateInterpolator(1.6f)
+        val FRENO_BARRA = Movimiento.SUAVE
         /** Debajo de este tiempo tras tocar una letra, un toque en la barra se ignora */
         const val GUARDA_MS = 130L
         /** Buscando emojis: la cápsula de búsqueda y cuántos emojis caben al lado */

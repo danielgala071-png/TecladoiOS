@@ -12,8 +12,6 @@ import android.graphics.RectF
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
-import android.view.animation.DecelerateInterpolator
-import android.view.animation.OvershootInterpolator
 import android.widget.PopupWindow
 
 /**
@@ -303,8 +301,8 @@ class KeyPreviewOverlay(private val anchor: View) {
     }
 
     private companion object {
-        val REBOTE = OvershootInterpolator(1.1f)
-        val FRENO = DecelerateInterpolator()
+        val REBOTE = Movimiento.REBOTE
+        val FRENO = Movimiento.SUAVE
 
         /** Color [a] (con transparencia) puesto encima de [b] (opaco) */
         fun sobre(a: Int, b: Int): Int {

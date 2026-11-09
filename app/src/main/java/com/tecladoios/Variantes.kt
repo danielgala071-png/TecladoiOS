@@ -10,7 +10,6 @@ import android.graphics.Shader
 import android.graphics.Typeface
 import android.view.Gravity
 import android.view.View
-import android.view.animation.OvershootInterpolator
 import android.widget.PopupWindow
 
 /** Las letras con acento que salen al mantener presionada una tecla (á, é, ñ…). */
@@ -130,7 +129,7 @@ class VariantesPopup(private val anchor: View) {
         vista.scaleX = 0.7f
         vista.scaleY = 0.7f
         vista.animate().alpha(1f).scaleX(1f).scaleY(1f)
-            .setDuration(160).setInterpolator(OvershootInterpolator(1.3f)).start()
+            .setDuration(190).setInterpolator(Movimiento.REBOTE).start()
     }
 
     /** x en coordenadas del teclado */

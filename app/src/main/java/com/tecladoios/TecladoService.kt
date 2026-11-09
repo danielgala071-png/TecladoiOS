@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.ClipDescription
 import android.content.pm.PackageManager
 import android.provider.ContactsContract
-import android.view.animation.DecelerateInterpolator
 import android.content.Intent
 import android.content.ClipboardManager
 import android.graphics.Bitmap
@@ -192,6 +191,17 @@ class TecladoService : InputMethodService(),
         val previa: String, val previa2: String, val hora: Long,
     )
     private var ultimaSeparacion: Separacion? = null
+
+    /**
+     * La última separación hecha mientras escribías, hasta que cierras la palabra que siguió.
+     * Si esa segunda parte no termina siendo una palabra y todo junto sí lo era ("en tones" →
+     * "entonces"), al dar espacio se vuelve a juntar y se corrige como una sola palabra.
+     */
+    private class SeparacionAbierta(
+        val original: String, val primera: String, val resto: String,
+        val previa: String, val previa2: String,
+    )
+    private var separacionAbierta: SeparacionAbierta? = null
     /** Separar palabras pegadas mientras escribes (sin esperar el espacio) */
     private var separarActivo = true
     private var ultimoEspacio = 0L
@@ -570,6 +580,7 @@ class TecladoService : InputMethodService(),
         enLineaActiva = Ajustes.enLinea(this) && sugerenciasActivas
         separarActivo = Ajustes.separarVivo(this) && autocorreccionActiva
         ultimaSeparacion = null
+        separacionAbierta = null
         puntuacionActiva = Ajustes.puntuacionInteligente(this) && escribeTexto
         borrarDeslizadoActivo = Ajustes.borrarDeslizado(this)
         mayusPermitida = Ajustes.mayusculas(this) && escribeTexto
@@ -1281,6 +1292,7 @@ class TecladoService : InputMethodService(),
         ultimaCorreccionAuto = null
         ultimaCerrada = null
         ultimaSeparacion = Separacion(p, nuevo, primera, previa, prev2, SystemClock.uptimeMillis())
+        separacionAbierta = SeparacionAbierta(p, primera, resto, previa, prev2)
         aprenderCerrada(primera, previa, prev2, " ", alFinal = false)
     }
 
@@ -1404,6 +1416,8 @@ class TecladoService : InputMethodService(),
         ultimaAprendida = null
         ultimoDeslizado = null
         ultimaSeparacion = null
+        // ¿La separación de recién quedó mal? Se junta otra vez antes de corregir
+        if (reunirSiHaceFalta()) toques.clear()
         val misToques = ArrayList(toques)
         toques.clear()
 
@@ -1508,6 +1522,36 @@ class TecladoService : InputMethodService(),
         reemplazar(original.length, nuevo + sufijo)
         ultimaCorreccion = Pair(original, nuevo + sufijo)
         ultimaCorreccionAuto = if (corr != null) ultimaCorreccion else null
+    }
+
+    /**
+     * Revisa la separación hecha mientras escribías al cerrar la palabra que siguió.
+     * "entones" se había separado en "en tones": "tones" no es una palabra y "entones" se
+     * parece muchísimo a "entonces", así que se vuelve a juntar (la corrección hace el resto)
+     * y el teclado aprende que ahí no iba espacio. Devuelve true si la juntó.
+     */
+    private fun reunirSiHaceFalta(): Boolean {
+        val sa = separacionAbierta ?: return false
+        separacionAbierta = null
+        if (!autocorreccionActiva || editando || seleccionando) return false
+        val a = antes(120)
+        var i = a.length
+        while (i > 0 && a[i - 1].isLetter()) i--
+        val segunda = a.substring(i)
+        if (segunda.length < sa.resto.length || !segunda.startsWith(sa.resto)) return false
+        val conPrimera = sa.primera + " " + segunda
+        if (!a.endsWith(conPrimera)) return false
+        val unida = sa.original + segunda.substring(sa.resto.length)
+        diccionario.interrumpir()
+        val reunir = try { diccionario.reunirSeparacion(segunda, unida) } catch (_: Throwable) { false }
+        if (!reunir) return false
+        reemplazar(conPrimera.length, unida)
+        calculada = null
+        enMotor {
+            diccionario.desaprender(sa.primera, sa.previa, sa.previa2)
+            diccionario.rechazarSeparacion(sa.original)
+        }
+        return true
     }
 
     /**
@@ -1775,6 +1819,7 @@ class TecladoService : InputMethodService(),
         // y el teclado aprende que ahí no iba espacio (no lo vuelve a separar)
         val us = ultimaSeparacion
         ultimaSeparacion = null
+        separacionAbierta = null
         if (us != null && SystemClock.uptimeMillis() - us.hora < 5000 && antes(us.nuevo.length) == us.nuevo) {
             toques.clear()
             ultimaCorreccion = null
@@ -1881,6 +1926,7 @@ class TecladoService : InputMethodService(),
 
     override fun moverCursor(pasos: Int) {
         ultimaSeparacion = null
+        separacionAbierta = null
         espacioAutomatico = false
         ultimaAprendida = null
         ultimaCorreccion = null
@@ -2190,7 +2236,7 @@ class TecladoService : InputMethodService(),
         val estabaEnEmojis = emojis?.visibility == View.VISIBLE
         emojis?.animate()?.cancel()
         emojis?.visibility = View.GONE
-        teclado?.let { if (estabaEnEmojis) aparecer(it, desdeDerecha = false) else { it.animate().cancel(); it.alpha = 1f; it.translationX = 0f; it.visibility = View.VISIBLE } }
+        teclado?.let { if (estabaEnEmojis) aparecer(it, desdeDerecha = false) else { it.animate().cancel(); it.alpha = 1f; it.translationX = 0f; it.scaleX = 1f; it.scaleY = 1f; it.visibility = View.VISIBLE } }
         actualizarBarra()
     }
 
@@ -2203,10 +2249,13 @@ class TecladoService : InputMethodService(),
         val d = resources.displayMetrics.density
         v.alpha = 0f
         v.translationY = 0f
-        v.translationX = (if (desdeDerecha) 28f else -28f) * d
+        v.translationX = (if (desdeDerecha) 22f else -22f) * d
+        // Entra apenas más chica y se asienta: la transición se siente más suave y con cuerpo
+        v.scaleX = 0.985f
+        v.scaleY = 0.985f
         v.visibility = View.VISIBLE
-        v.animate().alpha(1f).translationX(0f).setDuration(200)
-            .setInterpolator(DecelerateInterpolator(2f)).withLayer().start()
+        v.animate().alpha(1f).translationX(0f).scaleX(1f).scaleY(1f).setDuration(Movimiento.CAMBIO)
+            .setInterpolator(Movimiento.DESLIZAR).withLayer().start()
     }
 
     override fun emoji(s: String) {
