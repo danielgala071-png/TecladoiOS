@@ -505,12 +505,12 @@ class SuggestionBar(
         }
         // Separadores finos entre las casillas, como en iPhone: no se dibujan junto a una
         // cápsula (la corrección resaltada o la que estás tocando), así la cápsula se ve limpia
-        pintura.color = (tema.textoSecundario and 0x00FFFFFF) or 0x4D000000
-        pintura.strokeWidth = maxOf(1f, d * 0.6f)
+        pintura.color = (tema.textoSecundario and 0x00FFFFFF) or 0x3D000000
+        pintura.strokeWidth = maxOf(1f, d * 0.5f)
         fun conCapsula(k: Int) = k == presionado || (k == soltado && brilloSoltado > 0f) || items[k]?.destacada == true
         for (i in 1 until 3) {
             if (items[i - 1] != null && items[i] != null && !conCapsula(i - 1) && !conCapsula(i)) {
-                c.drawLine(ancho * i, height * 0.3f, ancho * i, height * 0.62f, pintura)
+                c.drawLine(ancho * i, height * 0.32f, ancho * i, height * 0.6f, pintura)
             }
         }
     }
@@ -551,11 +551,12 @@ class SuggestionBar(
             val arriba = 6 * d
             val abajo = height - 10 * d
             val rc = (abajo - arriba) / 2f
-            // Vidrio apenas teñido del color de la app: se nota que es la que se pondrá sola
-            pintura.color = Tema.mezclar(tema.tecla, tema.azul, 0.22f)
+            // Cápsula clara como en iOS 26: gris luminoso con un toque de la app. Así se ve de
+            // un vistazo cuál palabra se pondrá sola al tocar espacio
+            pintura.color = (Tema.mezclar(0xFFFFFFFF.toInt(), tema.azul, 0.18f) and 0x00FFFFFF) or 0x33000000
             c.drawRoundRect(x0 + 6 * d, arriba, x0 + ancho - 6 * d, abajo, rc, rc, pintura)
             val previo = pinturaBorde.color
-            pinturaBorde.color = (tema.borde and 0x00FFFFFF) or 0x8C000000.toInt()
+            pinturaBorde.color = (tema.borde and 0x00FFFFFF) or 0x99000000.toInt()
             c.drawRoundRect(x0 + 6 * d, arriba, x0 + ancho - 6 * d, abajo, rc, rc, pinturaBorde)
             pinturaBorde.color = previo
         }

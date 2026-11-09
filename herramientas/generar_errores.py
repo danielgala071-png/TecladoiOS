@@ -88,6 +88,9 @@ TIPO = {
     "invertidas": 0.6,
     "oido": 0.7,
     "doble": 0.12,      # dos errores juntos
+    "salteada": 0.22,   # escribiendo a dos dedos, una letra se adelanta dos lugares ("prouqe")
+    "ñ": 1.1,           # la ñ escrita como n ("manana" → "mañana"): muy común
+    "h_medio": 0.55,    # h muda que se pierde en medio ("aora", "proibido")
 }
 
 OIDO = [
@@ -95,6 +98,8 @@ OIDO = [
     ("si", "ci"), ("z", "s"), ("s", "z"), ("za", "sa"), ("zo", "so"), ("ge", "je"), ("gi", "ji"),
     ("je", "ge"), ("ji", "gi"), ("que", "ke"), ("qui", "ki"), ("ca", "ka"), ("co", "ko"), ("x", "s"),
     ("cc", "c"), ("rr", "r"), ("ll", "l"), ("gue", "ge"), ("gui", "gi"), ("güe", "gue"),
+    ("mb", "nb"), ("mp", "np"), ("x", "cs"), ("cion", "sion"), ("sion", "cion"),
+    ("yo", "llo"), ("lla", "ya"), ("ue", "we"), ("hue", "we"), ("hue", "gue"),
 ]
 
 
@@ -133,6 +138,23 @@ def errores_de(w):
             k = w.find(a, k + 1)
     if w.startswith("h") and n >= 4:
         poner(w[1:], TIPO["oido"])
+    # h muda en medio de la palabra ("ahora" → "aora")
+    k = w.find("h", 1)
+    while k > 0:
+        if w[k - 1] != "c" and n >= 4:
+            poner(w[:k] + w[k + 1:], TIPO["h_medio"])
+        k = w.find("h", k + 1)
+    # ñ como n (o como ni): "manana", "anio"
+    k = w.find("ñ")
+    while k >= 0:
+        poner(w[:k] + "n" + w[k + 1:], TIPO["ñ"])
+        poner(w[:k] + "ni" + w[k + 1:], TIPO["ñ"] * 0.35)
+        k = w.find("ñ", k + 1)
+    # A dos dedos: una letra sale dos lugares antes ("porque" → "prouqe" no; "porqeu"/"proque")
+    for i in range(n - 2):
+        if w[i] != w[i + 2]:
+            poner(w[:i] + w[i + 2] + w[i + 1] + w[i] + w[i + 3:], TIPO["salteada"])
+            poner(w[:i] + w[i + 1] + w[i + 2] + w[i] + w[i + 3:], TIPO["salteada"] * 0.8)
     # "estoi", "voi", "hoi": la y del final escrita como i
     if n >= 3 and w.endswith("y") and w[-2] in "aeiou":
         poner(w[:-1] + "i", TIPO["oido"] * 1.2)
@@ -151,7 +173,7 @@ def leer_palabras(ruta):
 
 def main():
     ruta_dic, ruta_kt, ruta_err = sys.argv[1], sys.argv[2], sys.argv[3]
-    maximo = int(sys.argv[4]) if len(sys.argv) > 4 else 90000
+    maximo = int(sys.argv[4]) if len(sys.argv) > 4 else 160000
 
     codigo = open(ruta_kt, encoding="utf-8").read()
     # El orden es el mismo que usa el teclado: primero lo más usado en el chat (FRECUENCIA del
@@ -191,7 +213,7 @@ def main():
     candidatos = defaultdict(list)  # error -> [(peso, destino)]
     usadas = 0
     for p, i in sorted(rango.items(), key=lambda x: x[1]):
-        if i > 30000:
+        if i > 50000:
             break
         np_ = normal(p)
         if len(np_) < 3 or not LETRAS.match(np_):
@@ -209,7 +231,7 @@ def main():
         frec = 1.0 / (i + 40.0)
         errs = errores_de(np_)
         # Dos errores en las palabras largas más usadas (letra que falta + otra cosa)
-        if len(np_) >= 6 and i < 6000:
+        if len(np_) >= 6 and i < 15000:
             for v, pv in list(errs.items()):
                 if pv < 0.7:
                     continue
@@ -224,7 +246,18 @@ def main():
             candidatos[v].append((frec * pv, p))
 
     elegidos = []
+    corregidos = 0
     for v, lista in candidatos.items():
+        if v in previos and v not in conocidas:
+            # Un error viejo que apunta a la palabra equivocada ("manana" → "manzana") se
+            # corrige si ahora otra palabra lo explica muchísimo mejor ("mañana")
+            lista.sort(reverse=True)
+            mejor, destino = lista[0]
+            viejo = max((pp for pp, dd in lista if dd == previos[v]), default=0.0)
+            if destino != previos[v] and mejor > viejo * 4:
+                previos[v] = destino
+                corregidos += 1
+            continue
         if v in conocidas or v in previos or not LETRAS.match(v) or RISA.match(v):
             continue
         if re.search(r"(.)\1\1", v):
@@ -262,7 +295,7 @@ def main():
         f.write("# palabra explica. Los genera herramientas/generar_errores.py. Formato: escrito:correcto\n")
         for v in sorted(todos):
             f.write(f"{v}:{todos[v]}\n")
-    print(f"palabras entrenadas: {usadas} · antes: {len(previos)} · nuevos: {len(nuevos)} · total: {len(todos)}")
+    print(f"palabras entrenadas: {usadas} · antes: {len(previos)} · corregidos: {corregidos} · nuevos: {len(nuevos)} · total: {len(todos)}")
 
 
 if __name__ == "__main__":

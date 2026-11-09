@@ -189,7 +189,12 @@ class KeyPreviewOverlay(private val anchor: View) {
         fun soltar(id: Int) {
             val b = activas.remove(id) ?: return
             val t = ahora()
-            b.animar(b.valor(t), 0f, 75, false, t)
+            // Escribiendo rápido el dedo se levanta en 30-40 ms y la burbuja casi no se veía
+            // (parecía que la tecla no se había presionado). Ahora se queda a la vista un mínimo
+            // y recién ahí se recoge, un poco más despacio.
+            val visto = t - b.inicio
+            val espera = (VISIBLE_MINIMO - visto).coerceAtLeast(0L)
+            b.animar(if (espera > 0L) 1f else b.valor(t), 0f, 100, false, t + espera)
             saliendo.add(b)
             postInvalidateOnAnimation()
         }
@@ -301,6 +306,8 @@ class KeyPreviewOverlay(private val anchor: View) {
     }
 
     private companion object {
+        /** Lo mínimo que se ve la burbuja de una tecla, aunque el toque sea cortísimo (ms) */
+        const val VISIBLE_MINIMO = 90L
         val REBOTE = Movimiento.REBOTE
         val FRENO = Movimiento.SUAVE
 

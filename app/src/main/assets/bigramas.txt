@@ -550,3 +550,201 @@ adjunto: el, la, los, las, documento, archivo
 quedo: atento, atenta, a la espera, pendiente
 saludos: cordiales, a, y
 sin: otro, problema, embargo, duda, más
+
+# ---- Ampliación: chat del día a día en Perú (qué palabra suele venir después) ----
+llegando: a, al, en, ya, ahorita, tarde
+saliendo: de, del, ya, ahorita, recién, para
+estoy en: casa, camino, el, la, la oficina, el trabajo, clase, reunión
+voy en: camino, un, una, el, la, taxi, combi, carro
+en camino: ya, voy, te, a, al
+ya estás: en, aquí, por, listo, lista, ahí
+ya llegaste: a, al, o, a casa
+ya comiste: algo, o, amor
+ya salí: de, del, ya, voy
+me voy: a, al, de, ya, temprano, ahorita, en
+nos vamos: a, al, ya, juntos, temprano, mañana
+vas a: venir, ir, salir, estar, llegar, poder, comer, ir
+puedes venir: a, al, hoy, mañana, ahorita, más
+no hay: problema, nada, nadie, señal, plata, tiempo, de, que
+sin problema: te, nomás, cualquier, avísame
+con gusto: te, cualquier, avísame, nomás
+a ver: si, qué, cómo, cuándo, dónde, pues, pe, mándame, pásame
+hay que: ver, hacer, ir, esperar, pagar, comprar, avisar, salir, llevar
+tengo: que, una, un, el, la, hambre, sueño, frío, calor, clase, reunión, tiempo, plata
+mi amor: te, cómo, ya, buenos, buenas, qué, dónde, gracias
+gordo: te, ya, cómo, dónde, qué
+gorda: te, ya, cómo, dónde, qué
+hijo: ya, cómo, dónde, qué, te, mío
+hija: ya, cómo, dónde, qué, te, mía
+mamita: ya, cómo, te, buenos, buenas
+tía: cómo, buenos, buenas, ya, gracias
+tío: cómo, buenos, buenas, ya, gracias
+jefe: buenos, buenas, le, disculpe, ya, una, gracias
+doctor: buenos, buenas, le, disculpe, una, gracias
+ingeniero: buenos, buenas, le, disculpe, una, gracias
+licenciado: buenos, buenas, le, disculpe, una, gracias
+oficio: n.°, múltiple, de, dirigido
+memorando: n.°, múltiple, de, dirigido
+solicitud: de, para, presentada, del
+remito: a, el, la, usted, adjunto
+según: lo, el, la, los, las, indicado, coordinado
+en atención: a, al
+conforme: a, al, se, lo
+conformidad: con, de, del
+plazo: de, para, máximo, establecido, vence
+fecha: de, y, límite, del, programada
+hora: de, y, es, exacta, del
+dirección: es, de, del, exacta
+número: de, es, del, telefónico
+celular: es, de, se, no
+correo: electrónico, de, del, institucional
+llamada: de, perdida, del, y
+mensaje: de, del, y, que
+foto: de, del, y, que, por
+video: de, del, y, que
+audio: de, que, del
+ubicación: de, del, por, exacta
+pasaje: de, para, y
+taxi: para, a, al, y, que
+combi: para, a, al, y
+tráfico: está, en, horrible, terrible
+lluvia: está, en, y
+frío: está, que, horrible, en
+calor: está, que, horrible, en
+desayuno: de, y, con, ya
+cena: de, y, con, ya
+café: con, y, para, o
+chela: con, y, para, o
+chelas: con, y, para, o, el
+tono: de, en, el, la, del
+fiesta: de, en, del, el, la
+plan: de, para, del, es
+cine: con, el, a, mañana
+película: de, que, con, del
+trámite: de, del, en, para
+pago: de, del, en, por, a
+pagar: el, la, los, las, a, con, en
+cobrar: el, la, a, en
+depósito: de, a, en, por
+transferencia: de, a, en, por
+monto: de, del, total, es
+soles: y, por, más, en, nomás, cada
+sueldo: de, del, ya, y
+quincena: ya, de, del, y
+oficina: de, del, y, a
+reunión: de, con, a, del, el, mañana, hoy
+estoy llegando: a, al, en, tarde
+estoy saliendo: de, del, ya, ahorita
+ya voy: a, al, para, saliendo, llegando, en
+ya vengo: a, al, voy, en
+ahí voy: ya, a, al
+ahí te: aviso, llamo, escribo, mando, paso, espero
+te aviso: cuando, si, para, apenas, cualquier, mañana
+te llamo: en, cuando, más, mañana, ahorita, luego
+te escribo: en, cuando, más, mañana, luego
+te mando: la, el, los, las, un, una, foto, audio, ubicación
+te paso: la, el, los, las, un, una, el número
+te espero: en, a, al, aquí, abajo, afuera
+avísame: cuando, si, para, apenas, cualquier, qué
+mándame: la, el, los, las, un, una, foto, ubicación
+pásame: la, el, los, las, un, una, el número
+qué hora: es, sales, llegas, vienes, nos
+cuánto es: el, la, lo, en, por
+cuánto cuesta: el, la, los, las
+dónde es: la, el, eso
+dónde estás: amor, ahorita, ya, pe
+nos vemos: a, en, el, la, mañana, luego, más, allá
+hablamos: luego, mañana, más, en, cuando
+más tarde: te, nos, hablamos, voy, paso
+más rato: te, nos, hablamos, voy, paso
+todo bien: y, por, gracias, en
+y tú: qué, cómo, que
+qué tal: tu, el, la, todo, estás, te, va
+qué haces: hoy, ahorita, mañana, amor
+qué vas: a, hacer
+qué dices: si, pe, causa, amor
+cómo te: fue, va, sientes, llamas
+me fue: bien, mal, más
+le fue: bien, mal, más
+está bien: te, no, gracias, entonces, pero, nomás
+de una: vamos, nomás, causa
+de todas: formas, maneras
+de ahí: te, nos, vamos, voy, hablamos
+recién: estoy, llegué, salí, me, voy, terminé
+recién llegué: a, de, del
+tengo que: ir, hacer, salir, trabajar, estudiar, pagar, comprar, ver, esperar, terminar
+tienes que: ir, hacer, venir, ver, pagar, comprar, esperar
+hay que: ver, hacer, ir, esperar, pagar, comprar, avisar
+no sé: si, qué, cómo, cuándo, dónde, pe, todavía
+no puedo: ir, hoy, ahorita, más, salir, hablar, creer
+no te: preocupes, olvides, vayas, demores, pases
+no me: digas, olvides, avisaste, dijiste, gusta
+qué pena: que, con, por
+lo siento: mucho, por, de, amor
+cuídate: mucho, amor, por
+descansa: amor, bien, mucho
+que descanses: amor, bien, mucho
+muy bien: y, gracias, por, amor
+súper: bien, rico, bonito, bacán, chévere, rápido
+qué rico: se, está, todo
+qué bonito: se, está, todo
+qué bacán: que, causa
+gracias a: Dios, ti, usted, todos
+por fin: llegué, terminé, ya, es, viernes
+ojalá: que, se, puedas, puedan, todo
+ojalá que: sí, no, te, se, todo
+felices: fiestas, días, vacaciones
+feliz día: amor, mamá, papá, a, de
+de verdad: que, no, gracias, te
+en serio: que, no, te, causa
+en la: mañana, tarde, noche, casa, oficina, chamba
+en el: trabajo, carro, taxi, centro, mercado, banco
+al toque: te, voy, nomás, vamos
+un toque: nomás, que, más, te
+un rato: nomás, más, que, te
+un momento: por, que, nomás, ya
+por si: acaso, las, a
+por las: dudas, puras
+a las: 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7
+a la: casa, oficina, chamba, playa, fiesta
+para la: casa, oficina, próxima, reunión
+para el: trabajo, viernes, lunes, almuerzo
+el lunes: te, nos, a, en, voy
+el martes: te, nos, a, en, voy
+el miércoles: te, nos, a, en, voy
+el jueves: te, nos, a, en, voy
+el viernes: te, nos, a, en, voy
+el sábado: te, nos, a, en, voy
+el domingo: te, nos, a, en, voy
+este fin: de
+hoy en: la, el, día
+hoy día: te, voy, no, hay
+mañana a: las, la, primera
+mañana temprano: te, voy, nos
+se me: olvidó, pasó, fue, malogró, acabó
+me olvidé: de, que, el, la
+se malogró: el, la, mi
+mucho: gusto, trabajo, frío, calor, tráfico, tiempo
+mucho gusto: en, igualmente
+qué fue: causa, pe, mano, bro
+habla causa: qué, cómo, todo
+asu mare: que, qué, causa
+ya pe: causa, bro, apúrate, nomás
+ya está: listo, lista, todo, en, hecho
+está listo: el, la, te, para
+ya terminé: el, la, de, mi
+lo mismo: que, digo, de
+igual que: tú, siempre, ayer
+apúrate: que, pe, ya, por
+espérame: un, en, a, que
+llámame: cuando, cuando puedas, porfa, por, ahorita
+contéstame: el, porfa, por
+te vaya: bien, súper, muy
+te preocupes: amor, por, ya, nomás
+hora sales: de, del, hoy, mañana
+hora llegas: a, al, hoy
+todas formas: te, gracias, nos
+a Dios: que, ya, todo
+fue causa: qué, cómo
+tú qué: tal, haces, dices
+tal tu: día, semana, trabajo, viaje

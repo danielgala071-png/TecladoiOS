@@ -2495,18 +2495,20 @@ class TecladoService : InputMethodService(),
     private fun crearEfecto(clase: Int): VibrationEffect {
         val nivel = fuerzaVibracion
         return if (toqueFino == true) {
-            val base = when (clase) { 1 -> 0.72f; 2 -> 0.6f; 3 -> 0.38f; else -> 0.5f }
-            val por = when (nivel) { "suave" -> 0.55f; "fuerte" -> 1.5f; else -> 1f }
+            val base = when (clase) { 1 -> 0.8f; 2 -> 0.66f; 3 -> 0.45f; else -> 0.6f }
+            val por = when (nivel) { "suave" -> 0.55f; "fuerte" -> 1.45f; else -> 1f }
             val fuerza = (base * por).coerceIn(0.08f, 1f)
-            // En "fuerte" el toque usa CLICK (más firme) en lugar de TICK
-            val primitivo = if (nivel == "fuerte") VibrationEffect.Composition.PRIMITIVE_CLICK
-                else VibrationEffect.Composition.PRIMITIVE_TICK
+            // Toque con más cuerpo: las letras, el espacio y el intro usan CLICK (firme, se
+            // siente que la tecla bajó). Solo en "suave" y en las teclas de función va TICK.
+            val primitivo = if (nivel == "suave" || (clase == 3 && nivel != "fuerte"))
+                VibrationEffect.Composition.PRIMITIVE_TICK
+                else VibrationEffect.Composition.PRIMITIVE_CLICK
             VibrationEffect.startComposition().addPrimitive(primitivo, fuerza).compose()
         } else {
             val efecto = when (nivel) {
                 "suave" -> VibrationEffect.EFFECT_TICK
                 "fuerte" -> if (clase == 1) VibrationEffect.EFFECT_HEAVY_CLICK else VibrationEffect.EFFECT_CLICK
-                else -> if (clase == 1) VibrationEffect.EFFECT_CLICK else VibrationEffect.EFFECT_TICK
+                else -> if (clase == 3) VibrationEffect.EFFECT_TICK else VibrationEffect.EFFECT_CLICK
             }
             VibrationEffect.createPredefined(efecto)
         }
@@ -2556,7 +2558,8 @@ class TecladoService : InputMethodService(),
             val v = vibrador ?: return
             // Toque corto y seco, como el Taptic Engine del iPhone (si el celular lo soporta)
             if (toqueFino == null) {
-                toqueFino = v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_TICK)
+                toqueFino = v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_TICK,
+                    VibrationEffect.Composition.PRIMITIVE_CLICK)
             }
             val clase = claseRetro(tipo)
             val efecto = efectos[clase] ?: crearEfecto(clase).also { efectos[clase] = it }

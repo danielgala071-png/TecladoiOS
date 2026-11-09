@@ -194,9 +194,9 @@ class Diccionario(context: Context) {
     @Volatile private var tipeos: Map<String, String> = emptyMap()
 
     private fun leerTipeos(c: Context): Map<String, String> {
-        val m = HashMap<String, String>(120_000)
+        val m = HashMap<String, String>(220_000)
         // Muchos errores llevan a la misma palabra: se guarda una sola copia de cada una
-        // (con 90 mil errores eso ahorra varios megas de memoria)
+        // (con 160 mil errores eso ahorra varios megas de memoria)
         val unicas = HashMap<String, String>(30_000)
         try {
             c.assets.open("errores.txt").bufferedReader().useLines { lineas ->
