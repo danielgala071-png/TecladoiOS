@@ -170,4 +170,43 @@ class CerebroTest {
         assertEquals("cancion", Cerebro.sinTildes("canción"))
         assertEquals("ano", Cerebro.sinTildes("año"))
     }
+
+    @Test
+    fun `completa la oracion que siempre escribes`() {
+        val c = nuevo()
+        repeat(4) {
+            c.aprender("", "nos", "", "")
+            c.aprender("nos", "vemos", "", "")
+            c.aprender("vemos", "mañana", "nos", "")
+            c.aprender("mañana", "temprano", "vemos", "")
+        }
+        assertEquals(listOf("mañana", "temprano"), c.continuar("nos", "", "vemos", "", 4))
+    }
+
+    @Test
+    fun `si duda no inventa la frase`() {
+        val c = nuevo()
+        repeat(2) {
+            c.aprender("nos", "vemos", "", "")
+            c.aprender("vemos", "mañana", "nos", "")
+        }
+        repeat(2) {
+            c.aprender("nos", "vemos", "", "")
+            c.aprender("vemos", "luego", "nos", "")
+        }
+        assertTrue(c.continuar("nos", "", "vemos", "", 4).isEmpty())
+        assertTrue("con pocas veces no se anima", nuevo().continuar("nos", "", "vemos", "", 4).isEmpty())
+    }
+
+    @Test
+    fun `una frase borrada de la barra ya no se ofrece`() {
+        val c = nuevo()
+        repeat(4) {
+            c.aprender("nos", "vemos", "", "")
+            c.aprender("vemos", "mañana", "nos", "")
+        }
+        assertEquals(listOf("mañana"), c.continuar("nos", "", "vemos", "", 4))
+        c.ignorarSiguiente("vemos", "mañana")
+        assertTrue(c.continuar("nos", "", "vemos", "", 4).isEmpty())
+    }
 }

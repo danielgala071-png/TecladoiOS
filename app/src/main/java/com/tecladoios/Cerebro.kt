@@ -401,6 +401,15 @@ class Cerebro(private val archivo: File) {
         cambios = true
     }
 
+    /** No quieres que después de [previa] siga [w] (borraste esa frase de la barra) */
+    @Synchronized
+    fun ignorarSiguiente(previa: String, w: String) {
+        if (!listo) return
+        val k = normal(previa) + ">" + normal(w)
+        ignoradas[k] = maxOf(ignoradas[k] ?: 0f, 12f)
+        cambios = true
+    }
+
     /** Para las predicciones que no vienen del cerebro (las del diccionario) */
     @Synchronized
     fun factorIgnorada(previa: String, w: String): Float = if (!listo) 1f else castigo(normal(previa), normal(w))
@@ -490,6 +499,68 @@ class Cerebro(private val archivo: File) {
         }
         res.sortByDescending { it.second }
         return if (res.size > max) res.subList(0, max).toList() else res
+    }
+
+    // ---------- Frase completa ----------
+
+    /**
+     * La frase que sigue, para ofrecerla entera en la barra: después de [previa2] [previa]
+     * [primera], las palabras que casi siempre escribes a continuación ("nos" "vemos" →
+     * "mañana", "a", "las"...). Piensa paso a paso como tú: con las tres palabras de antes
+     * busca la siguiente más probable, la agrega y vuelve a mirar. Solo sigue mientras está
+     * seguro (la palabra se lleva casi todo el peso y le gana clarito a la segunda) y para en
+     * cuanto duda. Vacío si no hay nada seguro.
+     */
+    @Synchronized
+    fun continuar(previa: String, previa2: String, primera: String, app: String, max: Int): List<String> {
+        if (!listo || max <= 0 || contextos.isEmpty()) return emptyList()
+        var p1 = normal(primera)
+        if (p1.isEmpty()) return emptyList()
+        var p2 = normal(previa)
+        var p3 = if (p2.isEmpty()) "" else normal(previa2)
+        val dia = hoy()
+        val res = ArrayList<String>(max)
+        val usadas = HashSet<String>()
+        usadas.add(p1)
+        val candidatas = HashSet<String>()
+        while (res.size < max) {
+            // Hace falta haber escrito esa palabra unas cuantas veces para animarse a seguir
+            val s1 = contextos[clave1(p1)] ?: break
+            if (vigente(s1.total, dia) < MIN_FRASE) break
+            candidatas.clear()
+            if (p3.isNotEmpty() && p2.isNotEmpty()) contextos[clave3(p3, p2, p1)]?.let { mejoresDe(it, 6, dia, candidatas) }
+            if (p2.isNotEmpty()) contextos[clave2(p2, p1)]?.let { mejoresDe(it, 6, dia, candidatas) }
+            if (app.isNotEmpty()) contextos[claveApp(app, p1)]?.let { mejoresDe(it, 4, dia, candidatas) }
+            mejoresDe(s1, 4, dia, candidatas)
+            var mejor: String? = null
+            var pm = 0f
+            var segunda = 0f
+            for (w in candidatas) {
+                val pr = mezcla(p1, p2, p3, app, w, dia)
+                if (pr > pm) { segunda = pm; pm = pr; mejor = w } else if (pr > segunda) segunda = pr
+            }
+            val w = mejor ?: break
+            if (pm < UMBRAL_FRASE || pm < segunda * 1.7f || !usadas.add(w)) break
+            res.add(w)
+            p3 = p2; p2 = p1; p1 = w
+        }
+        return res
+    }
+
+    /** Las [k] palabras con más peso de un contexto (sin ordenar todo el mapa: es rápido) */
+    private fun mejoresDe(s: Siguientes, k: Int, dia: Int, destino: HashSet<String>) {
+        if (s.mapa.size <= k) { destino.addAll(s.mapa.keys); return }
+        val palabras = arrayOfNulls<String>(k)
+        val pesos = FloatArray(k)
+        for ((w, c) in s.mapa) {
+            val v = vigente(c, dia)
+            if (v <= pesos[k - 1]) continue
+            var i = k - 1
+            while (i > 0 && pesos[i - 1] < v) { pesos[i] = pesos[i - 1]; palabras[i] = palabras[i - 1]; i-- }
+            pesos[i] = v
+            palabras[i] = w
+        }
+        for (w in palabras) if (w != null) destino.add(w)
     }
 
     // ---------- Guardar y leer ----------
@@ -693,6 +764,9 @@ class Cerebro(private val archivo: File) {
         private const val VIDA_RECIENTE_MIN = 25.0
         /** Lo normal: se deshace más o menos 1 de cada 12 autocorrecciones */
         private const val TASA_BASE = 0.08f
+        /** Frase completa: cuántas veces escribiste la palabra y qué tan seguro tiene que estar */
+        private const val MIN_FRASE = 3f
+        private const val UMBRAL_FRASE = 0.45f
         private const val PASO_TASA = 0.04f
 
         /** Resumen de lo aprendido para Ajustes (lee el archivo del cerebro tal cual) */

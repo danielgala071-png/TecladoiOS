@@ -258,6 +258,12 @@ class KeyboardView(
     private val escritas = HashSet<Int>()
     /** Dónde cayó cada dedo (para la autocorrección por posición, como Gboard) */
     private val puntosToque = HashMap<Int, FloatArray>()
+    /**
+     * Cuándo bajó cada dedo. Al escribir rápido el dedo se suelta "barriendo" un poquito y
+     * podía terminar en la tecla vecina (o empezar a deslizar una palabra): en un toque
+     * corto manda siempre la tecla donde cayó el dedo.
+     */
+    private val bajadaMs = HashMap<Int, Long>()
     private val burbujas = KeyPreviewOverlay(this).apply { radioTecla = radio }
     private val variantes = VariantesPopup(this).apply {
         // Un toquecito al pasar de un acento a otro (se siente qué estás eligiendo)
@@ -1280,6 +1286,7 @@ class KeyboardView(
                     soltar(previa, k)
                 }
                 presionadas[id] = t
+                bajadaMs[id] = e.eventTime
                 presionar(t, id, x, y)
             }
             MotionEvent.ACTION_MOVE -> {
@@ -1339,8 +1346,12 @@ class KeyboardView(
                     if (id == punteroTrazo) {
                         for (h in 0 until e.historySize) agregarPunto(e.getHistoricalX(i, h), e.getHistoricalY(i, h))
                         agregarPunto(x, y)
+                        val recorrido = Math.hypot((x - trazoX0).toDouble(), (y - trazoY0).toDouble())
+                        // Un toque rapidito que se barre al soltar no es deslizar (salvo que el
+                        // dedo recorra de verdad varias teclas)
+                        val corto = e.eventTime - (bajadaMs[id] ?: 0L) < TOQUE_RAPIDO_MS
                         if (!deslizando && presionadas.size == 1 &&
-                            Math.hypot((x - trazoX0).toDouble(), (y - trazoY0).toDouble()) > unidad * 0.9f
+                            recorrido > unidad * (if (corto) 1.6f else 0.9f)
                         ) {
                             // Empezó a deslizar: ya no es un toque, es una palabra
                             deslizando = true
@@ -1361,6 +1372,10 @@ class KeyboardView(
                     if (actual.tipo != Tipo.LETRA || esPad) continue
                     val t = teclaEn(x, y) ?: continue
                     if (t !== actual && t.tipo == Tipo.LETRA) {
+                        // Toque corto (escribiendo rápido): el dedo se barre al soltarse, pero
+                        // la letra es la de donde cayó. Solo un dedo que se queda y se mueve a
+                        // propósito cambia de tecla.
+                        if (e.eventTime - (bajadaMs[id] ?: 0L) < TOQUE_RAPIDO_MS) continue
                         // Un temblor del dedo no cambia la tecla
                         val p0 = puntosToque[id]
                         if (p0 != null && Math.hypot((x - p0[0]).toDouble(), (y - p0[1]).toDouble()) < dp(9f)) continue
@@ -1400,6 +1415,7 @@ class KeyboardView(
                 }
                 val t = presionadas.remove(id)
                 val yaEscrita = escritas.remove(id)
+                bajadaMs.remove(id)
                 if (t != null && pulsos.containsKey(t) && presionadas.values.none { it === t }) animarPulso(t, 0f)
                 // Cada dedo cierra solo su propia vista previa
                 burbujas.soltar(id)
@@ -1625,6 +1641,8 @@ class KeyboardView(
 
     companion object {
         private val FRENO_PULSO = Movimiento.SUAVE
+        /** Un toque más corto que esto es "tocar y soltar": no cambia de tecla ni desliza */
+        private const val TOQUE_RAPIDO_MS = 120L
 
         /** Lo que aparece al mantener presionada cada tecla */
         private val VARIANTES = mapOf(

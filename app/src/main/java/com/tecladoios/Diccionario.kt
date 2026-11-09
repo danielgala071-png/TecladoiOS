@@ -194,18 +194,32 @@ class Diccionario(context: Context) {
     @Volatile private var tipeos: Map<String, String> = emptyMap()
 
     private fun leerTipeos(c: Context): Map<String, String> {
-        val m = HashMap<String, String>(24_000)
+        val m = HashMap<String, String>(120_000)
+        // Muchos errores llevan a la misma palabra: se guarda una sola copia de cada una
+        // (con 90 mil errores eso ahorra varios megas de memoria)
+        val unicas = HashMap<String, String>(30_000)
         try {
             c.assets.open("errores.txt").bufferedReader().useLines { lineas ->
                 for (linea in lineas) {
                     if (linea.isEmpty() || linea[0] == '#') continue
                     val i = linea.indexOf(':')
                     if (i <= 0 || i >= linea.length - 1) continue
-                    m[linea.substring(0, i)] = linea.substring(i + 1).trim()
+                    val d = linea.substring(i + 1).trim().replace('_', ' ')
+                    m[linea.substring(0, i)] = unicas.getOrPut(d) { d }
                 }
             }
         } catch (_: Exception) { }
         return m
+    }
+
+    /**
+     * El error de fábrica de [l], salvo que [l] sea una palabra que el diccionario conoce
+     * (al compilar se agregan miles de palabras: una palabra de verdad nunca se "corrige").
+     */
+    private fun tipeoDeFabrica(l: String): String? {
+        val t = tipeos[l] ?: return null
+        val ix = indice ?: return t
+        return if (rango(ix, l) >= 0) null else t
     }
 
     /** Cambia con cada instalación: así el índice guardado nunca queda viejo */
@@ -936,6 +950,55 @@ class Diccionario(context: Context) {
         return lista.map { if (esNombre(it)) it.replaceFirstChar { c -> c.uppercase() } else it }
     }
 
+    /**
+     * La oración completa para la barra: si después de [previa2] [previa] viene [primera], ¿qué
+     * frase sigue? Primero lo que tú sueles escribir (el cerebro piensa palabra por palabra y
+     * solo sigue mientras está seguro); si no sabe nada tuyo, las frases hechas de siempre
+     * ("muchas" "gracias" → "gracias por todo"). Devuelve la frase entera empezando por
+     * [primera] (al menos dos palabras) o null.
+     */
+    @Synchronized
+    fun frase(previa: String, previa2: String, primera: String): String? {
+        if (primera.isEmpty() || primera.contains(' ')) return null
+        val ix = indice ?: return null
+        val enFormal = formal
+        fun sirve(w: String) = !bloqueada(w) && !lisuraAjena(w) && conoce(ix, w) &&
+            !(enFormal && (esLisura(w) || esJerga(w)))
+        val siguen = ArrayList<String>(4)
+        for (w in cerebro.continuar(previa, previa2, primera, app, 4)) {
+            if (!sirve(w)) break
+            siguen.add(FORMAS[sinTildes(w)] ?: if (esNombre(w)) w.replaceFirstChar { it.uppercase() } else w)
+        }
+        if (siguen.isEmpty()) {
+            val clave = sinTildes(previa) + " " + sinTildes(primera)
+            FRASES[clave]?.let { siguen.addAll(it) }
+        }
+        if (siguen.isEmpty()) return null
+        // Que quepa en la barra: se quitan palabras del final (siempre queda al menos una)
+        val sb = StringBuilder(primera)
+        for (w in siguen) {
+            if (sb.length + 1 + w.length > MAX_FRASE && sb.length > primera.length) break
+            sb.append(' ').append(w)
+        }
+        if (sb.length == primera.length) return null
+        val r = sb.toString()
+        return if (frasesIgnoradas.isNotEmpty() && sinTildes(r) in frasesIgnoradas) null else r
+    }
+
+    /** Frases que quitaste de la barra (mantener presionada → Borrar) */
+    private val frasesIgnoradas = HashSet<String>()
+
+    /** Mantuviste presionada la frase y la borraste: no se vuelve a ofrecer */
+    @Synchronized
+    fun ignorarFrase(texto: String) {
+        val w = texto.trim().split(' ').filter { it.isNotEmpty() }
+        if (w.size < 2) return
+        if (frasesIgnoradas.size > 300) frasesIgnoradas.clear()
+        frasesIgnoradas.add(sinTildes(w.joinToString(" ")))
+        cerebro.ignorarSiguiente(w[w.size - 2], w[w.size - 1])
+        cambios = true
+    }
+
     /** Cómo empiezan los mensajes, según la hora: de mañana "buenos", de tarde y noche "buenas" */
     private fun inicioAhora(): List<String> {
         if (formal) return INICIO_FORMAL
@@ -1431,7 +1494,7 @@ class Diccionario(context: Context) {
         if (esContacto(l)) return if (p[0].isLowerCase()) p.replaceFirstChar { it.uppercase() } else null
         // Errores comunes al escribir rápido o de oído: "aser" → "hacer", "nesecito" → "necesito"
         if (!propia(l, aprendidas[l] ?: 0)) {
-            (ERRORES_COMUNES[l] ?: tipeos[l])?.let { if (!bloqueada(it)) return igualarMayus(it, p).takeIf { c -> c != p } }
+            (ERRORES_COMUNES[l] ?: tipeoDeFabrica(l))?.let { if (!bloqueada(it)) return igualarMayus(it, p).takeIf { c -> c != p } }
         }
         if (expresiva(l)) return null
         val ix = indice ?: return null // aún cargando: mejor no tocar nada
@@ -2705,14 +2768,146 @@ class Diccionario(context: Context) {
             se que|sé que; no se|no sé; yo se|yo sé; ya se|ya sé; solo se|solo sé;
             tambien te|también te; tambien me|también me; tambien yo|también yo; yo tambien|yo también;
             despues te|después te; despues de|después de
-        """.trim().split(";").mapNotNull { linea ->
-            val partes = linea.trim().split("|")
-            if (partes.size != 2) null else {
-                val a = partes[0].trim().split(" ")
-                val b = partes[1].trim().split(" ")
-                if (a.size == 2 && b.size == 2) "${sinTildes(a[0])} ${sinTildes(a[1])}" to (b[0] to b[1]) else null
+        """.let { leerPares(it) } + leerPares(CONFUSIONES)
+
+        /**
+         * "a|b": la palabra anterior y la actual escritas como "a" se cambian por "b". Si "b"
+         * no son dos palabras, el "+" marca dónde termina la anterior ("vamos+a ver").
+         */
+        private fun leerPares(texto: String): Map<String, Pair<String, String>> =
+            texto.trim().split(";").mapNotNull { linea ->
+                val partes = linea.trim().split("|")
+                if (partes.size != 2) null else {
+                    val a = partes[0].trim().split(" ")
+                    val bTexto = partes[1].trim()
+                    val mas = bTexto.indexOf('+')
+                    val b = if (mas > 0) listOf(bTexto.substring(0, mas).trim(), bTexto.substring(mas + 1).trim())
+                        else bTexto.split(" ")
+                    if (a.size == 2 && b.size == 2 && b[0].isNotEmpty() && b[1].isNotEmpty())
+                        "${sinTildes(a[0])} ${sinTildes(a[1])}" to (b[0] to b[1]) else null
+                }
+            }.toMap()
+
+        /**
+         * Confusiones de gramática típicas del celular, que solo se ven con la palabra anterior
+         * (las dos palabras existen, por eso la autocorrección sola no las ve):
+         * "vamos haber" → "vamos a ver", "ay que" → "hay que", "por hay" → "por ahí",
+         * "he echo" → "he hecho", "a sido" → "ha sido", "otra ves" → "otra vez",
+         * "voy hacer" → "voy a hacer", "que valla" → "que vaya". Si deshaces una, vuelve
+         * a lo que escribiste.
+         */
+        private const val CONFUSIONES = """
+            e sido|he sido; as sido|has sido; an sido|han sido; a sido|ha sido; e hecho|he hecho; as hecho|has hecho;
+            an hecho|han hecho; a hecho|ha hecho; e dicho|he dicho; as dicho|has dicho; an dicho|han dicho;
+            a dicho|ha dicho; e visto|he visto; as visto|has visto; an visto|han visto; a visto|ha visto; e ido|he ido;
+            as ido|has ido; an ido|han ido; a ido|ha ido; e llegado|he llegado; as llegado|has llegado;
+            an llegado|han llegado; a llegado|ha llegado; e salido|he salido; as salido|has salido; an salido|han salido;
+            a salido|ha salido; e terminado|he terminado; as terminado|has terminado; an terminado|han terminado;
+            a terminado|ha terminado; e comido|he comido; as comido|has comido; an comido|han comido; a comido|ha comido;
+            e dormido|he dormido; as dormido|has dormido; an dormido|han dormido; a dormido|ha dormido;
+            e llamado|he llamado; as llamado|has llamado; an llamado|han llamado; a llamado|ha llamado;
+            e escrito|he escrito; as escrito|has escrito; an escrito|han escrito; a escrito|ha escrito;
+            e enviado|he enviado; as enviado|has enviado; an enviado|han enviado; a enviado|ha enviado;
+            e mandado|he mandado; as mandado|has mandado; an mandado|han mandado; a mandado|ha mandado;
+            e pagado|he pagado; as pagado|has pagado; an pagado|han pagado; a pagado|ha pagado; e cambiado|he cambiado;
+            as cambiado|has cambiado; an cambiado|han cambiado; a cambiado|ha cambiado; e venido|he venido;
+            as venido|has venido; an venido|han venido; a venido|ha venido; e vuelto|he vuelto; as vuelto|has vuelto;
+            an vuelto|han vuelto; a vuelto|ha vuelto; e tenido|he tenido; as tenido|has tenido; an tenido|han tenido;
+            a tenido|ha tenido; e podido|he podido; as podido|has podido; an podido|han podido; a podido|ha podido;
+            e dado|he dado; as dado|has dado; an dado|han dado; a dado|ha dado; e traido|he traído; as traido|has traído;
+            an traido|han traído; a traido|ha traído; e leido|he leído; as leido|has leído; an leido|han leído;
+            a leido|ha leído; e entendido|he entendido; as entendido|has entendido; an entendido|han entendido;
+            a entendido|ha entendido; e conseguido|he conseguido; as conseguido|has conseguido;
+            an conseguido|han conseguido; a conseguido|ha conseguido; e encontrado|he encontrado;
+            as encontrado|has encontrado; an encontrado|han encontrado; a encontrado|ha encontrado; e perdido|he perdido;
+            as perdido|has perdido; an perdido|han perdido; a perdido|ha perdido; e ganado|he ganado;
+            as ganado|has ganado; an ganado|han ganado; e trabajado|he trabajado;
+            as trabajado|has trabajado; an trabajado|han trabajado; a trabajado|ha trabajado; e estudiado|he estudiado;
+            as estudiado|has estudiado; an estudiado|han estudiado; a estudiado|ha estudiado; e comprado|he comprado;
+            as comprado|has comprado; an comprado|han comprado; a comprado|ha comprado; e vendido|he vendido;
+            as vendido|has vendido; an vendido|han vendido; a vendido|ha vendido; e decidido|he decidido;
+            as decidido|has decidido; an decidido|han decidido; a decidido|ha decidido; e pensado|he pensado;
+            as pensado|has pensado; an pensado|han pensado; a pensado|ha pensado; e olvidado|he olvidado;
+            as olvidado|has olvidado; an olvidado|han olvidado; a olvidado|ha olvidado; e recibido|he recibido;
+            as recibido|has recibido; an recibido|han recibido; a recibido|ha recibido; e avisado|he avisado;
+            as avisado|has avisado; an avisado|han avisado; a avisado|ha avisado; e preguntado|he preguntado;
+            as preguntado|has preguntado; an preguntado|han preguntado; a preguntado|ha preguntado;
+            e contestado|he contestado; as contestado|has contestado; an contestado|han contestado;
+            a contestado|ha contestado; e respondido|he respondido; as respondido|has respondido;
+            an respondido|han respondido; a respondido|ha respondido; e empezado|he empezado; as empezado|has empezado;
+            an empezado|han empezado; a empezado|ha empezado; e acabado|he acabado; as acabado|has acabado;
+            an acabado|han acabado; a acabado|ha acabado; e regresado|he regresado; as regresado|has regresado;
+            an regresado|han regresado; a regresado|ha regresado; e vivido|he vivido; as vivido|has vivido;
+            an vivido|han vivido; a vivido|ha vivido; e conocido|he conocido; as conocido|has conocido;
+            an conocido|han conocido; a conocido|ha conocido; e sentido|he sentido; as sentido|has sentido;
+            an sentido|han sentido; a echo|ha hecho; e echo|he hecho; yo e|yo he; lo e|lo he;
+            te e|te he; le e|le he; no e|no he; me a|me ha; te a|te ha; le a|le ha; nos a|nos ha; lo a|lo ha;
+            he echo|he hecho; has echo|has hecho; ha echo|ha hecho; han echo|han hecho; hemos echo|hemos hecho;
+            habia echo|había hecho; bien echo|bien hecho; mal echo|mal hecho; esta echo|está hecho;
+            vamos haber|vamos+a ver; haber si|a ver+si; haber que|a ver+qué; haber cuando|a ver+cuándo;
+            haber como|a ver+cómo; haber donde|a ver+dónde; haber quien|a ver+quién; haber dime|a ver+dime;
+            haber cuentame|a ver+cuéntame; ha ver|a ver; va haber|va+a haber; van haber|van+a haber;
+            voy hacer|voy+a hacer; vas hacer|vas+a hacer; va hacer|va+a hacer; vamos hacer|vamos+a hacer;
+            van hacer|van+a hacer; voy ir|voy+a ir; vas ir|vas+a ir; vamos ir|vamos+a ir; voy ver|voy+a ver;
+            vamos ver|vamos+a ver; voy ha|voy a; vas ha|vas a; va ha|va a; vamos ha|vamos a; van ha|van a; ha la|a la;
+            ha las|a las; ha los|a los; ay que|hay que; no ay|no hay; ya ay|ya hay; si ay|si hay; que ay|que hay;
+            ay muchos|hay muchos; ay muchas|hay muchas; ay mucho|hay mucho; ay mucha|hay mucha; ay alguien|hay alguien;
+            ay algo|hay algo; ay gente|hay gente; ay tiempo|hay tiempo; ay problema|hay problema; ay clases|hay clases;
+            ay chamba|hay chamba; por ay|por ahí; por hay|por ahí; de hay|de ahí; hasta hay|hasta ahí;
+            hay nomas|ahí nomás; ahi nomas|ahí nomás; hay esta|ahí está; hay estoy|ahí estoy; hay voy|ahí voy;
+            hay vamos|ahí vamos; hay nos|ahí nos; ay nos|ahí nos; esta hay|está ahí; esta ay|está ahí;
+            estoy hay|estoy ahí; estoy ay|estoy ahí; estas hay|estás ahí; estas ay|estás ahí; otra ves|otra vez;
+            una ves|una vez; tal ves|tal vez; cada ves|cada vez; alguna ves|alguna vez; esta ves|esta vez;
+            primera ves|primera vez; ultima ves|última vez; segunda ves|segunda vez; de ves|de vez; rara ves|rara vez;
+            que valla|que vaya; no valla|no vaya; ojala valla|ojalá vaya; cuando valla|cuando vaya; que halla|que haya;
+            no halla|no haya; ojala halla|ojalá haya; cuando halla|cuando haya; no tubo|no tuvo; que tubo|que tuvo;
+            yo boy|yo voy; ya boy|ya voy; me boy|me voy; ahi boy|ahí voy; no boy|no voy; ola como|hola+cómo;
+            ola amor|hola amor; ola buenos|hola buenos; ola buenas|hola buenas; ola que|hola+qué; lo mas|lo más;
+            es mas|es más; mucho mas|mucho más; poco mas|poco más; nada mas|nada más; algo mas|algo más;
+            mas bien|más bien; mas rapido|más rápido; mas temprano|más temprano; mas grande|más grande; vez mas|vez más;
+            asta luego|hasta luego; asta mañana|hasta mañana; asta pronto|hasta pronto
+        """
+
+        /** Largo máximo de una frase en la barra (para que se lea sin cortarse) */
+        private const val MAX_FRASE = 26
+
+        /**
+         * Frases hechas para completar la oración. De cada frase sale, para cada par de
+         * palabras seguidas, lo que viene después: "muchas gracias por todo" →
+         * "muchas gracias" → [por, todo] y "gracias por" → [todo]. Gana la primera que lo define.
+         */
+        private val FRASES: Map<String, List<String>> = HashMap<String, List<String>>().apply {
+            for (linea in """
+            que tengas un buen día; que tengas una buena noche; que tengas un lindo día; que te vaya bien;
+            que te mejores pronto; que descanses mucho; nos vemos mañana; te quiero mucho; te extraño mucho;
+            te amo mucho; te llamo más tarde; te escribo más tarde; te aviso cualquier cosa; te paso la voz;
+            te mando la ubicación; cualquier cosa me avisas; en cuanto pueda te aviso; en cuanto llegue te aviso;
+            lo antes posible; lo más pronto posible; muchas gracias por todo; gracias por todo; gracias por avisar;
+            gracias por tu tiempo; gracias por tu ayuda; feliz cumpleaños; buen provecho; estoy en camino;
+            ya estoy llegando; ya estoy saliendo; ya voy para allá; ahorita no puedo; no te preocupes; no hay problema;
+            no pasa nada; claro que sí; por supuesto que sí; quedo atento a su respuesta; quedo atenta a su respuesta;
+            quedo a la espera de su respuesta; quedo a su disposición; reciba un cordial saludo;
+            por medio del presente documento; tengo el agrado de dirigirme a usted; sin otro particular;
+            agradezco de antemano su atención; en atención a lo solicitado; a la brevedad posible; hasta luego;
+            cuídate mucho; un abrazo fuerte; un beso grande; dios te bendiga; cómo te fue; a qué hora llegas;
+            a qué hora sales; estoy en la casa; estoy en el trabajo; de vez en cuando; al fin y al cabo; por lo menos;
+            por si acaso; todo bien por aquí; llego en un rato; llego en unos minutos; en un momento te aviso;
+            ahí nos vemos; ahí te aviso; avísame cuando llegues; avísame cuando puedas; llámame cuando puedas;
+            escríbeme cuando puedas; me avisas cualquier cosa; buenas noches que descanses; hola buenos días;
+            hola buenas tardes; hola buenas noches; buenos días cómo estás; mil gracias por todo; disculpa la demora;
+            disculpa la hora; disculpe la demora en responder; perdón por la demora; me avisas cuando puedas;
+            te espero aquí; ya estoy aquí; ya llegué a la casa; feliz día de la madre; feliz día del padre;
+            feliz año nuevo; feliz navidad para todos; buen viaje; salgo en un rato;
+            estoy ocupado ahorita; estoy ocupada ahorita; sigo en el trabajo; ya salí del trabajo; mañana te confirmo;
+            luego te cuento; después te cuento; te cuento después
+            """.trim().split(";")) {
+                val w = linea.trim().split(ESPACIOS).filter { it.isNotEmpty() }
+                for (k in 2 until w.size) {
+                    val clave = sinTildes(w[k - 2]) + " " + sinTildes(w[k - 1])
+                    if (!containsKey(clave)) put(clave, w.subList(k, w.size).toList())
+                }
             }
-        }.toMap()
+        }
 
         /** Predicción: después de cada palabra, las que más se escriben (chat peruano) */
         private val PARES_BASE: Map<String, List<String>> = """

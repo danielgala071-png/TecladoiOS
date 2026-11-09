@@ -1146,13 +1146,22 @@ class TecladoService : InputMethodService(),
                 val sig = try {
                     diccionario.siguientes(prev, 3, prev2).map { if (inicio) it.replaceFirstChar { c -> c.uppercase() } else it }
                 } catch (e: Throwable) { Registro.anotar("predicción", e); emptyList() }
+                // La oración completa: el cerebro sigue pensando después de la palabra más
+                // probable ("nos" → "vemos mañana"); si no, prueba con las otras dos
+                val frase = if (sig.isEmpty()) null else try {
+                    sig.firstNotNullOfOrNull { w -> diccionario.frase(prev, prev2, w) }
+                } catch (e: Throwable) { Registro.anotar("frase", e); null }
                 manejador.post {
                     if (!diccionario.vigente(t)) return@post
                     val derecha = (if (deshacer != null) sig.getOrNull(1) else sig.getOrNull(2))?.let { Sugerencia(it) }
+                    val conFrase = frase?.let { Sugerencia(it, frase = true) }
+                    val izquierda = deshacer ?: sig.getOrNull(1)?.let { Sugerencia(it) }
+                    val emoji = emo?.let { Sugerencia(it, emoji = true) }
                     b.mostrar(listOf(
-                        deshacer ?: sig.getOrNull(1)?.let { Sugerencia(it) },
+                        // La frase va a la derecha; si ahí va un emoji, a la izquierda (sin tapar el deshacer)
+                        if (conFrase != null && emoji != null && deshacer == null) conFrase else izquierda,
                         sig.getOrNull(0)?.let { Sugerencia(it) },
-                        emo?.let { Sugerencia(it, emoji = true) } ?: derecha,
+                        emoji ?: conFrase ?: derecha,
                     ))
                 }
             }
@@ -2317,6 +2326,10 @@ class TecladoService : InputMethodService(),
             retro(Tipo.LETRA)
             return
         }
+        if (s.frase) {
+            elegirFrase(s.texto)
+            return
+        }
         val ud = ultimoDeslizado
         val antesTexto = antes(120)
         val (previa0, palabra) = palabrasDe(antesTexto)
@@ -2361,6 +2374,37 @@ class TecladoService : InputMethodService(),
         retro(Tipo.LETRA)
     }
 
+    /**
+     * Elegiste la oración completa: se escribe entera y el cerebro la aprende palabra por
+     * palabra (como si la hubieras escrito tú), así la próxima vez la ofrece con más seguridad.
+     */
+    private fun elegirFrase(texto: String) {
+        val antesTexto = antes(120)
+        val (previa0, palabra) = palabrasDe(antesTexto)
+        val inicio = inicioDeOracion(antesTexto)
+        val pv0 = if (inicio) "" else previa0
+        val pv20 = if (inicio) "" else previa2De(antesTexto)
+        reemplazar(palabra.length, texto + " ")
+        val palabras = texto.split(' ').filter { it.isNotEmpty() }
+        enMotor {
+            var pv = pv0
+            var pv2 = pv20
+            for (w in palabras) {
+                diccionario.aprender(w, 2)
+                diccionario.aprenderPar(pv, w, pv2)
+                pv2 = pv
+                pv = w
+            }
+        }
+        ultimaAprendida = null
+        ultimaCorreccion = null
+        ultimoDeslizado = null
+        espacioAutomatico = true
+        escribiendo = true
+        ultimaEscritura = SystemClock.uptimeMillis()
+        retro(Tipo.LETRA)
+    }
+
     /** Mantener presionada una sugerencia → Borrar: el teclado olvida esa palabra */
     /** Deslizaste la barra espaciadora hacia arriba: se pone la sugerencia del centro */
     override fun aceptarSugerencia() {
@@ -2381,7 +2425,9 @@ class TecladoService : InputMethodService(),
             actualizarBarra()
             return
         }
-        enMotor { diccionario.olvidar(s.texto) }
+        // Una oración completa no borra palabras: solo deja de ofrecer esa frase
+        if (s.frase) enMotor { diccionario.ignorarFrase(s.texto) }
+        else enMotor { diccionario.olvidar(s.texto) }
         retro(Tipo.BORRAR)
         actualizarBarra()
     }

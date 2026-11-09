@@ -37,6 +37,8 @@ data class Sugerencia(
     val emoji: Boolean = false,
     /** Botón de la barra de edición (Cortar, Copiar, Pegar...); 0 = es una palabra */
     val accion: Int = 0,
+    /** Oración completa que predijo el cerebro ("vemos mañana"): se escribe entera */
+    val frase: Boolean = false,
 )
 
 /**
@@ -301,7 +303,7 @@ class SuggestionBar(
         if (primera != null && primera.portapapeles) return primera
         val centro = items[1]
         if (centro != null && centro.accion == 0) return centro
-        return items[2]?.takeIf { it.accion == 0 && !it.emoji }
+        return items[2]?.takeIf { it.accion == 0 && !it.emoji && !it.frase }
     }
 
     fun mostrar(nuevos: List<Sugerencia?>) {
