@@ -245,6 +245,8 @@ class TecladoService : InputMethodService(),
     private class Calculada(
         val palabra: String, val previa: String, val previa2: String,
         val correccion: String?, val completa: String?,
+        /** La palabra quedó partida por un espacio de más: así queda junta ("consecu encia") */
+        val unida: String? = null,
     )
     @Volatile private var calculada: Calculada? = null
 
@@ -257,6 +259,8 @@ class TecladoService : InputMethodService(),
         val palabra: String, val sufijo: String, val previa: String, val previa2: String,
         /** Posición del cursor justo después de palabra + sufijo */
         var fin: Int,
+        /** Dónde cayó cada dedo (para corregirla igual de bien si hay que hacerlo ya) */
+        val toq: Array<FloatArray>? = null,
     )
     private val diferidas = ArrayList<Diferida>()
 
@@ -276,6 +280,8 @@ class TecladoService : InputMethodService(),
         val corr: String?, val otras: List<String>, val completa: String?,
         /** La palabra a medias quedó pegada a la anterior: así se separa ("ya pode") */
         val separada: String? = null,
+        /** Con la anterior forma una sola palabra partida por un espacio ("consecu encia") */
+        val unida: String? = null,
     )
 
     /**
@@ -814,6 +820,7 @@ class TecladoService : InputMethodService(),
      * y actualiza la copia local sin preguntarle nada a la app.
      */
     private fun reemplazar(borrarN: Int, nuevo: String) {
+        if (borrarN <= 0 && nuevo.isEmpty()) return
         val ic = currentInputConnection ?: return
         if (!espejoValido) leerEspejo()
         if (borrarN > 0) {
@@ -1235,7 +1242,13 @@ class TecladoService : InputMethodService(),
             ) completa = top
         }
         if (!diccionario.vigente(t)) return null
-        return Resultado(p, previa, previa2, probs, corr, otras, completa)
+        // ¿Se te fue un espacio en medio de la palabra? Se piensa aquí (en el motor) para que
+        // al dar espacio esté listo al instante, sin hacer esperar al dedo
+        val unida = if (op.aplicar && op.enLetras && previa.length >= 2 && p.length >= 2) {
+            try { diccionario.unirPartida(previa, p) } catch (_: Throwable) { null }
+        } else null
+        if (!diccionario.vigente(t)) return null
+        return Resultado(p, previa, previa2, probs, corr, otras, completa, unida = unida)
     }
 
     /** En el hilo principal: pone en la barra lo calculado y deja lista la corrección del espacio */
@@ -1250,7 +1263,7 @@ class TecladoService : InputMethodService(),
         val c = r.corr
         val comp = r.completa
         val lista = r.otras
-        calculada = Calculada(p, r.previa, r.previa2, if (op.aplicar) c else null, comp)
+        calculada = Calculada(p, r.previa, r.previa2, if (op.aplicar) c else null, comp, if (op.aplicar) r.unida else null)
         if (comp != null) {
             b.mostrar(listOf(
                 Sugerencia(p, literal = true, resto = comp.substring(p.length)),
@@ -1419,7 +1432,7 @@ class TecladoService : InputMethodService(),
      * Cierra la palabra actual y agrega el sufijo (espacio, signo o salto de línea):
      * 1) sustitución de texto, 2) autocorrección, 3) tildes según la palabra anterior.
      */
-    private fun cerrarPalabra(sufijo: String) {
+    private fun cerrarPalabra(sufijo: String, sincrono: Boolean = false) {
         if (currentInputConnection == null) return
         espacioAutomatico = false
         ultimaAprendida = null
@@ -1457,6 +1470,11 @@ class TecladoService : InputMethodService(),
             return
         }
 
+        // ¿Se te fue un espacio en medio de una palabra? "consecu encia" → "consecuencia".
+        // Piensa antes de juntar: solo si lo de después del espacio no es una palabra y todo
+        // junto sí lo es (si deshaces la unión con borrar, no la vuelve a hacer)
+        if (unirSiHaceFalta(palabra, previa, previa2, espacios, sufijo)) return
+
         // ¿Borraste la palabra anterior y escribiste esta en su lugar? El cerebro aprende solo
         val inicio = if (selIni >= 0 && selIni == selFin) selIni - palabra.length else -1
         notarReescritura(palabra, previa, previa2, inicio)
@@ -1467,8 +1485,16 @@ class TecladoService : InputMethodService(),
         var nuevaPalabra = palabra
         val hecha = calculada
         val yaCalculada = hecha != null && hecha.palabra == palabra && hecha.previa == previa && hecha.previa2 == previa2
-        val corr = if (autocorreccionActiva && yaCalculada) hecha!!.correccion else null
+        var corr = if (autocorreccionActiva && yaCalculada) hecha!!.correccion else null
         var diferir = autocorreccionActiva && !yaCalculada
+        if (diferir && sincrono) {
+            // Hay que saberla YA (antes de poner ¿ o ¡): se calcula aquí mismo, sin esperar
+            diccionario.interrumpir()
+            corr = try {
+                diccionario.corregir(palabra, previa, previa2, diccionario.turno(), toquesPara(palabra, misToques), cortable = false)
+            } catch (e: Throwable) { Registro.anotar("autocorrección", e); null }
+            diferir = false
+        }
         if (corr != null) {
             nuevaPalabra = corr
             // El cerebro anota este error tuyo (si lo deshaces, se resta) y se calibra
@@ -1497,7 +1523,8 @@ class TecladoService : InputMethodService(),
             reemplazar(0, sufijo)
             ultimaCorreccion = null
             if (selIni >= 0 && selIni == selFin && espejoValido) {
-                corregirDespues(Diferida(palabra, sufijo, previa, previa2, selIni), toquesPara(palabra, misToques))
+                val tq = toquesPara(palabra, misToques)
+                corregirDespues(Diferida(palabra, sufijo, previa, previa2, selIni, tq), tq)
             } else {
                 aprenderCerrada(palabra, previa, previa2, sufijo, alFinal = true)
             }
@@ -1534,6 +1561,35 @@ class TecladoService : InputMethodService(),
     }
 
     /**
+     * Junta una palabra que quedó partida por un espacio de más ("consecu encia",
+     * "mi ercoles"). Devuelve true si la juntó (y ya escribió el sufijo).
+     */
+    private fun unirSiHaceFalta(palabra: String, previa: String, previa2: String, espacios: String, sufijo: String): Boolean {
+        if (!autocorreccionActiva || editando || seleccionando || espacios != " ") return false
+        if (previa.length < 2 || palabra.length < 2) return false
+        // Lo pensó el motor mientras escribías (así el espacio nunca espera)
+        val h = calculada ?: return false
+        if (h.palabra != palabra || h.previa != previa || h.previa2 != previa2) return false
+        val unida = h.unida ?: return false
+        val viejo = previa + espacios + palabra
+        if (antes(viejo.length) != viejo) return false
+        reemplazar(viejo.length, unida + sufijo)
+        ultimaCorreccion = Pair(viejo, unida + sufijo)
+        ultimaCorreccionAuto = null
+        ultimaCerrada = null
+        ultimaAprendida = null
+        if (sugerenciasActivas) {
+            enMotor {
+                // La primera mitad sola no era una palabra tuya: se olvida y se aprende la entera
+                diccionario.desaprender(previa, previa2)
+                diccionario.aprender(unida)
+                diccionario.aprenderPar(previa2, unida)
+            }
+        }
+        return true
+    }
+
+    /**
      * Revisa la separación hecha mientras escribías al cerrar la palabra que siguió.
      * "entones" se había separado en "en tones": "tones" no es una palabra y "entones" se
      * parece muchísimo a "entonces", así que se vuelve a juntar (la corrección hace el resto)
@@ -1552,7 +1608,7 @@ class TecladoService : InputMethodService(),
         if (!a.endsWith(conPrimera)) return false
         val unida = sa.original + segunda.substring(sa.resto.length)
         diccionario.interrumpir()
-        val reunir = try { diccionario.reunirSeparacion(segunda, unida) } catch (_: Throwable) { false }
+        val reunir = try { diccionario.reunirSeparacion(segunda, unida, sa.primera) } catch (_: Throwable) { false }
         if (!reunir) return false
         reemplazar(conPrimera.length, unida)
         calculada = null
@@ -1727,7 +1783,20 @@ class TecladoService : InputMethodService(),
         return a.isEmpty() || a[0].isWhitespace() || a[0] in "([{¿¡“‘—-"
     }
 
+    /**
+     * Cuánto pasó entre este toque y el anterior (lo manda el teclado justo antes de la letra).
+     * Si los dos pulgares tocaron casi a la vez, la autocorrección sabe que el orden de esas
+     * dos letras se pudo cruzar ("qeu" → "que") y lo arregla con más seguridad.
+     */
+    private var ritmoLetra = -1f
+
+    override fun ritmo(ms: Long) {
+        ritmoLetra = if (ms in 0L..5000L) ms.toFloat() else -1f
+    }
+
     override fun texto(s: String, x: Float, y: Float) {
+        val ritmo = ritmoLetra
+        ritmoLetra = -1f
         if (buscandoEmoji) {
             if (consultaEmoji.length < 30 && s.length == 1 && s[0].isLetterOrDigit()) consultaEmoji += s.lowercase()
             actualizar()
@@ -1745,7 +1814,7 @@ class TecladoService : InputMethodService(),
         var c = s
         // Recordar dónde cayó el dedo en cada letra (o que no se sabe)
         if (c.length == 1 && c[0].isLetter()) {
-            toques.add(floatArrayOf(x, y, c[0].lowercaseChar().code.toFloat()))
+            toques.add(floatArrayOf(x, y, c[0].lowercaseChar().code.toFloat(), ritmo))
             if (toques.size > 48) toques.removeAt(0)
         } else toques.clear()
 
@@ -1762,9 +1831,17 @@ class TecladoService : InputMethodService(),
                 }
             }
         }
-        if (c == "?") acentuarPregunta()
-        if ((c == "?" || c == "!") && puntuacionActiva && aperturaActiva) abrirSigno(c[0])
-        if (c.length == 1 && c[0] in ".,;:!?") {
+        // ? y !: primero se corrige la palabra (y las que faltaban), después se ponen ¿ y ¡
+        if (c == "?" || c == "!") {
+            cerrarConSigno(c)
+            return
+        }
+        // Signo de apertura pegado a una palabra ("hola¿como"): primero se cierra y se
+        // corrige esa palabra, y el signo va separado ("hola ¿cómo")
+        if (c.length == 1 && c[0] in "¿¡" && antes(1).let { it.isNotEmpty() && it[0].isLetter() }) {
+            cerrarPalabra(" ")
+        }
+        if (c.length == 1 && c[0] in ".,;:") {
             // Después de elegir una sugerencia, la puntuación se pega a la palabra: "hola, "
             if (espacioAutomatico && antes(1) == " ") {
                 reemplazar(1, "$c ")
@@ -1778,6 +1855,42 @@ class TecladoService : InputMethodService(),
         espacioAutomatico = false
         ultimaCorreccion = null
         reemplazar(0, c)
+    }
+
+    /**
+     * Cierra la pregunta o la exclamación: corrige YA la palabra que estabas escribiendo y las
+     * que todavía esperaban su corrección, y recién después pone ¿ o ¡ y las tildes de la
+     * pregunta. Antes los signos se ponían primero: el texto se corría y las correcciones que
+     * llegaban tarde ya no encontraban su palabra (quedaba mal escrita).
+     */
+    private fun cerrarConSigno(c: String) {
+        if (currentInputConnection == null) return
+        // Después de elegir una sugerencia, el signo se pega a la palabra: "hola? "
+        val trasSugerencia = espacioAutomatico && antes(1) == " "
+        if (trasSugerencia) reemplazar(1, "")
+        espacioAutomatico = false
+        aplicarDiferidasYa()
+        // La palabra elegida de la barra ya está bien escrita: solo se cierra la que escribías
+        if (!trasSugerencia) cerrarPalabra("", sincrono = true)
+        if (c == "?") acentuarPregunta()
+        if (puntuacionActiva && aperturaActiva) abrirSigno(c[0])
+        reemplazar(0, if (trasSugerencia) "$c " else c)
+        ultimaCorreccion = null
+        ultimaCorreccionAuto = null
+        ultimaAprendida = null
+        toques.clear()
+    }
+
+    /** Las correcciones que todavía calculaba el motor se ponen ahora mismo */
+    private fun aplicarDiferidasYa() {
+        if (diferidas.isEmpty()) return
+        diccionario.interrumpir()
+        for (d in ArrayList(diferidas)) {
+            val corr = try {
+                diccionario.corregir(d.palabra, d.previa, d.previa2, diccionario.turno(), d.toq, cortable = false)
+            } catch (e: Throwable) { Registro.anotar("autocorrección", e); null }
+            aplicarDiferida(d, corr)
+        }
     }
 
     override fun espacio() {
@@ -1871,6 +1984,8 @@ class TecladoService : InputMethodService(),
                     if (fueAuto) diccionario.correccionDeshecha()
                     if (ua != null) diccionario.desaprender(ua.palabra, ua.previa, ua.previa2)
                     diccionario.rechazarCorreccion(uc.first.trim(), uc.second.trim())
+                    // Era una unión de dos partes ("consecu encia"): no se vuelve a juntar
+                    if (uc.first.trim().contains(' ') && !uc.second.trim().contains(' ')) diccionario.rechazarUnion(uc.first)
                     uc.first.split(" ").filter { it.isNotBlank() }.forEach {
                         diccionario.aprender(it, 2)
                         if (it.all { c -> c.isLowerCase() }) diccionario.notarMayuscula(it, true)

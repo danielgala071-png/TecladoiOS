@@ -11,6 +11,7 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.RenderNode
 import android.graphics.Shader
@@ -84,6 +85,11 @@ class KeyboardView(
         fun anticipar(s: String, x: Float, y: Float)
         /** Deslizaste la barra espaciadora hacia arriba: se pone la sugerencia del centro */
         fun aceptarSugerencia()
+        /**
+         * Justo antes de escribir una letra: cuántos milisegundos pasaron desde que bajó el dedo
+         * anterior. Sirve para saber cuándo dos pulgares tocaron casi a la vez.
+         */
+        fun ritmo(ms: Long) {}
     }
 
     private val d = Medidas.escala(context)
@@ -123,8 +129,9 @@ class KeyboardView(
     private val margenArriba = dp(4f)
     private val margenAbajo = dp(6f)
     // Proporciones del teclado de iOS 26: huecos de ~6 de lado y ~11 entre filas
-    private val sepH = dp(3f)
-    private val sepV = dp(5.4f)
+    // Huecos un poquito más finos: las teclas se ven más grandes y es más fácil atinarles
+    private val sepH = dp(2.6f)
+    private val sepV = dp(5f)
     // Esquinas como las teclas de iOS 26 (redondas pero sin parecer pastillas)
     private val radio = dp(8.5f)
     private val formaPulso = Path()
@@ -133,6 +140,23 @@ class KeyboardView(
     // Al presionar: la tecla se tiñe de vidrio del color de la app (sin brillo)
     private val pulsos = HashMap<Tecla, Float>()
     private val animPulsos = HashMap<Tecla, ValueAnimator>()
+
+    /**
+     * Luz de toque: al presionar, un brillo suave del color de la app nace justo donde cayó el
+     * dedo y se apaga junto con la tecla (como el vidrio líquido de iOS 26). Así cada toque se
+     * ve y se siente exacto, aunque escribas rapidísimo.
+     */
+    private val luces = HashMap<Tecla, RadialGradient>()
+    private val pinturaLuz = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    /** Ritmo a dos pulgares: cuándo bajó el último dedo en una letra y el ritmo de cada dedo */
+    private var ultimaBajadaLetra = 0L
+    private val ritmoDedo = HashMap<Int, Long>()
+    /**
+     * Escribiendo rápido (menos de 140 ms desde el toque anterior) el dedo cae menos preciso:
+     * la predicción ayuda un poco más a elegir la letra cerca del borde, como en Gboard
+     */
+    private var rapidoAhora = false
 
     // ---------- Opciones que pone el servicio ----------
 
@@ -615,6 +639,8 @@ class KeyboardView(
         animPulsos.values.forEach { it.cancel() }
         animPulsos.clear()
         pulsos.clear()
+        luces.clear()
+        ritmoDedo.clear()
         presionadas.clear()
         escritas.clear()
         puntosToque.clear()
@@ -738,6 +764,19 @@ class KeyboardView(
         }
     }
 
+    /** Prende la luz de toque de [t] en el punto donde cayó el dedo */
+    private fun encenderLuz(t: Tecla, x: Float, y: Float) {
+        if (t.rect.isEmpty || modoCursor) return
+        val r = maxOf(t.rect.width(), t.rect.height()) * 1.05f
+        val centro = (tema.borde and 0x00FFFFFF) or (0x58 shl 24)
+        val medio = (tema.borde and 0x00FFFFFF) or (0x1C shl 24)
+        luces[t] = RadialGradient(
+            x.coerceIn(t.rect.left, t.rect.right), y.coerceIn(t.rect.top, t.rect.bottom), r,
+            intArrayOf(centro, medio, centro and 0x00FFFFFF), floatArrayOf(0f, 0.45f, 1f),
+            Shader.TileMode.CLAMP,
+        )
+    }
+
     private fun animarPulso(t: Tecla, hasta: Float) {
         animPulsos.remove(t)?.cancel()
         if (hasta > 0f) {
@@ -753,7 +792,7 @@ class KeyboardView(
             interpolator = FRENO_PULSO
             addUpdateListener {
                 val v = it.animatedValue as Float
-                if (v <= 0f) pulsos.remove(t) else pulsos[t] = v
+                if (v <= 0f) { pulsos.remove(t); luces.remove(t) } else pulsos[t] = v
                 invalidarTecla(t)
             }
         }
@@ -828,6 +867,14 @@ class KeyboardView(
                 pintura.shader = t.shaderFondo
                 c.drawPath(forma, pintura)
                 pintura.shader = null
+            }
+            // Luz de toque donde cayó el dedo (se apaga junto con la tecla)
+            val luz = luces[t]
+            if (luz != null && toque > 0f && !modoCursor && !(t.tipo == Tipo.SHIFT && shift > 0)) {
+                pinturaLuz.shader = luz
+                pinturaLuz.alpha = (255f * toque).toInt().coerceIn(0, 255)
+                c.drawPath(forma, pinturaLuz)
+                pinturaLuz.shader = null
             }
             // Filo de vidrio con el color de la app (no en la tecla blanca de mayúsculas:
             // ahí el filo de color se veía como una mancha)
@@ -905,7 +952,7 @@ class KeyboardView(
                     // La letra crece con el teclado, pero sin salirse del ancho de la tecla
                     // Sin burbuja, la letra tocada crece un poquito: se siente el toque
                     val crece = if (!vistaPrevia) 1f + 0.12f * toque else 1f
-                    val tam = minOf(tx(if (minuscula) 24f else 22f), t.rect.width() * 0.76f) * crece
+                    val tam = minOf(tx(if (minuscula) 25f else 23f), t.rect.width() * 0.78f) * crece
                     texto(c, etiqueta(t), cx, if (minuscula) cy - tx(1.8f) else cy, tam, contenido)
                 }
             }
@@ -1014,8 +1061,9 @@ class KeyboardView(
         var mejor = base
         var mejorPuntaje = puntajeToque(base, x, y, p)
         // Zona donde la letra probable "crece" sin que se vea (como en iPhone)
-        val zonaX = unidad * 0.28f
-        val zonaY = altoFila * 0.24f
+        val k = if (rapidoAhora) 1.3f else 1f
+        val zonaX = unidad * 0.28f * k
+        val zonaY = altoFila * 0.24f * k
         for (f in maxOf(0, fila - 1)..minOf(filas.size - 1, fila + 1)) {
             for (t in filas[f]) {
                 if (t === base || t.letra < 0) continue
@@ -1035,7 +1083,8 @@ class KeyboardView(
         val dy = (y - t.rect.centerY() - modelo.offY(t.letra) * altoFila) / unidad
         val d2 = dx * dx + dy * dy * 0.8f
         // Distancia al centro (en anchos de tecla) contra lo probable de la letra
-        return Math.log(prob + 0.02).toFloat() * 0.45f - d2 / (2f * 0.33f * 0.33f)
+        val pesoPrediccion = if (rapidoAhora) 0.6f else 0.45f
+        return Math.log(prob + 0.02).toFloat() * pesoPrediccion - d2 / (2f * 0.33f * 0.33f)
     }
 
     private fun agregarPunto(x: Float, y: Float) {
@@ -1254,7 +1303,10 @@ class KeyboardView(
                     punteroCambio = -1
                     cambioDeslizado = false
                 }
-                val t = teclaEn(x, y) ?: return true
+                rapidoAhora = ultimaBajadaLetra > 0L && e.eventTime - ultimaBajadaLetra in 0L..140L
+                val t = teclaEn(x, y)
+                rapidoAhora = false
+                if (t == null) return true
                 // Rebote: la misma letra otra vez casi en el mismo punto en menos de 45 ms
                 // (el dedo "rebota" o roza dos veces). Nadie escribe así de rápido a propósito.
                 if (t.tipo == Tipo.LETRA) {
@@ -1265,6 +1317,8 @@ class KeyboardView(
                     ultimoToqueMs = e.eventTime
                     ultimoToqueX = x
                     ultimoToqueY = y
+                    ritmoDedo[id] = if (ultimaBajadaLetra > 0L) e.eventTime - ultimaBajadaLetra else -1L
+                    ultimaBajadaLetra = e.eventTime
                 }
                 // Escritura con dos dedos: la letra del otro dedo se escribe ya (así no se
                 // pierde el orden), pero su animación sigue hasta que ese dedo se levante
@@ -1390,7 +1444,7 @@ class KeyboardView(
                             y < t.rect.top + dp(3f) || y > t.rect.bottom - dp(3f)) continue
                         presionadas[id] = t
                         // La tecla anterior se apaga y se marca la nueva
-                        apagarSueltas(); animarPulso(t, 1f)
+                        apagarSueltas(); encenderLuz(t, x, y); animarPulso(t, 1f)
                         puntosToque[id] = floatArrayOf(x, y)
                         anticiparLetra(t, x, y)
                         programarVariantes(t, id)
@@ -1524,7 +1578,10 @@ class KeyboardView(
         // Toda tecla tocada se marca (también las letras con vista previa: la tecla se hunde e
         // ilumina debajo de la burbuja y al soltarla se apaga suave). Así cada toque se SIENTE
         // presionado, aunque escribas rapidísimo con dos dedos.
-        if (t.tipo != Tipo.UNA_MANO) animarPulso(t, 1f)
+        if (t.tipo != Tipo.UNA_MANO) {
+            encenderLuz(t, x, y)
+            animarPulso(t, 1f)
+        }
         when (t.tipo) {
             Tipo.LETRA -> {
                 puntosToque[id] = floatArrayOf(x, y)
@@ -1606,6 +1663,7 @@ class KeyboardView(
                         modelo.aprender(t.letra, (p[0] - r.centerX()) / unidad, (p[1] - r.centerY()) / altoFila)
                     }
                 }
+                acciones.ritmo(ritmoDedo.remove(id) ?: -1L)
                 acciones.texto(etiqueta(t), k?.get(0) ?: -1f, k?.get(1) ?: -1f)
                 if (shift == 1 && modo == Modo.LETRAS) shift = 0
                 if ((modo == Modo.NUMEROS || modo == Modo.SIMBOLOS) && t.texto == "'" && !soloNumeros) modo = Modo.LETRAS

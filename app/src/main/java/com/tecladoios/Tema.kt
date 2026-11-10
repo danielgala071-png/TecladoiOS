@@ -98,8 +98,8 @@ data class Tema(
                 fondoArriba = NEGRO,
                 // Grafito neutro, apenas teñido: las letras se distinguen claramente de las
                 // teclas de función (más oscuras), como en el teclado oscuro del iPhone
-                tecla = a(0x36, mezclar(BLANCO, color, 0.06f)),
-                teclaFuncion = a(0x1D, mezclar(BLANCO, color, 0.10f)),
+                tecla = a(0x3A, mezclar(BLANCO, color, 0.05f)),
+                teclaFuncion = a(0x1C, mezclar(BLANCO, color, 0.10f)),
                 // Tecla presionada: el vidrio se ilumina en gris claro con un toque de la app
                 // (antes era un bloque verde oscuro y pesado)
                 teclaPresionada = a(0x60, mezclar(BLANCO, color, 0.2f)),
@@ -120,8 +120,8 @@ data class Tema(
                 bordeBurbuja = a(0xB0, mezclar(color, BLANCO, 0.15f)),
                 desenfoque = 0,
                 // Se dibujan con opacidad propia (no dependen de la transparencia de la tecla)
-                brillo = a(0x14, BLANCO),
-                profundidad = a(0x30, NEGRO),
+                brillo = a(0x1A, BLANCO),
+                profundidad = a(0x3A, NEGRO),
                 reflejo = a(0x24, BLANCO),
                 resplandor = a(0x18, color),
             )

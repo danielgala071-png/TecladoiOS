@@ -192,12 +192,18 @@ class Diccionario(context: Context) {
      * se pueden confundir con otra palabra; se corrigen al instante, sin calcular nada.
      */
     @Volatile private var tipeos: Map<String, String> = emptyMap()
+    /**
+     * Los mismos errores de fábrica ordenados (para saber rápido si lo que vas escribiendo es el
+     * comienzo de un dedazo conocido: entonces es UNA palabra mal tocada y no se separa)
+     */
+    @Volatile private var tipeosOrden: Array<String> = emptyArray()
 
     private fun leerTipeos(c: Context): Map<String, String> {
-        val m = HashMap<String, String>(220_000)
+        val m = HashMap<String, String>(340_000)
         // Muchos errores llevan a la misma palabra: se guarda una sola copia de cada una
         // (con 160 mil errores eso ahorra varios megas de memoria)
         val unicas = HashMap<String, String>(30_000)
+        val claves = ArrayList<String>(260_000)
         try {
             c.assets.open("errores.txt").bufferedReader().useLines { lineas ->
                 for (linea in lineas) {
@@ -205,11 +211,34 @@ class Diccionario(context: Context) {
                     val i = linea.indexOf(':')
                     if (i <= 0 || i >= linea.length - 1) continue
                     val d = linea.substring(i + 1).trim().replace('_', ' ')
-                    m[linea.substring(0, i)] = unicas.getOrPut(d) { d }
+                    val k = linea.substring(0, i)
+                    m[k] = unicas.getOrPut(d) { d }
+                    claves.add(k)
                 }
             }
         } catch (_: Exception) { }
+        try {
+            val orden = claves.toTypedArray()
+            // El archivo ya viene ordenado; si alguien lo editó a mano, se ordena aquí
+            var ordenado = true
+            for (i in 1 until orden.size) if (orden[i - 1] > orden[i]) { ordenado = false; break }
+            if (!ordenado) orden.sort()
+            tipeosOrden = orden
+        } catch (_: Throwable) { }
         return m
+    }
+
+    /** ¿[np] es el comienzo de un dedazo de fábrica? ("connsec" → "connsecuencia") */
+    private fun comienzoDeTipeo(np: String): Boolean {
+        val t = tipeosOrden
+        if (t.isEmpty() || np.length < 3) return false
+        var a = 0
+        var b = t.size
+        while (a < b) {
+            val m = (a + b) ushr 1
+            if (t[m] < np) a = m + 1 else b = m
+        }
+        return a < t.size && t[a].startsWith(np)
     }
 
     /**
@@ -633,8 +662,13 @@ class Diccionario(context: Context) {
                 v = minOf(v, antes[j] + extra)
                 // Letra que faltó (letra doble o "h" muda cuestan menos: "aroz" → "arroz", "ola" → "hola")
                 v = minOf(v, actual[j - 1] + if (cb == 'h') 0.3f else if (j >= 2 && b[j - 2] == cb) 0.5f else 1f)
-                // Dos letras invertidas: "qeu" → "que"
-                if (i > 1 && j > 1 && ca == b[j - 2] && a[i - 2] == cb) v = minOf(v, antes2[j - 2] + 0.6f)
+                // Dos letras invertidas: "qeu" → "que". Si los dos pulgares tocaron casi a la vez
+                // (menos de 70 ms entre uno y otro), el orden se cruza muy fácil: cuesta la mitad
+                if (i > 1 && j > 1 && ca == b[j - 2] && a[i - 2] == cb) {
+                    val t = tq?.get(i - 1)
+                    val alaVez = t != null && t.size > 3 && t[3] >= 0f && t[3] < 70f
+                    v = minOf(v, antes2[j - 2] + if (alaVez) 0.3f else 0.6f)
+                }
                 actual[j] = v
                 if (v < minimo) minimo = v
             }
@@ -1230,6 +1264,10 @@ class Diccionario(context: Context) {
                     formaA = p.substring(0, k)
                 }
                 if (bloqueada(formaA) || lisuraAjena(formaA)) continue
+                // Letra de más o rebote: sin esa letra todo junto sigue siendo el comienzo de una
+                // palabra ("connsecu", "conmsecu" → "consecu…"). Es un dedazo dentro de UNA
+                // palabra, no un espacio fallado (al dar espacio la autocorrección decide)
+                if (conSep == 1 && esComienzo(ix, np.substring(0, k) + np.substring(k + 1))) continue
                 // "ve" + n + "tamas": si la primera parte con esa letra sigue siendo el comienzo
                 // de una palabra ("ven…" → "ventanas"), lo más probable es un error de tipeo
                 // dentro de una sola palabra, no un espacio fallado
@@ -1260,6 +1298,10 @@ class Diccionario(context: Context) {
                 var s = minOf(faL, fb) + (faL + fb) / 4f
                 if (conSep == 0) s -= 40f
                 s += ctx * 250f
+                // "con", "en", "sin", "para", "sobre"... son comienzos de miles de palabras
+                // (consecuencia, entonces, sintonía, paracaídas, sobretodo): con ellas solo se separa
+                // si lo aprendido o el diccionario dicen que esas dos palabras suelen ir juntas
+                if (na in PREFIJOS_PALABRA && ctx < 0.2f) s -= 170f
                 if (previa.isNotEmpty()) s += contexto(previa, formaA, previa2) * 120f
                 // Con una letra en lugar del espacio se pide más seguridad
                 if (conSep == 1) s -= 60f
@@ -1358,6 +1400,8 @@ class Diccionario(context: Context) {
         for (w in INGLES) if (w.startsWith(np)) return true
         for (f in FORMAS.keys) if (f.startsWith(np)) return true
         for (e in ERRORES_COMUNES.keys) if (e.startsWith(np)) return true
+        // Lo que vas escribiendo es el comienzo de un dedazo conocido de una sola palabra
+        if (comienzoDeTipeo(np)) return true
         return false
     }
 
@@ -1417,20 +1461,29 @@ class Diccionario(context: Context) {
     private fun pareceErrorDeTipeo(ix: Indice, np: String): Boolean {
         val n = np.length
         var vistas = 0
-        for (ch in iniciales(np)) {
-            // Si llegó otra letra, ante la duda se dice que sí (y no se separa)
-            if (cortado()) return true
-            recorrer(ix, ch, n - 1, MAX_LARGO) { i ->
-                if ((++vistas and 255) == 0 && cortado()) return true
-                if (i <= RARA) {
-                    val w = ix.normal[i]
-                    var d = distancia(np, w, n, 1f)
-                    if (d > 0.7f) d = minOf(d, distancia(np, w, n - 1, 1f), distancia(np, w, n + 1, 1f))
-                    if (d <= 0.7f || (d <= 1f && i <= COMUN)) return true
+        // Se compara SIN la posición de los dedos: un toque en el centro de la tecla equivocada
+        // "inflaba" la distancia, la palabra a medias ya no parecía un dedazo y se separaba mal
+        // ("consecuencia" terminaba como "con secuencia")
+        val guardado = toq
+        toq = null
+        try {
+            for (ch in iniciales(np)) {
+                // Si llegó otra letra, ante la duda se dice que sí (y no se separa)
+                if (cortado()) return true
+                recorrer(ix, ch, n - 1, MAX_LARGO) { i ->
+                    if ((++vistas and 255) == 0 && cortado()) return true
+                    if (i <= RARA) {
+                        val w = ix.normal[i]
+                        var d = distancia(np, w, n, 1.2f)
+                        if (d > 0.8f) d = minOf(d, distancia(np, w, n - 1, 1.2f), distancia(np, w, n + 1, 1.2f))
+                        if (d <= 0.8f || (d <= 1.1f && i <= COMUN)) return true
+                    }
                 }
             }
+            return false
+        } finally {
+            toq = guardado
         }
-        return false
     }
 
     /**
@@ -1439,15 +1492,26 @@ class Diccionario(context: Context) {
      * a una palabra al menos tanto como [segunda] ("en tones" → "entones" ≈ "entonces").
      */
     @Synchronized
-    fun reunirSeparacion(segunda: String, unida: String): Boolean {
+    fun reunirSeparacion(segunda: String, unida: String, primera: String = ""): Boolean {
         val ix = indice ?: return false
         if (segunda.length < 2 || unida.length > MAX_LARGO) return false
         toq = null
         sinCorte = true
         return try {
             when {
-                conoce(ix, segunda) -> false
-                conoce(ix, unida) -> true
+                // Todo junto es una palabra ("con secuencia" → "consecuencia"): manda la palabra,
+                // salvo que esas dos palabras vayan juntas de verdad (lo tuyo o el diccionario)
+                conoce(ix, unida) -> !(conoce(ix, segunda) && vanJuntas(primera, segunda))
+                conoce(ix, segunda) -> {
+                    // La segunda es palabra, pero todo junto es casi seguro UNA palabra común con
+                    // un dedazo ("conn secuencia" → "consecuencia"): se junta y la corrige
+                    if (primera.isNotEmpty() && vanJuntas(primera, segunda)) false
+                    else {
+                        val nu = normal(unida)
+                        val cu = masParecida(ix, nu, minOf(0.75f, limitePara(nu.length)), "", "", maxRango = COMUN)
+                        cu != null && distancia(nu, normal(cu), normal(cu).length, 3f) <= 0.75f
+                    }
+                }
                 else -> {
                     val nu = normal(unida)
                     val ns = normal(segunda)
@@ -1464,6 +1528,74 @@ class Diccionario(context: Context) {
         } catch (e: Throwable) {
             Registro.anotar("reunir", e); false
         } finally { sinCorte = false }
+    }
+
+    /** ¿Sueles escribir [b] después de [a]? (lo tuyo, el cerebro o el diccionario) */
+    private fun vanJuntas(a: String, b: String): Boolean {
+        if (a.isEmpty() || b.isEmpty()) return false
+        val la = a.lowercase()
+        val lb = b.lowercase()
+        if (paresFijos(la)?.contains(lb) == true) return true
+        if ((pares[la]?.get(lb) ?: 0) >= 2) return true
+        return cerebro.prob(la, "", lb, app) > 0.15f
+    }
+
+    // ---------- Palabra partida por un espacio ----------
+
+    /**
+     * Se te fue un espacio en medio de una palabra: "consecu encia" → "consecuencia",
+     * "mi ercoles" → "miércoles". Solo si la segunda parte NO es una palabra (ni tuya), todo
+     * junto es una palabra común y la segunda parte no es simplemente otra palabra con un dedazo.
+     * [original]: cómo escribiste la primera antes de que la autocorrección la cambiara.
+     * Devuelve la palabra unida o null.
+     */
+    @Synchronized
+    fun unirPartida(previa: String, palabra: String, original: String? = null): String? {
+        val ix = indice ?: return null
+        if (palabra.length < 2 || palabra.length > 20 || !palabra.all { it.isLetter() }) return null
+        if (palabra[0].isUpperCase()) return null
+        val lp = palabra.lowercase()
+        if (lp in INGLES || expresiva(lp) || conoce(ix, palabra)) return null
+        // Si la segunda parte es un dedazo conocido de otra palabra, eso lo arregla la autocorrección
+        if (ERRORES_COMUNES.containsKey(lp) || tipeos.containsKey(normal(lp)) || FORMAS.containsKey(normal(lp))) return null
+        toq = null
+        sinCorte = true
+        try {
+            val opciones = if (original != null && original != previa) listOf(original, previa) else listOf(previa)
+            for (a in opciones) {
+                if (a.length < 2 || a.length > 20 || !a.all { it.isLetter() }) continue
+                val unida = a + lp
+                if (unida.length < 6 || unida.length > MAX_LARGO) continue
+                if (rechazos.isNotEmpty() && (a.lowercase() + " " + lp + ">+") in rechazos) continue
+                var r = rango(ix, unida)
+                if (r < 0) r = mejorPorNormal(ix, normal(unida))
+                if (r < 0 || r > COMUN) continue
+                val forma = ix.palabras[r]
+                if (bloqueada(forma) || lisuraAjena(forma)) continue
+                // ¿La segunda parte es otra palabra común con un dedazo? Entonces no se junta
+                val ns = normal(lp)
+                if (ns.length >= 3) {
+                    val alt = masParecida(ix, ns, minOf(0.65f, limitePara(ns.length)), a, "", maxRango = 6000)
+                    if (alt != null && distancia(ns, normal(alt), normal(alt).length, 3f) <= 0.45f) continue
+                }
+                return igualarMayus(forma, a)
+            }
+            return null
+        } catch (e: Throwable) {
+            Registro.anotar("unir", e)
+            return null
+        } finally {
+            sinCorte = false
+        }
+    }
+
+    /** Deshiciste una unión ("consecu encia" → "consecuencia"): esa no se vuelve a hacer */
+    @Synchronized
+    fun rechazarUnion(original: String) {
+        val o = original.trim().lowercase()
+        if (pausado || !o.contains(' ') || o.length > 60) return
+        rechazos.add("$o>+")
+        cambios = true
     }
 
     /** Separaciones que deshiciste: lo que empieza así ya no se separa */
@@ -2095,6 +2227,14 @@ class Diccionario(context: Context) {
                 "isimas", "mente", "ucho", "ucha", "on", "ona", "ones", "onas",
             )
         }
+        /**
+         * Palabras que también son el comienzo de muchísimas otras ("con" → consecuencia,
+         * "en" → entonces, "sin" → sintonía): separar después de ellas pide más seguridad
+         */
+        private val PREFIJOS_PALABRA = hashSetOf(
+            "con", "en", "sin", "para", "sobre", "contra", "entre", "ante", "bien", "mal",
+            "tras", "bajo", "medio", "media", "auto", "super", "pre", "des", "sub", "pro", "inter",
+        )
         /** Palabras cortitas de enlace que pueden quedar pegadas por fallar el espacio */
         private val ENLACE = hashSetOf(
             "a", "y", "o", "e", "u", "ya", "yo", "no", "ni", "tu", "te", "me", "se", "mi", "ti",

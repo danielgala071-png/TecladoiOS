@@ -91,6 +91,10 @@ TIPO = {
     "salteada": 0.22,   # escribiendo a dos dedos, una letra se adelanta dos lugares ("prouqe")
     "ñ": 1.1,           # la ñ escrita como n ("manana" → "mañana"): muy común
     "h_medio": 0.55,    # h muda que se pierde en medio ("aora", "proibido")
+    "stes": 0.9,        # pretérito con s de más, muy común al hablar ("dijistes", "fuistes")
+    "pulgar_cruzado": 0.35,  # a dos dedos: la letra de la otra mano sale antes ("tmabien")
+    "vocal_comida": 0.6,     # se come una vocal entre dos consonantes al ir rápido ("nesctio")
+    "fin_vecina": 0.45,      # al soltar rápido la última letra sale corrida ("holz")
 }
 
 OIDO = [
@@ -100,7 +104,15 @@ OIDO = [
     ("cc", "c"), ("rr", "r"), ("ll", "l"), ("gue", "ge"), ("gui", "gi"), ("güe", "gue"),
     ("mb", "nb"), ("mp", "np"), ("x", "cs"), ("cion", "sion"), ("sion", "cion"),
     ("yo", "llo"), ("lla", "ya"), ("ue", "we"), ("hue", "we"), ("hue", "gue"),
+    # Más errores de oído y de apuro, fáciles de reconocer
+    ("que", "qe"), ("qui", "qi"), ("sc", "s"), ("xc", "c"), ("xc", "sc"), ("ps", "s"),
+    ("ns", "s"), ("bs", "s"), ("mn", "n"), ("pt", "t"), ("ct", "t"), ("cc", "cs"),
+    ("mb", "nv"), ("nv", "mb"), ("ll", "lly"), ("gu", "g"), ("ex", "es"), ("aho", "ao"),
+    ("cion", "cio"), ("mente", "mete"), ("ado", "dao"), ("ido", "dio"),
 ]
+
+# Letras de cada mano al escribir con dos pulgares (mitad izquierda / derecha del teclado)
+IZQUIERDA = set("qwertasdfgzxcv")
 
 
 def errores_de(w):
@@ -158,6 +170,23 @@ def errores_de(w):
     # "estoi", "voi", "hoi": la y del final escrita como i
     if n >= 3 and w.endswith("y") and w[-2] in "aeiou":
         poner(w[:-1] + "i", TIPO["oido"] * 1.2)
+    # "dijistes", "fuistes", "hicistes": la s de más del pretérito (tú)
+    if n >= 4 and (w.endswith("aste") or w.endswith("iste")):
+        poner(w + "s", TIPO["stes"])
+    # A dos pulgares: cuando dos letras seguidas son de manos distintas, la segunda mano a
+    # veces llega primero ("tmabien" → "también"); se mira también saltando una letra
+    for i in range(n - 1):
+        a, b = w[i], w[i + 1]
+        if a != b and (a in IZQUIERDA) != (b in IZQUIERDA):
+            poner(w[:i] + b + a + w[i + 2:], TIPO["pulgar_cruzado"] * (0.5 if i == 0 else 1.0))
+    # Vocal que no salió entre dos consonantes (la tecla se soltó muy rápido)
+    for i in range(1, n - 1):
+        if w[i] in "aeiou" and w[i - 1] not in "aeiou" and w[i + 1] not in "aeiou" and n >= 5:
+            poner(w[:i] + w[i + 1:], TIPO["vocal_comida"])
+    # La última letra salió corrida a la tecla vecina
+    if n >= 4:
+        for v, p in vecinas(w[-1]):
+            poner(w[:-1] + v, TIPO["fin_vecina"] * p)
     return r
 
 
@@ -173,7 +202,7 @@ def leer_palabras(ruta):
 
 def main():
     ruta_dic, ruta_kt, ruta_err = sys.argv[1], sys.argv[2], sys.argv[3]
-    maximo = int(sys.argv[4]) if len(sys.argv) > 4 else 160000
+    maximo = int(sys.argv[4]) if len(sys.argv) > 4 else 330000
 
     codigo = open(ruta_kt, encoding="utf-8").read()
     # El orden es el mismo que usa el teclado: primero lo más usado en el chat (FRECUENCIA del
@@ -231,16 +260,17 @@ def main():
         frec = 1.0 / (i + 40.0)
         errs = errores_de(np_)
         # Dos errores en las palabras largas más usadas (letra que falta + otra cosa)
-        if len(np_) >= 6 and i < 15000:
+        if len(np_) >= 6 and i < 20000:
+            umbral = 0.45 if i < 6000 else 0.7
             for v, pv in list(errs.items()):
-                if pv < 0.7:
+                if pv < umbral:
                     continue
                 for v2, pv2 in errores_de(v).items():
-                    if v2 != np_ and pv2 >= 0.7 and len(v2) >= len(np_) - 2:
+                    if v2 != np_ and pv2 >= umbral and len(v2) >= len(np_) - 2:
                         errs[v2] = max(errs.get(v2, 0.0), TIPO["doble"] * pv * pv2)
         usadas += 1
         # Cupo por palabra: así ninguna palabra se lleva todos los errores
-        cupo_palabra = 30 if i < 600 else 14 if i < 5000 else 7
+        cupo_palabra = 40 if i < 600 else 20 if i < 5000 else 10
         mejores = sorted(errs.items(), key=lambda x: -x[1])[:cupo_palabra * 3]
         for v, pv in mejores:
             candidatos[v].append((frec * pv, p))
@@ -280,7 +310,7 @@ def main():
         if len(nuevos) >= cupo:
             break
         r = rango[d]
-        tope = 30 if r < 600 else 14 if r < 5000 else 7
+        tope = 40 if r < 600 else 20 if r < 5000 else 10
         if por_destino[d] >= tope:
             continue
         por_destino[d] += 1
