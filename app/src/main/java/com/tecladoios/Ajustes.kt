@@ -76,7 +76,7 @@ object Ajustes {
     @Suppress("UNUSED_PARAMETER") fun aceptarDeslizando(c: Context) = false // quitado
 
     /** Filas de emojis en el panel: 3 (grandes), 4 (normal) o 5 (más emojis a la vista) */
-    fun filasEmoji(c: Context) = prefs(c).getInt("emoji_filas", 4).coerceIn(3, 5)
+    fun filasEmoji(c: Context) = prefs(c).getInt("emoji_filas", 5).coerceIn(3, 5)
 
     /** Sustitución de texto: (función rápida, frase) */
     fun atajos(c: Context): MutableList<Pair<String, String>> {

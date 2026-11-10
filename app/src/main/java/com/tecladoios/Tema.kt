@@ -88,9 +88,9 @@ data class Tema(
             // Filo de las teclas elegido en Ajustes (apagado, sutil, normal o vivo)
             val alfaBorde = when (Ajustes.bordeTeclas(context)) {
                 "apagado" -> 0x00
-                "sutil" -> 0x40
+                "sutil" -> 0x28
                 "vivo" -> 0xC0
-                else -> 0x62
+                else -> 0x3C
             }
             return Tema(
                 oscuro = true,
@@ -112,7 +112,7 @@ data class Tema(
                 azul = color,
                 // Filo fino y sedoso: el color de la app con algo de luz, sin que "grite"
                 borde = a(alfaBorde, mezclar(color, BLANCO, 0.22f)),
-                bordePanel = a(0x8C, color),
+                bordePanel = a(0x55, color),
                 barra = a(0xF0, 0x0B0B0D),
                 enterAccion = a(0xE6, color),
                 textoAcento = textoSobre(color),

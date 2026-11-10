@@ -395,8 +395,11 @@ class BarraCategorias(
         CATEGORIAS.forEachIndexed { i, cat ->
             val cx = ancho * i + ancho / 2f
             if (i == marcado) {
-                circulo.color = (tema.teclaPresionada and 0x00FFFFFF) or 0x4D000000
-                c.drawCircle(cx, cy, minOf(ancho, height.toFloat()) * 0.42f, circulo)
+                // Categoría marcada: cápsula suave y fina (antes un círculo grande)
+                circulo.color = (tema.teclaPresionada and 0x00FFFFFF) or 0x3A000000
+                val rx = minOf(ancho * 0.46f, height * 0.5f)
+                val ry = height * 0.36f
+                c.drawRoundRect(cx - rx, cy - ry, cx + rx, cy + ry, ry, ry, circulo)
             }
             gris.alpha = if (i == marcado) 255 else 150
             if (cat.icono == "&%") {
@@ -442,9 +445,9 @@ class EmojiGrid(
     private val d = Medidas.escala(context)
     /** Filas elegidas en Ajustes: 3 (emojis grandes), 4 (normal) o 5 (más emojis a la vista) */
     private val filas = Ajustes.filasEmoji(context)
-    private val altoTitulo = 22f * d
+    private val altoTitulo = 20f * d
     private val margen = 10f * d
-    private val separacion = 12f * d
+    private val separacion = 8f * d
     /** Ancho de cada columna: se ven unas 7 columnas y media (la media invita a deslizar) */
     private val anchoCelda: Float
     private var altoCelda = 0f
@@ -534,7 +537,7 @@ class EmojiGrid(
         val m = resources.displayMetrics
         // Con menos filas cada emoji es más grande, así que caben menos columnas (y al revés)
         val extra = (filas - 4) * 1f
-        val columnasVisibles = (if (Medidas.horizontal(context)) 13.5f else 7.5f) + extra
+        val columnasVisibles = (if (Medidas.horizontal(context)) 14.5f else 8.5f) + extra
         anchoCelda = (m.widthPixels - margen) / columnasVisibles
     }
 
@@ -553,7 +556,7 @@ class EmojiGrid(
         altoCelda = ((alto - altoTitulo - 4f * d) / filas).coerceAtLeast(1f)
         // Cada fuente de emojis dibuja distinto a igual tamaño de letra: se mide el emoji real
         // y se ajusta para que llene ~82% de la celda (antes quedaban chiquitos)
-        val objetivo = minOf(altoCelda * 0.82f, anchoCelda * 0.78f)
+        val objetivo = minOf(altoCelda * 0.86f, anchoCelda * 0.84f)
         pintura.textSize = 100f
         val medido = pintura.measureText("\uD83D\uDE00")
         tamEmoji = if (medido > 1f) 100f * objetivo / medido else objetivo * 0.85f

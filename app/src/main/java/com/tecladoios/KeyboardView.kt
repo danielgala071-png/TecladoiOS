@@ -130,10 +130,10 @@ class KeyboardView(
     private val margenAbajo = dp(6f)
     // Proporciones del teclado de iOS 26: huecos de ~6 de lado y ~11 entre filas
     // Huecos un poquito más finos: las teclas se ven más grandes y es más fácil atinarles
-    private val sepH = dp(2.6f)
-    private val sepV = dp(5f)
+    private val sepH = dp(2.2f)
+    private val sepV = dp(4.4f)
     // Esquinas como las teclas de iOS 26 (redondas pero sin parecer pastillas)
-    private val radio = dp(8.5f)
+    private val radio = dp(7.6f)
     private val formaPulso = Path()
     private val rectPulso = RectF()
 
@@ -386,7 +386,7 @@ class KeyboardView(
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
-        strokeWidth = dp(6f)
+        strokeWidth = dp(3.5f)
     }
 
     private val manejador = Handler(Looper.getMainLooper())
@@ -759,7 +759,7 @@ class KeyboardView(
             pathTrazo.reset()
             pathTrazo.moveTo(trazo[0][0], trazo[0][1])
             for (k in 1 until trazo.size) pathTrazo.lineTo(trazo[k][0], trazo[k][1])
-            pinturaTrazo.color = (tema.azul and 0x00FFFFFF) or (0xB4 shl 24)
+            pinturaTrazo.color = (tema.azul and 0x00FFFFFF) or (0x6E shl 24)
             canvas.drawPath(pathTrazo, pinturaTrazo)
         }
     }
@@ -768,8 +768,8 @@ class KeyboardView(
     private fun encenderLuz(t: Tecla, x: Float, y: Float) {
         if (t.rect.isEmpty || modoCursor) return
         val r = maxOf(t.rect.width(), t.rect.height()) * 1.05f
-        val centro = (tema.borde and 0x00FFFFFF) or (0x58 shl 24)
-        val medio = (tema.borde and 0x00FFFFFF) or (0x1C shl 24)
+        val centro = (tema.borde and 0x00FFFFFF) or (0x40 shl 24)
+        val medio = (tema.borde and 0x00FFFFFF) or (0x14 shl 24)
         luces[t] = RadialGradient(
             x.coerceIn(t.rect.left, t.rect.right), y.coerceIn(t.rect.top, t.rect.bottom), r,
             intArrayOf(centro, medio, centro and 0x00FFFFFF), floatArrayOf(0f, 0.45f, 1f),
@@ -840,7 +840,7 @@ class KeyboardView(
         val toque = if (presionada) 1f else f
         // Al presionar, la tecla apenas se hunde (no crece ni brilla)
         // Se hunde un poco más que antes: el toque se nota "con peso"
-        val r = if (f > 0f) rectPulso.apply { set(t.rect); inset(dp(1.7f) * f, dp(1.4f) * f) } else t.rect
+        val r = if (f > 0f) rectPulso.apply { set(t.rect); inset(dp(1.0f) * f, dp(0.8f) * f) } else t.rect
         val forma = if (f > 0f) {
             Formas.suave(formaPulso, r.left, r.top, r.right, r.bottom, radio, 0f, t.curvaDer, t.curvaIzq)
             formaPulso

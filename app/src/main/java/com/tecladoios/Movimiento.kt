@@ -18,7 +18,7 @@ object Movimiento {
     val REBOTE = PathInterpolator(0.34f, 1.36f, 0.64f, 1f)
 
     // Duraciones en milisegundos
-    const val TOQUE_SALIDA = 260L
+    const val TOQUE_SALIDA = 170L
     const val LETRAS = 170L
     const val LETRAS_DESLIZAR = 260L
     const val BARRA_APARECE = 200L
