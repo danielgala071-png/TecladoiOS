@@ -1244,7 +1244,7 @@ class TecladoService : InputMethodService(),
         // Empate entre dos palabras (la autocorrección no se animó a elegir): las dos van
         // juntas al centro y a la derecha de la barra, para elegir de un toque
         if (corr == null && op.revisar) {
-            val duda = try { diccionario.opcionesDeDuda(p) } catch (_: Throwable) { emptyList() }
+            val duda: List<String> = try { diccionario.opcionesDeDuda(p) } catch (_: Throwable) { emptyList() }
             if (duda.isNotEmpty()) otras = duda + otras.filter { o -> duda.none { it.equals(o, ignoreCase = true) } }
         }
         // Error difícil de ver: lo escrito existe, pero otra palabra que suena igual encaja

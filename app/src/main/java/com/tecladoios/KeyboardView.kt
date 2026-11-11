@@ -1295,17 +1295,19 @@ class KeyboardView(
             return false
         }
         // Buscar el salto entre todas las lecturas de este aviso (las agrupadas y la última)
-        var px = antes[0]
-        var py = antes[1]
-        var pt = antesMs
+        var px: Float = antes[0]
+        var py: Float = antes[1]
+        var pt: Long = antesMs
         var salto = false
         val limite = unidad * 1.5f
         val n = e.historySize
         for (h in 0..n) {
-            val hx = if (h < n) e.getHistoricalX(i, h) else x
-            val hy = if (h < n) e.getHistoricalY(i, h) else y
-            val ht = if (h < n) e.getHistoricalEventTime(h) else e.eventTime
-            if (!salto && ht - pt in 0L..35L && Math.hypot((hx - px).toDouble(), (hy - py).toDouble()) > limite) salto = true
+            val hx: Float = if (h < n) e.getHistoricalX(i, h) else x
+            val hy: Float = if (h < n) e.getHistoricalY(i, h) else y
+            val ht: Long = if (h < n) e.getHistoricalEventTime(h) else e.eventTime
+            val dt: Long = ht - pt
+            val dist: Double = Math.hypot((hx - px).toDouble(), (hy - py).toDouble())
+            if (!salto && dt >= 0L && dt <= 35L && dist > limite.toDouble()) salto = true
             px = hx; py = hy; pt = ht
         }
         antes[0] = x
