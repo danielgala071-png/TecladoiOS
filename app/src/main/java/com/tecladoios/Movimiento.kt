@@ -18,10 +18,12 @@ object Movimiento {
     val REBOTE = PathInterpolator(0.34f, 1.36f, 0.64f, 1f)
 
     // Duraciones en milisegundos
-    const val TOQUE_SALIDA = 170L
-    const val LETRAS = 170L
-    const val LETRAS_DESLIZAR = 260L
-    const val BARRA_APARECE = 200L
-    const val BARRA_SE_VA = 160L
-    const val CAMBIO = 260L
+    // Un poco más largas y con el mismo frenado suave: todo se siente más fluido, sin
+    // hacer esperar al dedo (al presionar la tecla se marca al instante; solo la salida dura)
+    const val TOQUE_SALIDA = 210L
+    const val LETRAS = 190L
+    const val LETRAS_DESLIZAR = 280L
+    const val BARRA_APARECE = 240L
+    const val BARRA_SE_VA = 180L
+    const val CAMBIO = 280L
 }

@@ -75,9 +75,9 @@ class Panel(context: Context) : LinearLayout(context) {
         // Primero el halo (ancho y tenue: la mitad de afuera queda recortada, se ve solo por dentro)
         if (Color.alpha(resplandor) > 0) {
             pintura.color = resplandor
-            pintura.strokeWidth = grosor * 6f
+            pintura.strokeWidth = grosor * 8f
             canvas.drawPath(borde, pintura)
-            pintura.strokeWidth = grosor * 3f
+            pintura.strokeWidth = grosor * 4f
             canvas.drawPath(borde, pintura)
         }
         pintura.color = colorBorde

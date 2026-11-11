@@ -88,9 +88,9 @@ data class Tema(
             // Filo de las teclas elegido en Ajustes (apagado, sutil, normal o vivo)
             val alfaBorde = when (Ajustes.bordeTeclas(context)) {
                 "apagado" -> 0x00
-                "sutil" -> 0x28
-                "vivo" -> 0xC0
-                else -> 0x3C
+                "sutil" -> 0x22
+                "vivo" -> 0xB0
+                else -> 0x36
             }
             return Tema(
                 oscuro = true,

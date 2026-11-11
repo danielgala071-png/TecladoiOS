@@ -8,6 +8,8 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Shader
+import android.graphics.LinearGradient
 import android.graphics.Path
 import android.graphics.RectF
 import android.os.Handler
@@ -126,7 +128,8 @@ class SuggestionBar(
     private val pintura = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pinturaBorde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = maxOf(1f, 1.1f * d)
+        // Filo fino (igual que el del teclado: son una sola pieza)
+        strokeWidth = maxOf(1f, 0.7f * d)
     }
 
     // Forma de la barra: esquinas curvas arriba, recta abajo (pegada al teclado)
@@ -413,9 +416,9 @@ class SuggestionBar(
         // Halo suave del color de la app por dentro del filo (igual que en el teclado)
         val grosorFilo = pinturaBorde.strokeWidth
         pinturaBorde.color = tema.resplandor
-        pinturaBorde.strokeWidth = grosorFilo * 6f
+        pinturaBorde.strokeWidth = grosorFilo * 8f
         c.drawPath(filo, pinturaBorde)
-        pinturaBorde.strokeWidth = grosorFilo * 3f
+        pinturaBorde.strokeWidth = grosorFilo * 4f
         c.drawPath(filo, pinturaBorde)
         pinturaBorde.strokeWidth = grosorFilo
         pinturaBorde.color = tema.bordePanel
@@ -503,17 +506,36 @@ class SuggestionBar(
             dibujarCasilla(c, i, s, x0, ancho)
             if (capa >= 0) c.restoreToCount(capa)
         }
-        // Separadores finos entre las casillas, como en iPhone: no se dibujan junto a una
-        // cápsula (la corrección resaltada o la que estás tocando), así la cápsula se ve limpia
-        pintura.color = (tema.textoSecundario and 0x00FFFFFF) or 0x3D000000
-        pintura.strokeWidth = maxOf(1f, d * 0.5f)
+        // Separadores finos entre las casillas, como en iPhone: se desvanecen en las puntas
+        // (no son una raya dura) y no se dibujan junto a una cápsula (la corrección resaltada
+        // o la que estás tocando), así la cápsula se ve limpia. Con la barra vacía quedan
+        // apenas marcados: la barra nunca se ve como un hueco negro.
+        val vacia = items.all { it == null }
         fun conCapsula(k: Int) = k == presionado || (k == soltado && brilloSoltado > 0f) || items[k]?.destacada == true
+        val arriba = height * 0.3f
+        val abajo = height * 0.62f
+        if (separador == null || separadorAlto != height) {
+            val col = tema.textoSecundario and 0x00FFFFFF
+            separador = LinearGradient(0f, arriba, 0f, abajo,
+                intArrayOf(col, col or 0x55000000, col), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+            separadorAlto = height
+        }
+        pintura.shader = separador
+        pintura.strokeWidth = maxOf(1f, d * 0.5f)
+        pintura.alpha = if (vacia) 110 else 255
         for (i in 1 until 3) {
-            if (items[i - 1] != null && items[i] != null && !conCapsula(i - 1) && !conCapsula(i)) {
-                c.drawLine(ancho * i, height * 0.32f, ancho * i, height * 0.6f, pintura)
+            val ambos = items[i - 1] != null && items[i] != null
+            if ((ambos || vacia) && !conCapsula(i - 1) && !conCapsula(i)) {
+                c.drawLine(ancho * i, arriba, ancho * i, abajo, pintura)
             }
         }
+        pintura.shader = null
+        pintura.alpha = 255
     }
+
+    /** Degradado de los separadores (se arma una vez por alto de la barra) */
+    private var separador: LinearGradient? = null
+    private var separadorAlto = -1
 
     // La cápsula de la sugerencia que soltaste se apaga suave
     private var soltado = -1

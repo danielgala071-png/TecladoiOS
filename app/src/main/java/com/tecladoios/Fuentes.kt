@@ -35,6 +35,11 @@ object Fuentes {
 
     fun aplicar(p: Paint, peso: Int = 400) {
         p.typeface = tipo(peso)
+        // Letras más nítidas: posición por subpíxel (los bordes de cada letra quedan finos y
+        // parejos en vez de saltar al píxel más cercano) y sin el ajuste grueso del sistema
+        p.isSubpixelText = true
+        p.isLinearText = false
+        p.hinting = Paint.HINTING_OFF
     }
 
     fun aplicar(t: TextView, peso: Int = 400) {

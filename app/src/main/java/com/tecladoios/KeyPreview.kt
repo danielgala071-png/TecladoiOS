@@ -145,7 +145,7 @@ class KeyPreviewOverlay(private val anchor: View) {
         private val sombra = Paint(Paint.ANTI_ALIAS_FLAG)
         private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = maxOf(1f, 1f * d)
+            strokeWidth = maxOf(0.8f, 0.6f * d)
         }
         /** Colores calculados una sola vez por tema (antes se armaban degradados en cada cuadro) */
         private var temaColores: Tema? = null

@@ -133,7 +133,8 @@ class KeyboardView(
     private val sepH = dp(2.2f)
     private val sepV = dp(4.4f)
     // Esquinas como las teclas de iOS 26 (redondas pero sin parecer pastillas)
-    private val radio = dp(7.6f)
+    // Un poco más redondas: el teclado se ve más suave
+    private val radio = dp(8.4f)
     private val formaPulso = Path()
     private val rectPulso = RectF()
 
@@ -339,7 +340,8 @@ class KeyboardView(
     private val pintura = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pinturaBorde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = maxOf(1f, dp(0.6f))
+        // Línea de cada tecla más delgada: un filo fino que se nota sin endurecer el teclado
+        strokeWidth = maxOf(0.8f, dp(0.38f))
     }
     private val pinturaTexto = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
@@ -490,9 +492,10 @@ class KeyboardView(
         // tenue al medio y un poco más vivo abajo (como el borde de un vidrio grueso)
         // Filo parejo en toda la tecla: un poco más vivo arriba (donde "pega la luz") y más
         // tenue abajo. Antes iba en diagonal y la esquina de arriba a la izquierda se veía manchada.
+        // Se apaga más parejo hacia abajo: el filo se ve suave, sin un corte marcado
         t.shaderBorde = LinearGradient(0f, r.top, 0f, r.bottom,
-            intArrayOf(tema.borde, conAlfa(tema.borde, 0.45f), conAlfa(tema.borde, 0.12f)),
-            floatArrayOf(0f, 0.32f, 1f), Shader.TileMode.CLAMP)
+            intArrayOf(conAlfa(tema.borde, 0.9f), conAlfa(tema.borde, 0.5f), conAlfa(tema.borde, 0.16f)),
+            floatArrayOf(0f, 0.4f, 1f), Shader.TileMode.CLAMP)
         // Reflejo arriba de la tecla: le da el efecto translúcido de vidrio
         t.shaderBrillo = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.5f,
             tema.brillo, tema.brillo and 0x00FFFFFF, Shader.TileMode.CLAMP)
@@ -1040,13 +1043,13 @@ class KeyboardView(
      */
     private fun ajustarATuToque(x: Float, base: Tecla, fila: Int): Tecla {
         var mejor = base
-        var menor = Math.abs(x - (base.rect.centerX() + modelo.offX(base.letra) * unidad))
+        var menor = Math.abs(x - (base.rect.centerX() + modelo.offX(base.letra, rapidoAhora) * unidad))
         for (t in filas[fila]) {
             if (t === base || t.letra < 0) continue
             val r = t.rect
             val fuera = if (x < r.left) r.left - x else if (x > r.right) x - r.right else 0f
             if (fuera > unidad * 0.25f) continue
-            val d = Math.abs(x - (r.centerX() + modelo.offX(t.letra) * unidad))
+            val d = Math.abs(x - (r.centerX() + modelo.offX(t.letra, rapidoAhora) * unidad))
             if (d < menor) { menor = d; mejor = t }
         }
         return mejor
@@ -1079,12 +1082,15 @@ class KeyboardView(
     private fun puntajeToque(t: Tecla, x: Float, y: Float, p: FloatArray): Float {
         val prob = p.getOrElse(t.letra) { 0f }
         // Distancia al centro de la tecla corrido a tu manera de tocar
-        val dx = (x - t.rect.centerX() - modelo.offX(t.letra) * unidad) / unidad
-        val dy = (y - t.rect.centerY() - modelo.offY(t.letra) * altoFila) / unidad
+        // Centro de la tecla corrido a tu manera de tocar (la de ir rápido si vas rápido)
+        val dx = (x - t.rect.centerX() - modelo.offX(t.letra, rapidoAhora) * unidad) / unidad
+        val dy = (y - t.rect.centerY() - modelo.offY(t.letra, rapidoAhora) * altoFila) / unidad
         val d2 = dx * dx + dy * dy * 0.8f
-        // Distancia al centro (en anchos de tecla) contra lo probable de la letra
+        // Distancia al centro (en anchos de tecla) contra lo probable de la letra. Qué tan
+        // sueltos caen TUS toques decide cuánto manda el dedo y cuánto la palabra
         val pesoPrediccion = if (rapidoAhora) 0.6f else 0.45f
-        return Math.log(prob + 0.02).toFloat() * pesoPrediccion - d2 / (2f * 0.33f * 0.33f)
+        val sigma = modelo.dispersion(rapidoAhora)
+        return Math.log(prob + 0.02).toFloat() * pesoPrediccion - d2 / (2f * sigma * sigma)
     }
 
     private fun agregarPunto(x: Float, y: Float) {
@@ -1303,7 +1309,7 @@ class KeyboardView(
                     punteroCambio = -1
                     cambioDeslizado = false
                 }
-                rapidoAhora = ultimaBajadaLetra > 0L && e.eventTime - ultimaBajadaLetra in 0L..140L
+                rapidoAhora = ultimaBajadaLetra > 0L && e.eventTime - ultimaBajadaLetra in 0L..RAPIDO_MS
                 val t = teclaEn(x, y)
                 rapidoAhora = false
                 if (t == null) return true
@@ -1660,7 +1666,9 @@ class KeyboardView(
                 if (p != null && modo == Modo.LETRAS && t.letra >= 0) {
                     val r = t.rect
                     if (p[0] >= r.left - sepH && p[0] <= r.right + sepH && p[1] >= r.top - sepV && p[1] <= r.bottom + sepV) {
-                        modelo.aprender(t.letra, (p[0] - r.centerX()) / unidad, (p[1] - r.centerY()) / altoFila)
+                        // ¿Ibas rápido? (este toque llegó muy pegado al anterior): se aprende aparte
+                        val gap = ritmoDedo[id] ?: -1L
+                        modelo.aprender(t.letra, (p[0] - r.centerX()) / unidad, (p[1] - r.centerY()) / altoFila, gap in 0L..RAPIDO_MS)
                     }
                 }
                 acciones.ritmo(ritmoDedo.remove(id) ?: -1L)
@@ -1706,6 +1714,8 @@ class KeyboardView(
         private val FRENO_PULSO = Movimiento.SUAVE
         /** Un toque más corto que esto es "tocar y soltar": no cambia de tecla ni desliza */
         private const val TOQUE_RAPIDO_MS = 170L
+        /** Una letra que llega a menos de esto de la anterior: vas escribiendo rápido */
+        private const val RAPIDO_MS = 140L
 
         /** Lo que aparece al mantener presionada cada tecla */
         private val VARIANTES = mapOf(

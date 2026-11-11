@@ -507,10 +507,8 @@ class SettingsActivity : Activity() {
                 "espacio e intro). Con el celular en silencio o vibración, el teclado no suena.")
 
         grupo("Escritura", listOf(
-            filaInterruptor("Mantener la barra unos segundos", "barra_sostenida", true),
             filaInterruptor("Modo formal automático", "modo_formal", true),
-        ), pie = "Con “Mantener la barra”, al enviar un mensaje la barra se queda un " +
-                "momento en vez de desaparecer de golpe. “Modo formal”: en el " +
+        ), pie = "La barra de sugerencias queda siempre a la vista. “Modo formal”: en el " +
                 "correo y en apps de trabajo, el teclado propone saludos formales y casi no sugiere jerga.")
 
         val borde = when (Ajustes.bordeTeclas(this)) {

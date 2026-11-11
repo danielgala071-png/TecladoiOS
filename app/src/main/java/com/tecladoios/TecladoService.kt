@@ -69,8 +69,6 @@ class TecladoService : InputMethodService(),
             "ch.protonmail", "com.google.android.apps.docs", "com.microsoft.office.word",
             "com.microsoft.office.officehubrow", "com.google.android.apps.meetings",
         )
-        /** Cuánto se queda la barra a la vista después de enviar o dejar de escribir */
-        private const val SOSTENER_MS = 2600L
     }
 
     private var barra: SuggestionBar? = null
@@ -95,8 +93,6 @@ class TecladoService : InputMethodService(),
     private var sonido = false
     /** Fuerza de la háptica elegida en Ajustes (suave / media / fuerte) */
     @Volatile private var fuerzaVibracion = "media"
-    /** La barra se queda unos segundos después de enviar o de dejar de escribir */
-    private var barraSostenida = true
     /** Con el campo vacío, la barra muestra los emojis que más usas */
     private var emojisFrecuentesActivo = true
     /** Esconde la barra cuando pasó el tiempo de "barra sostenida" */
@@ -247,8 +243,18 @@ class TecladoService : InputMethodService(),
         val correccion: String?, val completa: String?,
         /** La palabra quedó partida por un espacio de más: así queda junta ("consecu encia") */
         val unida: String? = null,
+        /** El espacio se cruzó con una letra: así quedan las dos ("hol aamigo" → "hola" "amigo") */
+        val cruce: Pair<String, String>? = null,
     )
     @Volatile private var calculada: Calculada? = null
+    /**
+     * La última letra que borraste y cómo quedó el texto: si enseguida escribes otra letra en
+     * su lugar ("tenf" → borrar → "g"), el cerebro aprende que tocaste la f queriendo la g.
+     */
+    private class Borrada(val letra: Char, val texto: String, val hora: Long)
+    private var ultimaBorrada: Borrada? = null
+    /** El último espacio cruzado que se arregló (para saber si lo deshaces) */
+    private var ultimoCruce: String? = null
 
     /**
      * Corrección pendiente: diste espacio antes de que el motor terminara de revisar la palabra.
@@ -272,6 +278,8 @@ class TecladoService : InputMethodService(),
         val enLetras: Boolean, val emojisBarra: Boolean,
         /** Se puede separar la palabra a medias si quedó pegada ("yanpode" → "ya pode") */
         val separar: Boolean = false,
+        /** La palabra anterior tal como la escribiste, si la autocorrección la cambió (original → corregida) */
+        val corregida: Pair<String, String>? = null,
     )
 
     /** Lo que calculó el motor para una palabra a medio escribir */
@@ -282,6 +290,8 @@ class TecladoService : InputMethodService(),
         val separada: String? = null,
         /** Con la anterior forma una sola palabra partida por un espacio ("consecu encia") */
         val unida: String? = null,
+        /** Con la anterior, el espacio se cruzó con una letra ("hol aamigo" → "hola amigo") */
+        val cruzada: Pair<String, String>? = null,
     )
 
     /**
@@ -440,7 +450,8 @@ class TecladoService : InputMethodService(),
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(t.fondo)
             radio = 0f
-            grosor = maxOf(1f, resources.displayMetrics.density * 1.1f)
+            // Filo fino y sedoso (antes era más grueso y se veía duro)
+            grosor = maxOf(1f, resources.displayMetrics.density * 0.7f)
             colorBorde = t.bordePanel
             resplandor = t.resplandor
             addView(zona, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
@@ -533,7 +544,6 @@ class TecladoService : InputMethodService(),
             // Los efectos guardados se vuelven a armar con la fuerza nueva
             retroManejador.post { efectos.fill(null) }
         }
-        barraSostenida = Ajustes.barraSostenida(this)
         // Modo formal: en el correo y en apps de trabajo las sugerencias se vuelven formales
         diccionario.formal = Ajustes.modoFormal(this) && esFormal(info)
         emojisFrecuentesActivo = Ajustes.emojisFrecuentes(this)
@@ -1064,21 +1074,14 @@ class TecladoService : InputMethodService(),
                 return
             }
         }
-        // La barra aparece cuando empiezas a escribir (no al abrir el teclado) y se esconde
-        // al enviar, al mover el cursor o al cerrar el teclado. Mientras escribes funciona
-        // completa: sugerencias, predicción de la siguiente palabra y deshacer la autocorrección.
-        // Barra sostenida: al enviar o dejar de escribir, la barra se queda unos segundos (con la
-        // predicción de lo que sigue) en vez de desaparecer de golpe. Así no "salta" tanto.
-        val desdeEscritura = SystemClock.uptimeMillis() - ultimaEscritura
-        val sostener = !escribiendo && barraSostenida && b.aLaVista && desdeEscritura < SOSTENER_MS
-        if (!sugerenciasActivas || enEmojis || enPad || (!escribiendo && !sostener)) {
-            manejador.removeCallbacks(tareaOcultarBarra)
+        // La barra ya no se esconde: está siempre a la vista mientras el teclado está abierto
+        // (como en el iPhone). Sin escribir muestra con qué palabra sueles empezar o la que
+        // sigue; al escribir, las sugerencias y la corrección. Solo se va con los emojis, el
+        // teclado numérico de PIN o si apagaste las sugerencias.
+        manejador.removeCallbacks(tareaOcultarBarra)
+        if (!sugerenciasActivas || enEmojis || enPad) {
             b.visible(false)
             return
-        }
-        if (sostener) {
-            manejador.removeCallbacks(tareaOcultarBarra)
-            manejador.postDelayed(tareaOcultarBarra, SOSTENER_MS - desdeEscritura + 20)
         }
         b.visible(true)
         // Recién deslizaste una palabra: la barra muestra las otras opciones
@@ -1195,6 +1198,11 @@ class TecladoService : InputMethodService(),
         revisar = revisarActiva, aplicar = autocorreccionActiva, linea = enLineaActiva,
         enLetras = teclado?.modo == Modo.LETRAS, emojisBarra = emojisBarraActivo,
         separar = separar,
+        corregida = ultimaCorreccionAuto?.let { (o, n) ->
+            val orig = o.trim()
+            val nueva = n.trim().trimEnd { !it.isLetter() }
+            if (orig.isEmpty() || orig.contains(' ') || nueva.contains(' ')) null else orig to nueva
+        },
     )
 
     /**
@@ -1232,7 +1240,13 @@ class TecladoService : InputMethodService(),
         if (probs != null) alProbs?.invoke(probs)
         val corr = if (op.revisar) diccionario.corregir(p, previa, previa2, t, toq) else null
         if (!diccionario.vigente(t)) return null
-        val otras = diccionario.sugerir(p, 4, previa, previa2, t, toq).filter { it != corr && it != p }
+        var otras = diccionario.sugerir(p, 4, previa, previa2, t, toq).filter { it != corr && it != p }
+        // Error difícil de ver: lo escrito existe, pero otra palabra que suena igual encaja
+        // mucho mejor ("no tubo" → "tuvo"). Va al centro de la barra para elegirla de un toque
+        if (corr == null && p.length >= 2 && previa.isNotEmpty() && diccionario.vigente(t)) {
+            val alt = try { diccionario.alternativaEnContexto(p, previa, previa2) } catch (_: Throwable) { null }
+            if (alt != null && alt != p) otras = listOf(alt) + otras.filter { it != alt }
+        }
         // Predicción en línea: la palabra que más probablemente estás escribiendo
         var completa: String? = null
         if (op.linea && corr == null && p.length >= 2) {
@@ -1248,7 +1262,14 @@ class TecladoService : InputMethodService(),
             try { diccionario.unirPartida(previa, p) } catch (_: Throwable) { null }
         } else null
         if (!diccionario.vigente(t)) return null
-        return Resultado(p, previa, previa2, probs, corr, otras, completa, unida = unida)
+        // ¿El espacio se cruzó con una letra al escribir con dos pulgares? ("hol aamigo")
+        // Si la anterior la cambió la autocorrección, también se mira cómo la escribiste
+        val cruzada = if (unida == null && op.aplicar && op.enLetras && previa.length >= 2 && p.length >= 2) {
+            val orig = op.corregida?.takeIf { it.second == previa }?.first
+            try { diccionario.cruzarEspacio(previa, p, orig) } catch (_: Throwable) { null }
+        } else null
+        if (!diccionario.vigente(t)) return null
+        return Resultado(p, previa, previa2, probs, corr, otras, completa, unida = unida, cruzada = cruzada)
     }
 
     /** En el hilo principal: pone en la barra lo calculado y deja lista la corrección del espacio */
@@ -1263,7 +1284,10 @@ class TecladoService : InputMethodService(),
         val c = r.corr
         val comp = r.completa
         val lista = r.otras
-        calculada = Calculada(p, r.previa, r.previa2, if (op.aplicar) c else null, comp, if (op.aplicar) r.unida else null)
+        calculada = Calculada(
+            p, r.previa, r.previa2, if (op.aplicar) c else null, comp,
+            if (op.aplicar) r.unida else null, if (op.aplicar) r.cruzada else null,
+        )
         if (comp != null) {
             b.mostrar(listOf(
                 Sugerencia(p, literal = true, resto = comp.substring(p.length)),
@@ -1316,6 +1340,8 @@ class TecladoService : InputMethodService(),
         ultimaSeparacion = Separacion(p, nuevo, primera, previa, prev2, SystemClock.uptimeMillis())
         separacionAbierta = SeparacionAbierta(p, primera, resto, previa, prev2)
         aprenderCerrada(primera, previa, prev2, " ", alFinal = false)
+        // El cerebro anota que separar con esa letra (o sin letra) estuvo bien; si lo deshaces, se resta
+        if (sugerenciasActivas || autocorreccionActiva) enMotor { diccionario.notarSeparacion(p, nuevo) }
     }
 
     /** El dedo tocó una letra: se calcula ya, como si estuviera escrita */
@@ -1474,6 +1500,8 @@ class TecladoService : InputMethodService(),
         // Piensa antes de juntar: solo si lo de después del espacio no es una palabra y todo
         // junto sí lo es (si deshaces la unión con borrar, no la vuelve a hacer)
         if (unirSiHaceFalta(palabra, previa, previa2, espacios, sufijo)) return
+        // ¿El espacio se cruzó con una letra? "hol aamigo" → "hola amigo" (dos pulgares)
+        if (cruzarSiHaceFalta(palabra, previa, previa2, espacios, sufijo)) return
 
         // ¿Borraste la palabra anterior y escribiste esta en su lugar? El cerebro aprende solo
         val inicio = if (selIni >= 0 && selIni == selFin) selIni - palabra.length else -1
@@ -1590,6 +1618,42 @@ class TecladoService : InputMethodService(),
     }
 
     /**
+     * Arregla el espacio cruzado con una letra al escribir con dos pulgares: "hol aamigo" →
+     * "hola amigo", "holaa migo" → "hola amigo". Lo pensó el motor mientras escribías (el
+     * espacio no espera). Si lo deshaces con borrar, no se vuelve a hacer y el cerebro se
+     * vuelve más prudente con los cruces. Devuelve true si lo arregló (y ya escribió el sufijo).
+     */
+    private fun cruzarSiHaceFalta(palabra: String, previa: String, previa2: String, espacios: String, sufijo: String): Boolean {
+        if (!autocorreccionActiva || editando || seleccionando || espacios != " ") return false
+        if (previa.length < 2 || palabra.length < 2 || diferidas.isNotEmpty()) return false
+        val h = calculada ?: return false
+        if (h.palabra != palabra || h.previa != previa || h.previa2 != previa2) return false
+        val (a, b) = h.cruce ?: return false
+        val viejo = previa + espacios + palabra
+        if (antes(viejo.length) != viejo) return false
+        val nuevo = "$a $b"
+        if (nuevo == viejo) return false
+        reemplazar(viejo.length, nuevo + sufijo)
+        ultimaCorreccion = Pair(viejo, nuevo + sufijo)
+        ultimaCorreccionAuto = null
+        ultimaCerrada = null
+        ultimaAprendida = null
+        ultimoCruce = viejo
+        if (sugerenciasActivas || autocorreccionActiva) {
+            enMotor {
+                // Lo aprendido de la primera mitad no cuenta: se aprenden las dos palabras de verdad
+                diccionario.desaprender(previa, previa2)
+                diccionario.aprender(a)
+                diccionario.aprenderPar(previa2, a)
+                diccionario.aprender(b)
+                diccionario.aprenderPar(a, b, previa2)
+                diccionario.notarCruce(viejo, true)
+            }
+        }
+        return true
+    }
+
+    /**
      * Revisa la separación hecha mientras escribías al cerrar la palabra que siguió.
      * "entones" se había separado en "en tones": "tones" no es una palabra y "entones" se
      * parece muchísimo a "entonces", así que se vuelve a juntar (la corrección hace el resto)
@@ -1614,7 +1678,7 @@ class TecladoService : InputMethodService(),
         calculada = null
         enMotor {
             diccionario.desaprender(sa.primera, sa.previa, sa.previa2)
-            diccionario.rechazarSeparacion(sa.original)
+            diccionario.rechazarSeparacion(sa.original, sa.primera + " " + sa.resto)
         }
         return true
     }
@@ -1643,6 +1707,10 @@ class TecladoService : InputMethodService(),
             // Solo si lo nuevo es una palabra de verdad y lo borrado no (si no, solo cambiaste de idea)
             if (diccionario.conocida(palabra) && !diccionario.conocida(a)) {
                 diccionario.notarCorreccion(a, palabra, 1.5f)
+            } else if (diccionario.conocida(palabra)) {
+                // Las dos existen y se parecen ("tubo" → "tuvo"): un error difícil de ver.
+                // El cerebro lo aprende junto con la palabra de antes
+                diccionario.notarCambio(previa, a, palabra)
             }
         }
     }
@@ -1812,6 +1880,17 @@ class TecladoService : InputMethodService(),
         if (currentInputConnection == null) return
         ultimaAprendida = null
         var c = s
+        // ¿Escribes una letra justo donde borraste otra? Es la tecla que querías tocar
+        val ub = ultimaBorrada
+        ultimaBorrada = null
+        if (ub != null && c.length == 1 && c[0].isLetter() && SystemClock.uptimeMillis() - ub.hora < 4000 &&
+            (sugerenciasActivas || autocorreccionActiva) && !campoClave
+        ) {
+            val nueva = c[0]
+            if (!nueva.equals(ub.letra, ignoreCase = true) && antes(40) == ub.texto) {
+                enMotor { diccionario.notarTecla(ub.letra, nueva) }
+            }
+        }
         // Recordar dónde cayó el dedo en cada letra (o que no se sabe)
         if (c.length == 1 && c[0].isLetter()) {
             toques.add(floatArrayOf(x, y, c[0].lowercaseChar().code.toFloat(), ritmo))
@@ -1937,6 +2016,7 @@ class TecladoService : InputMethodService(),
         ultimaEscritura = SystemClock.uptimeMillis()
         val ic = currentInputConnection ?: return
         espacioAutomatico = false
+        ultimaBorrada = null
         // Borrar justo después de una separación automática: vuelve a como lo escribiste
         // y el teclado aprende que ahí no iba espacio (no lo vuelve a separar)
         val us = ultimaSeparacion
@@ -1950,7 +2030,7 @@ class TecladoService : InputMethodService(),
             reemplazar(us.nuevo.length, us.original)
             enMotor {
                 diccionario.desaprender(us.primera, us.previa, us.previa2)
-                diccionario.rechazarSeparacion(us.original)
+                diccionario.rechazarSeparacion(us.original, us.nuevo)
             }
             return
         }
@@ -1972,11 +2052,15 @@ class TecladoService : InputMethodService(),
         ultimaCorreccionAuto = null
         val ua = ultimaAprendida
         ultimaAprendida = null
+        val cruce = ultimoCruce
+        ultimoCruce = null
         if (uc != null) {
             // Deshacer la autocorrección como en iPhone
             if (antes(uc.second.length) == uc.second) {
                 toques.clear()
                 reemplazar(uc.second.length, uc.first)
+                // Era un espacio cruzado que no querías arreglar: no se vuelve a hacer
+                if (cruce != null && cruce == uc.first) enMotor { diccionario.notarCruce(uc.first, false) }
                 // Volviste a tu palabra: no fue una reescritura
                 ultimaCerrada = null
                 // La corrección no era lo que querías: se olvida y se aprende lo tuyo
@@ -2000,6 +2084,9 @@ class TecladoService : InputMethodService(),
             enMotor { diccionario.desaprender(ua.palabra, ua.previa, ua.previa2) }
         }
         calculada = null
+        // La letra que se va (para aprender qué tecla querías si escribes otra en su lugar)
+        val sale = antes(1)
+        val letraQueSale = if (sale.length == 1 && sale[0].isLetter() && toques.isNotEmpty()) sale[0] else null
         if (toques.isNotEmpty()) toques.removeAt(toques.size - 1)
         // Hay texto seleccionado: se borra la selección (sin preguntarle a la app si se sabe)
         val haySeleccion = if (selIni >= 0) selIni != selFin else !ic.getSelectedText(0).isNullOrEmpty()
@@ -2025,6 +2112,9 @@ class TecladoService : InputMethodService(),
             n == 0 && espejoCompleto -> { /* no había nada que borrar */ }
             else -> olvidarEspejo()
         }
+        ultimaBorrada = if (letraQueSale != null && n == 1 && espejoValido) {
+            Borrada(letraQueSale, antes(40), SystemClock.uptimeMillis())
+        } else null
         actualizar()
     }
 
@@ -2470,7 +2560,11 @@ class TecladoService : InputMethodService(),
         val escrito = palabra
         val esCorreccion = !s.literal && escrito.length >= 2 && s.reemplaza < 0 && !s.texto.contains(' ') &&
             !Cerebro.sinTildes(s.texto.lowercase()).startsWith(Cerebro.sinTildes(escrito.lowercase()))
-        if (esCorreccion) enMotor { diccionario.notarCorreccion(escrito, s.texto, 2f) }
+        if (esCorreccion) enMotor {
+            diccionario.notarCorreccion(escrito, s.texto, 2f)
+            // Si lo escrito también era una palabra ("casa" → "cada"), se aprende en su contexto
+            diccionario.notarCambio(pv, escrito, s.texto, 1.5f)
+        }
         enMotor {
             diccionario.aprender(s.texto, if (s.literal) 3 else 2)
             diccionario.aprenderPar(pv, s.texto, pv2)

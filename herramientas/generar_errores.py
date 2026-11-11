@@ -95,6 +95,9 @@ TIPO = {
     "pulgar_cruzado": 0.35,  # a dos dedos: la letra de la otra mano sale antes ("tmabien")
     "vocal_comida": 0.6,     # se come una vocal entre dos consonantes al ir rápido ("nesctio")
     "fin_vecina": 0.45,      # al soltar rápido la última letra sale corrida ("holz")
+    "tecla_larga": 0.3,      # la tecla vecina salió EN VEZ y ADEMÁS de la buena al barrer ("hiola")
+    "fila_abajo": 0.25,      # el pulgar cae una fila más abajo de lo que quería ("nueno" → "bueno")
+    "falta_dos": 0.15,       # palabras largas: se pierden dos letras al ir muy rápido
 }
 
 OIDO = [
@@ -187,6 +190,19 @@ def errores_de(w):
     if n >= 4:
         for v, p in vecinas(w[-1]):
             poner(w[:-1] + v, TIPO["fin_vecina"] * p)
+    # El pulgar cae justo debajo (las filas de abajo están más lejos del pulgar que se estira)
+    for i in range(n):
+        c = w[i]
+        if c in POS:
+            x, y = POS[c]
+            for o, (ox, oy) in POS.items():
+                if oy == y + 1 and abs(ox - x) <= 0.55:
+                    poner(w[:i] + o + w[i + 1:], TIPO["fila_abajo"] * (0.4 if i == 0 else 1.0))
+    # Palabras largas: dos letras que no salieron (no seguidas)
+    if n >= 8:
+        for i in range(1, n - 2):
+            for j in range(i + 2, n):
+                poner(w[:i] + w[i + 1:j] + w[j + 1:], TIPO["falta_dos"])
     return r
 
 
@@ -202,7 +218,10 @@ def leer_palabras(ruta):
 
 def main():
     ruta_dic, ruta_kt, ruta_err = sys.argv[1], sys.argv[2], sys.argv[3]
-    maximo = int(sys.argv[4]) if len(sys.argv) > 4 else 330000
+    maximo = int(sys.argv[4]) if len(sys.argv) > 4 else 560000
+    # Hasta qué palabra (por frecuencia) se entrenan errores y hasta cuál van errores dobles
+    alcance = int(sys.argv[5]) if len(sys.argv) > 5 else 100000
+    alcance_doble = int(sys.argv[6]) if len(sys.argv) > 6 else 40000
 
     codigo = open(ruta_kt, encoding="utf-8").read()
     # El orden es el mismo que usa el teclado: primero lo más usado en el chat (FRECUENCIA del
@@ -242,7 +261,7 @@ def main():
     candidatos = defaultdict(list)  # error -> [(peso, destino)]
     usadas = 0
     for p, i in sorted(rango.items(), key=lambda x: x[1]):
-        if i > 60000:
+        if i > alcance:
             break
         np_ = normal(p)
         if len(np_) < 3 or not LETRAS.match(np_):
@@ -260,8 +279,8 @@ def main():
         frec = 1.0 / (i + 40.0)
         errs = errores_de(np_)
         # Dos errores en las palabras largas más usadas (letra que falta + otra cosa)
-        if len(np_) >= 6 and i < 20000:
-            umbral = 0.45 if i < 6000 else 0.7
+        if len(np_) >= 6 and i < alcance_doble:
+            umbral = 0.45 if i < 6000 else 0.7 if i < 20000 else 0.85
             for v, pv in list(errs.items()):
                 if pv < umbral:
                     continue

@@ -23,6 +23,19 @@ import java.io.File
  *    error tuyo le cuesta menos a la autocorrección (corrige mejor tus dedazos de siempre).
  *  - La hora: de mañana empiezas con "buenos días", de noche con "buenas noches"; el cerebro
  *    aprende con qué palabras empiezas tus mensajes según la hora del día.
+ *  - Tu perfil de errores: cada corrección se desarma letra por letra y se anota QUÉ TIPO de
+ *    dedazo fue: tecla vecina ("tenfo" → tengo), letra que no salió ("porqe" → porque), letra
+ *    de más ("hokla" → hola), letras cruzadas entre los dos pulgares ("qeu" → que), tildes
+ *    o un espacio fallado. Si tú sueles comerte la r, a la autocorrección le cuesta menos
+ *    ponerla; si sueles cruzar letras, las inversiones le cuestan menos.
+ *  - Los errores difíciles de ver: palabras que SÍ existen pero no son las que querías
+ *    ("tubo" por "tuvo", "valla" por "vaya", "casa" por "cada"). Si las cambias seguido
+ *    después de cierta palabra ("no tubo" → "no tuvo"), aprende a cambiarlas solo en ese
+ *    contexto; si las cambias siempre, en cualquier lugar.
+ *  - Cuándo va un espacio y cuándo es una sola palabra mal escrita: aprende de lo que dejas
+ *    y de lo que deshaces. Si deshaces seguido las separaciones con la n ("ya n podemos"),
+ *    deja de separar con la n; si casi siempre las dejas, se anima más. Lo mismo con las
+ *    palabras pegadas sin letra en medio y con el espacio cruzado ("hol aamigo" → "hola amigo").
  *
  * Es estable por diseño: todo va con candado (lo usa un solo hilo a la vez), tiene topes de
  * tamaño (nunca crece sin control) y si el archivo está dañado empieza de cero sin cerrarse.
@@ -53,6 +66,11 @@ class Cerebro(private val archivo: File) {
     private val contextos = HashMap<String, Siguientes>()
     /** Tus errores: "qje" → {"que": 4.0} */
     private val errores = HashMap<String, HashMap<String, Float>>()
+    /**
+     * Palabras reales que cambias por otra: "no|tubo" → {"tuvo": 3} (después de esa palabra)
+     * y "*|tubo" → {"tuvo": 5} (en cualquier lugar)
+     */
+    private val reemplazos = HashMap<String, HashMap<String, Float>>()
     /** Predicciones que ignoras: "la>casa" → veces */
     private val ignoradas = HashMap<String, Float>()
     /** Las últimas palabras que escribiste (para saber las tres anteriores) */
@@ -64,6 +82,21 @@ class Cerebro(private val archivo: File) {
 
     /** Teclas que confundes: [escrita * LETRAS + querida] → cuántas veces (de tus correcciones) */
     private val confusiones = FloatArray(LETRAS * LETRAS)
+    /** Letras que no salieron (te las comiste): letra querida → cuántas veces */
+    private val faltas = FloatArray(LETRAS)
+    /** Letras de más (rozaste otra tecla o rebotó): letra que sobró → cuántas veces */
+    private val sobras = FloatArray(LETRAS)
+    /** Cuántas veces cruzaste dos letras al escribir con los dos pulgares ("qeu" → "que") */
+    private var cruces = 0f
+    /** Cuántas veces hiciste cada tipo de error (para el perfil y el resumen de Ajustes) */
+    private val tipos = FloatArray(TIPOS)
+    /**
+     * Espacios: [letra que cayó en lugar del espacio] (b, n, v, m, c...; la posición [LETRAS]
+     * es "sin letra", palabras pegadas) → cuántas veces separar ahí estuvo bien (lo dejaste)
+     * y cuántas estuvo mal (lo deshiciste). La posición [CRUCE] es el espacio cruzado.
+     */
+    private val espacioSi = FloatArray(LETRAS + 2)
+    private val espacioNo = FloatArray(LETRAS + 2)
 
     /** Franja del día ya calculada (se recalcula como mucho una vez por minuto) */
     private var franjaGuardada = -1
@@ -304,7 +337,7 @@ class Cerebro(private val archivo: File) {
         if (e.length < 2 || e == f || f.isEmpty() || e.contains(' ')) return
         val m = errores.getOrPut(e) { HashMap() }
         m[f] = minOf(30f, (m[f] ?: 0f) + peso)
-        anotarConfusiones(e, f, peso)
+        if (f.contains(' ')) anotarEspacio(e, f, peso) else anotarDedazo(e, f, peso)
         if (errores.size > MAX_ERRORES) {
             // Se olvidan los más flojos
             errores.entries.sortedBy { it.value.values.maxOrNull() ?: 0f }
@@ -318,32 +351,250 @@ class Cerebro(private val archivo: File) {
     fun rechazarError(escrito: String, final: String) {
         if (!listo) return
         val e = normal(escrito)
-        val m = errores[e] ?: return
         val f = normal(final)
+        // Un espacio que no iba: se anota aunque sea la primera vez (así aprende rápido
+        // que con esa letra no tiene que separar)
+        if (f.contains(' ') && !e.contains(' ')) anotarEspacio(e, f, -1f)
+        val m = errores[e] ?: return
         val v = (m[f] ?: return) - 3f
         if (v <= 0f) m.remove(f) else m[f] = v
-        anotarConfusiones(e, f, -2f)
+        if (!f.contains(' ')) anotarDedazo(e, f, -2f)
         if (m.isEmpty()) errores.remove(e)
         cambios = true
     }
 
+    // ---------- Teclas corregidas mientras escribes ----------
+
     /**
-     * Teclas que confundes: si [escrito] y [final] tienen el mismo largo y difieren en una o
-     * dos letras ("tenfo" → "tengo"), se anota que tocaste la f queriendo la g.
+     * Borraste la letra [borrada] y en su lugar escribiste [nueva] ("tenf" ← borrar → "teng"):
+     * es la señal más directa de qué teclas confundes. Pasa decenas de veces al día, así que
+     * cada una suma poquito; con el tiempo el cerebro sabe exactamente cuáles son tus dedazos.
      */
-    private fun anotarConfusiones(escrito: String, final: String, peso: Float) {
-        if (escrito.length != final.length || escrito.length < 2) return
-        var diferentes = 0
-        for (i in escrito.indices) if (escrito[i] != final[i]) diferentes++
-        if (diferentes == 0 || diferentes > 2) return
-        for (i in escrito.indices) {
-            val a = letra(escrito[i])
-            val b = letra(final[i])
-            if (a < 0 || b < 0 || a == b) continue
-            val k = a * LETRAS + b
-            confusiones[k] = (confusiones[k] + peso).coerceIn(0f, 40f)
+    @Synchronized
+    fun aprenderTecla(borrada: Char, nueva: Char) {
+        if (!listo) return
+        val a = letra(borrada)
+        val b = letra(nueva)
+        if (a < 0 || b < 0 || a == b) return
+        val k = a * LETRAS + b
+        confusiones[k] = (confusiones[k] + PESO_TECLA).coerceIn(0f, 40f)
+        sumarTipo(TIPO_VECINA, PESO_TECLA)
+        cambios = true
+    }
+
+    // ---------- Errores difíciles: una palabra real por otra ----------
+
+    private fun claveCambio(previa: String, escrita: String) = normal(previa).ifEmpty { INICIO } + "|" + normal(escrita)
+
+    /**
+     * Escribiste [escrita] (una palabra que existe) después de [previa] y la cambiaste por
+     * [querida] (otra que existe y se le parece): "no tubo" → "no tuvo".
+     */
+    @Synchronized
+    fun aprenderCambio(previa: String, escrita: String, querida: String, peso: Float = 1f) {
+        if (!listo) return
+        val e = normal(escrita)
+        val q = normal(querida)
+        if (e.length < 2 || q.length < 2 || e == q || e.contains(' ') || q.contains(' ')) return
+        for (clave in listOf(claveCambio(previa, e), "*|$e")) {
+            val m = reemplazos.getOrPut(clave) { HashMap() }
+            val p = if (clave[0] == '*') peso * 0.6f else peso
+            m[q] = minOf(30f, (m[q] ?: 0f) + p)
+        }
+        if (reemplazos.size > MAX_CAMBIOS) {
+            reemplazos.entries.sortedBy { it.value.values.maxOrNull() ?: 0f }
+                .take(reemplazos.size - MAX_CAMBIOS * 9 / 10).map { it.key }.forEach { reemplazos.remove(it) }
         }
         cambios = true
+    }
+
+    /** Deshiciste el cambio de [escrita] por [querida]: era la palabra que querías */
+    @Synchronized
+    fun rechazarCambio(escrita: String, querida: String) {
+        if (!listo || reemplazos.isEmpty()) return
+        val e = normal(escrita)
+        val q = normal(querida)
+        val sufijo = "|$e"
+        val vacias = ArrayList<String>()
+        for ((clave, m) in reemplazos) {
+            if (!clave.endsWith(sufijo)) continue
+            val v = (m[q] ?: continue) - 3f
+            if (v <= 0f) m.remove(q) else m[q] = v
+            if (m.isEmpty()) vacias.add(clave)
+        }
+        for (c in vacias) reemplazos.remove(c)
+        cambios = true
+    }
+
+    /**
+     * La palabra que de verdad querías cuando escribes [escrita] después de [previa], si ya lo
+     * aprendió seguro: en ese contexto (2 veces o más, casi siempre la misma) o en cualquier
+     * lugar (más veces). null si no está seguro.
+     */
+    @Synchronized
+    fun cambioEnContexto(previa: String, escrita: String): String? {
+        if (!listo || reemplazos.isEmpty()) return null
+        val e = normal(escrita)
+        dominante(reemplazos[claveCambio(previa, e)], 2.5f, 0.8f)?.let { return it }
+        return dominante(reemplazos["*|$e"], 3.5f, 0.85f)
+    }
+
+    private fun dominante(m: HashMap<String, Float>?, minimo: Float, parte: Float): String? {
+        if (m.isNullOrEmpty()) return null
+        var mejor: String? = null
+        var max = 0f
+        var total = 0f
+        for ((w, v) in m) {
+            total += v
+            if (v > max) { max = v; mejor = w }
+        }
+        return if (max >= minimo && max >= total * parte) mejor else null
+    }
+
+    // ---------- Perfil de errores ----------
+
+    /**
+     * Desarma el dedazo [escrito] → [final] letra por letra y anota cada parte según su tipo:
+     * tecla cambiada, letra que no salió, letra de más, letras cruzadas o solo tildes.
+     * Con [peso] negativo resta (deshiciste la corrección). Si hay más de 3 diferencias no
+     * es un dedazo sino otra palabra: no se anota nada.
+     */
+    private fun anotarDedazo(escrito: String, final: String, peso: Float) {
+        if (sinTildes(escrito) == sinTildes(final) && escrito.length == final.length) {
+            sumarTipo(TIPO_TILDE, peso)
+            cambios = true
+            return
+        }
+        val ops = alinear(escrito, final) ?: return
+        if (ops.isEmpty() || ops.size > 3) return
+        for (op in ops) {
+            when (op.tipo) {
+                TIPO_VECINA -> {
+                    val k = op.a * LETRAS + op.b
+                    confusiones[k] = (confusiones[k] + peso).coerceIn(0f, 40f)
+                }
+                TIPO_FALTA -> faltas[op.b] = (faltas[op.b] + peso).coerceIn(0f, 40f)
+                TIPO_SOBRA -> sobras[op.a] = (sobras[op.a] + peso).coerceIn(0f, 40f)
+                TIPO_CRUCE -> cruces = (cruces + peso).coerceIn(0f, 60f)
+            }
+            sumarTipo(op.tipo, peso)
+        }
+        cambios = true
+    }
+
+    private fun sumarTipo(t: Int, peso: Float) {
+        tipos[t] = (tipos[t] + peso).coerceIn(0f, 100_000f)
+    }
+
+    /**
+     * Un espacio: [escrito] ("quebhago", "estoybien") quedó como [separado] ("que hago",
+     * "estoy bien"). Se anota en qué letra cayó el dedo en lugar del espacio (o que no hubo
+     * letra) y si estuvo bien ([peso] positivo) o mal (negativo: lo deshiciste).
+     */
+    private fun anotarEspacio(escrito: String, separado: String, peso: Float) {
+        val i = letraDelEspacio(escrito, separado)
+        if (i < 0) return
+        if (peso >= 0f) {
+            espacioSi[i] = minOf(60f, espacioSi[i] + peso)
+            sumarTipo(TIPO_ESPACIO, peso)
+        } else {
+            espacioNo[i] = minOf(60f, espacioNo[i] - peso * 1.5f)
+            espacioSi[i] = maxOf(0f, espacioSi[i] + peso)
+            sumarTipo(TIPO_ESPACIO, peso)
+        }
+        cambios = true
+    }
+
+    /** Separar mientras escribías: [original] ("yanpode") quedó como [separado] ("ya pode") */
+    @Synchronized
+    fun aprenderEspacio(original: String, separado: String, bien: Boolean) {
+        if (!listo) return
+        anotarEspacio(normal(original), normal(separado), if (bien) 1f else -1f)
+    }
+
+    /** El espacio cruzado con una letra ("hol aamigo" → "hola amigo") se dejó o se deshizo */
+    @Synchronized
+    fun aprenderCruce(bien: Boolean) {
+        if (!listo) return
+        if (bien) {
+            espacioSi[CRUCE] = minOf(60f, espacioSi[CRUCE] + 1f)
+            sumarTipo(TIPO_CRUCE_ESPACIO, 1f)
+        } else {
+            espacioNo[CRUCE] = minOf(60f, espacioNo[CRUCE] + 1.5f)
+            espacioSi[CRUCE] = maxOf(0f, espacioSi[CRUCE] - 1f)
+            sumarTipo(TIPO_CRUCE_ESPACIO, -1f)
+        }
+        cambios = true
+    }
+
+    /**
+     * Qué tanto confiar en poner un espacio en lugar de la letra [c] (null = palabras pegadas
+     * sin letra en medio): 1 = sin datos (lo normal), menos de 1 = deshaces seguido esas
+     * separaciones (más prudente), más de 1 = casi siempre las dejas (se anima más).
+     */
+    @Synchronized
+    fun confianzaEspacio(c: Char?): Float {
+        if (!listo) return 1f
+        val i = if (c == null) LETRAS else letra(c)
+        return if (i < 0) 1f else confianza(i)
+    }
+
+    /** Lo mismo, mirando en qué letra cayó el dedo: [escrito] ("quebhago") → [separado] ("que hago") */
+    @Synchronized
+    fun confianzaSeparar(escrito: String, separado: String): Float {
+        if (!listo) return 1f
+        val i = letraDelEspacio(normal(escrito), normal(separado))
+        return if (i < 0) 1f else confianza(i)
+    }
+
+    /** Lo mismo para el espacio cruzado ("hol aamigo" → "hola amigo") */
+    @Synchronized
+    fun confianzaCruce(): Float = if (!listo) 1f else confianza(CRUCE)
+
+    private fun confianza(i: Int): Float {
+        val si = espacioSi[i]
+        val no = espacioNo[i]
+        if (si + no < 0.5f) return 1f
+        // Se parte de "casi siempre está bien" (4 de 5) y lo tuyo lo va moviendo
+        val p = (si + PREVIA_ESPACIO * 3f) / (si + no + 3f)
+        return (p / PREVIA_ESPACIO).coerceIn(0.35f, 1.25f)
+    }
+
+    /**
+     * Cuánto le cuesta a la autocorrección cada tipo de dedazo según los tuyos (1 = normal,
+     * más chico = es un error tuyo de siempre). null si todavía no aprendió nada.
+     */
+    class Perfil(
+        /** [escrita * LETRAS + querida] */
+        val cambio: FloatArray?,
+        /** letra que no salió */
+        val falta: FloatArray?,
+        /** letra de más */
+        val sobra: FloatArray?,
+        /** letras cruzadas */
+        val cruce: Float,
+    )
+
+    @Synchronized
+    fun perfil(): Perfil? {
+        if (!listo) return null
+        val cambio = factoresConfusion()
+        val falta = factores(faltas)
+        val sobra = factores(sobras)
+        val cruce = if (cruces < 3f) 1f else (1f / (1f + (cruces - 2f) * 0.06f)).coerceAtLeast(0.55f)
+        if (cambio == null && falta == null && sobra == null && cruce >= 1f) return null
+        return Perfil(cambio, falta, sobra, cruce)
+    }
+
+    private fun factores(a: FloatArray): FloatArray? {
+        var r: FloatArray? = null
+        for (i in a.indices) {
+            val v = a[i]
+            if (v < 2f) continue
+            if (r == null) r = FloatArray(a.size) { 1f }
+            r[i] = (1f / (1f + (v - 1f) * 0.12f)).coerceAtLeast(0.5f)
+        }
+        return r
     }
 
     /**
@@ -600,6 +851,25 @@ class Cerebro(private val archivo: File) {
             sb.append(i / LETRAS).append('\t').append(i % LETRAS).append('\t')
                 .append(Math.round(v * 100f) / 100f).append('\n')
         }
+        // Perfil de errores y espacios (las versiones viejas ignoran estas secciones)
+        sb.append("#f\n")
+        for (i in faltas.indices) if (faltas[i] >= 0.5f) sb.append(i).append('\t').append(Math.round(faltas[i] * 100f) / 100f).append('\n')
+        sb.append("#s\n")
+        for (i in sobras.indices) if (sobras[i] >= 0.5f) sb.append(i).append('\t').append(Math.round(sobras[i] * 100f) / 100f).append('\n')
+        sb.append("#t\n")
+        sb.append("x\t").append(Math.round(cruces * 100f) / 100f).append('\n')
+        for (i in tipos.indices) if (tipos[i] >= 0.5f) sb.append(i).append('\t').append(Math.round(tipos[i] * 100f) / 100f).append('\n')
+        // Palabras reales que cambias por otra (las versiones viejas ignoran esta sección)
+        sb.append("#r\n")
+        for ((k, m) in reemplazos) for ((w, v) in m) {
+            if (v >= 0.1f) sb.append(k).append('\t').append(w).append('\t').append(Math.round(v * 100f) / 100f).append('\n')
+        }
+        sb.append("#p\n")
+        for (i in espacioSi.indices) {
+            if (espacioSi[i] < 0.05f && espacioNo[i] < 0.05f) continue
+            sb.append(i).append('\t').append(Math.round(espacioSi[i] * 100f) / 100f).append('\t')
+                .append(Math.round(espacioNo[i] * 100f) / 100f).append('\n')
+        }
         cambios = false
         return sb.toString()
     }
@@ -645,6 +915,7 @@ class Cerebro(private val archivo: File) {
         tasaDeshacer = TASA_BASE
         correccionesVistas = 0f
         confusiones.fill(0f)
+        borrarPerfil()
         entradas = 0
         try {
             if (archivo.exists()) leer(archivo.readText(Charsets.UTF_8))
@@ -652,6 +923,8 @@ class Cerebro(private val archivo: File) {
             contextos.clear()
             errores.clear()
             ignoradas.clear()
+            confusiones.fill(0f)
+            borrarPerfil()
             entradas = 0
             Registro.anotar("leer el cerebro", e)
         }
@@ -697,8 +970,45 @@ class Cerebro(private val archivo: File) {
                     val v = p[2].toFloatOrNull() ?: continue
                     if (a in 0 until LETRAS && b in 0 until LETRAS) confusiones[a * LETRAS + b] = v.coerceIn(0f, 40f)
                 }
+                'f', 's' -> if (p.size == 2) {
+                    val i = p[0].toIntOrNull() ?: continue
+                    val v = p[1].toFloatOrNull() ?: continue
+                    val destino = if (seccion == 'f') faltas else sobras
+                    if (i in 0 until LETRAS) destino[i] = v.coerceIn(0f, 40f)
+                }
+                't' -> if (p.size == 2) {
+                    val v = p[1].toFloatOrNull() ?: continue
+                    if (p[0] == "x") cruces = v.coerceIn(0f, 60f)
+                    else {
+                        val i = p[0].toIntOrNull() ?: continue
+                        if (i in 0 until TIPOS) tipos[i] = v.coerceIn(0f, 100_000f)
+                    }
+                }
+                'r' -> if (p.size == 3) {
+                    val v = p[2].toFloatOrNull() ?: continue
+                    if (v > 0f && p[0].contains('|') && p[1].isNotEmpty()) reemplazos.getOrPut(p[0]) { HashMap() }[p[1]] = v.coerceAtMost(30f)
+                }
+                'p' -> if (p.size == 3) {
+                    val i = p[0].toIntOrNull() ?: continue
+                    val si = p[1].toFloatOrNull() ?: continue
+                    val no = p[2].toFloatOrNull() ?: continue
+                    if (i in espacioSi.indices) {
+                        espacioSi[i] = si.coerceIn(0f, 60f)
+                        espacioNo[i] = no.coerceIn(0f, 60f)
+                    }
+                }
             }
         }
+    }
+
+    private fun borrarPerfil() {
+        reemplazos.clear()
+        faltas.fill(0f)
+        sobras.fill(0f)
+        tipos.fill(0f)
+        espacioSi.fill(0f)
+        espacioNo.fill(0f)
+        cruces = 0f
     }
 
     /** Olvida todo (Restablecer diccionario) */
@@ -712,6 +1022,7 @@ class Cerebro(private val archivo: File) {
         tasaDeshacer = TASA_BASE
         correccionesVistas = 0f
         confusiones.fill(0f)
+        borrarPerfil()
         entradas = 0
         cambios = false
         try { archivo.delete() } catch (_: Exception) { }
@@ -729,6 +1040,7 @@ class Cerebro(private val archivo: File) {
         for (c in vacias) contextos.remove(c)
         errores.remove(w)
         for (m in errores.values) m.remove(w)
+        for (m in reemplazos.values) m.remove(w)
         recientes.remove(w)
         cambios = true
     }
@@ -752,12 +1064,102 @@ class Cerebro(private val archivo: File) {
                 else -> -1
             }
         }
+        /** Tipos de error del perfil */
+        const val TIPO_VECINA = 0
+        const val TIPO_FALTA = 1
+        const val TIPO_SOBRA = 2
+        const val TIPO_CRUCE = 3
+        const val TIPO_TILDE = 4
+        const val TIPO_ESPACIO = 5
+        const val TIPO_CRUCE_ESPACIO = 6
+        const val TIPOS = 7
+        private val NOMBRES_TIPO = arrayOf(
+            "tecla vecina", "letra que no salió", "letra de más", "letras cruzadas",
+            "tildes", "espacio que faltó", "espacio cruzado",
+        )
+        /** Lo que suma cada letra corregida mientras escribes (poquito: pasa muy seguido) */
+        private const val PESO_TECLA = 0.35f
+        /** Posición del espacio cruzado en las cuentas de espacios */
+        private const val CRUCE = LETRAS + 1
+        /** Lo normal: 4 de cada 5 separaciones están bien */
+        private const val PREVIA_ESPACIO = 0.8f
+
+        /** Una parte de un dedazo: [tipo] con la letra escrita [a] y la querida [b] (-1 = ninguna) */
+        class Op(val tipo: Int, val a: Int, val b: Int)
+
+        /**
+         * Desarma [escrito] → [final] en las operaciones mínimas (como se hace al revisar un
+         * dedazo a mano): letra cambiada, letra que faltó, letra de más o dos letras cruzadas.
+         * Las vocales con tilde cuentan como la misma letra. null si no son solo letras.
+         */
+        fun alinear(escrito: String, final: String): List<Op>? {
+            val n = escrito.length
+            val m = final.length
+            if (n == 0 || m == 0 || n > 32 || m > 32 || Math.abs(n - m) > 3) return null
+            val x = IntArray(n) { letra(escrito[it]) }
+            val y = IntArray(m) { letra(final[it]) }
+            for (v in x) if (v < 0) return null
+            for (v in y) if (v < 0) return null
+            val d = Array(n + 1) { IntArray(m + 1) }
+            for (i in 0..n) d[i][0] = i
+            for (j in 0..m) d[0][j] = j
+            for (i in 1..n) for (j in 1..m) {
+                var v = d[i - 1][j - 1] + if (x[i - 1] == y[j - 1]) 0 else 1
+                v = minOf(v, d[i - 1][j] + 1, d[i][j - 1] + 1)
+                if (i > 1 && j > 1 && x[i - 1] == y[j - 2] && x[i - 2] == y[j - 1] && x[i - 1] != x[i - 2]) {
+                    v = minOf(v, d[i - 2][j - 2] + 1)
+                }
+                d[i][j] = v
+            }
+            val ops = ArrayList<Op>()
+            var i = n
+            var j = m
+            while (i > 0 || j > 0) {
+                if (i > 0 && j > 0 && x[i - 1] == y[j - 1] && d[i][j] == d[i - 1][j - 1]) { i--; j--; continue }
+                if (i > 1 && j > 1 && x[i - 1] == y[j - 2] && x[i - 2] == y[j - 1] && x[i - 1] != x[i - 2] &&
+                    d[i][j] == d[i - 2][j - 2] + 1
+                ) { ops.add(Op(TIPO_CRUCE, x[i - 2], x[i - 1])); i -= 2; j -= 2; continue }
+                if (i > 0 && j > 0 && d[i][j] == d[i - 1][j - 1] + 1) { ops.add(Op(TIPO_VECINA, x[i - 1], y[j - 1])); i--; j--; continue }
+                if (i > 0 && d[i][j] == d[i - 1][j] + 1) { ops.add(Op(TIPO_SOBRA, x[i - 1], -1)); i--; continue }
+                if (j > 0 && d[i][j] == d[i][j - 1] + 1) { ops.add(Op(TIPO_FALTA, -1, y[j - 1])); j--; continue }
+                return null
+            }
+            ops.reverse()
+            return ops
+        }
+
+        /**
+         * En qué letra cayó el dedo en lugar del espacio: "quebhago" → "que hago" es la b,
+         * "estoybien" → "estoy bien" no tuvo letra ([LETRAS]). -1 si no se entiende.
+         */
+        fun letraDelEspacio(escrito: String, separado: String): Int {
+            var i = 0
+            var tipo = -1
+            for (j in separado.indices) {
+                val c = separado[j]
+                if (c == ' ') {
+                    if (i >= escrito.length) return -1
+                    val sig = if (j + 1 < separado.length) letra(separado[j + 1]) else -1
+                    val e = letra(escrito[i])
+                    if (e < 0) return -1
+                    val t = if (e == sig) LETRAS else { i++; e }
+                    if (tipo < 0) tipo = t
+                    continue
+                }
+                if (i >= escrito.length || letra(escrito[i]) != letra(c)) return -1
+                i++
+            }
+            return if (i == escrito.length) tipo else -1
+        }
+
         private const val VERSION = "tecladoios-cerebro-1"
         private const val INICIO = "^"
         /** Días en que algo que ya no usas pierde la mitad de su peso */
-        private const val VIDA_MEDIA = 120.0
-        private const val MAX_ENTRADAS = 80_000
-        private const val MAX_ERRORES = 3000
+        private const val VIDA_MEDIA = 180.0
+        private const val MAX_ENTRADAS = 150_000
+        private const val MAX_ERRORES = 6000
+        /** Palabras reales que cambias por otra (contextos guardados como mucho) */
+        private const val MAX_CAMBIOS = 4000
         private const val MAX_IGNORADAS = 3000
         /** Memoria de la conversación: cuántas palabras y en cuántos minutos se apagan */
         private const val MAX_RECIENTES = 400
@@ -778,12 +1180,17 @@ class Cerebro(private val archivo: File) {
             var tasa = -1f
             var vistas = 0f
             var teclas = 0
+            var cambiosReales = 0
+            val cuentaTipos = FloatArray(TIPOS)
+            val prudentes = StringBuilder()
+            val animadas = StringBuilder()
             for (linea in texto.lineSequence()) {
                 if (linea.isEmpty()) continue
                 if (linea.length == 2 && linea[0] == '#') { seccion = linea[1]; continue }
                 when (seccion) {
                     'c' -> frases++
                     'e' -> errores++
+                    'r' -> if (linea.startsWith("*|")) cambiosReales++
                     'k' -> {
                         val p = linea.split('\t')
                         if (p.size == 3 && (p[2].toFloatOrNull() ?: 0f) >= 2f) teclas++
@@ -795,6 +1202,31 @@ class Cerebro(private val archivo: File) {
                             "vistas" -> vistas = p[1].toFloatOrNull() ?: 0f
                         }
                     }
+                    't' -> {
+                        val p = linea.split('\t')
+                        val i = p[0].toIntOrNull()
+                        if (p.size == 2 && i != null && i in 0 until TIPOS) cuentaTipos[i] = p[1].toFloatOrNull() ?: 0f
+                    }
+                    'p' -> {
+                        val p = linea.split('\t')
+                        val i = p[0].toIntOrNull() ?: -1
+                        val si = p.getOrNull(1)?.toFloatOrNull() ?: 0f
+                        val no = p.getOrNull(2)?.toFloatOrNull() ?: 0f
+                        if (p.size == 3 && si + no >= 2f) {
+                            val f = (si + PREVIA_ESPACIO * 3f) / (si + no + 3f) / PREVIA_ESPACIO
+                            val nombre = when (i) {
+                                in 0 until 26 -> ('a' + i).toString()
+                                26 -> "ñ"
+                                LETRAS -> "sin letra"
+                                CRUCE -> "cruzado"
+                                else -> null
+                            }
+                            if (nombre != null) {
+                                val destino = if (f < 0.75f) prudentes else if (f > 1.1f) animadas else null
+                                if (destino != null) { if (destino.isNotEmpty()) destino.append(", "); destino.append(nombre) }
+                            }
+                        }
+                    }
                 }
             }
             val calibrada = when {
@@ -803,9 +1235,22 @@ class Cerebro(private val archivo: File) {
                 tasa < 0.05f -> "más segura (casi nunca la deshaces)"
                 else -> "equilibrada"
             }
-            val conTeclas = if (teclas > 0) " · $teclas teclas que sueles confundir" else ""
+            val conTeclas = (if (teclas > 0) " · $teclas teclas que sueles confundir" else "") +
+                (if (cambiosReales > 0) " · $cambiosReales palabras que sueles cambiar por otra" else "")
+            // Tus dedazos más comunes, de más a menos (solo si ya vio unos cuantos)
+            val total = cuentaTipos.sum()
+            val perfil = if (total < 8f) "" else {
+                val orden = (0 until TIPOS).filter { cuentaTipos[it] >= 1f }.sortedByDescending { cuentaTipos[it] }.take(3)
+                "\nTus errores más comunes: " + orden.joinToString(", ") {
+                    NOMBRES_TIPO[it] + " " + Math.round(cuentaTipos[it] * 100f / total) + "%"
+                }
+            }
+            val espacios = buildString {
+                if (prudentes.isNotEmpty()) append("\nEspacios: más prudente con ").append(prudentes)
+                if (animadas.isNotEmpty()) append(if (prudentes.isEmpty()) "\nEspacios: " else " · ").append("se anima con ").append(animadas)
+            }
             return "$frases patrones de frases · $errores errores tuyos que ya reconoce$conTeclas\n" +
-                "Autocorrección: $calibrada"
+                "Autocorrección: $calibrada$perfil$espacios"
         }
 
         /** Se parecen lo suficiente como para ser la misma palabra mal escrita (hasta 2 cambios) */

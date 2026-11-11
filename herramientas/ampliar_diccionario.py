@@ -7,8 +7,17 @@ Toma una lista grande de palabras del español con su frecuencia real de uso
 y agrega las que faltan, cada una en el lugar que le toca según qué tan común es.
 Quita lo que es solo de España (vosotros, os, tenéis...) y lo que parece inglés.
 
+Con la lista completa (es_full, más de un millón de formas) entran también las palabras menos
+comunes pero reales: las formales (-ción, -idad, -mente...), del trabajo y del Estado. Para que
+no se cuelen errores de tipeo de los subtítulos, una palabra rara NO se agrega si a un solo
+dedazo (letra de menos, de más, cambiada por la vecina o cruzada) hay otra muchísimo más usada:
+"pueblo" sí, "peublo" no.
+
+Al final limpia errores.txt: si un "error de fábrica" ahora es una palabra del diccionario, se
+quita (una palabra de verdad nunca se corrige).
+
 Si no hay internet o algo falla, el diccionario queda como estaba (nunca rompe la compilación).
-Uso: ampliar_diccionario.py <diccionario.txt> <lista_frecuencias.txt> [cuantas]
+Uso: ampliar_diccionario.py <diccionario.txt> <lista_frecuencias.txt> [cuantas] [errores.txt] [minimo]
 """
 import bisect
 import re
@@ -62,24 +71,101 @@ def es_de_vosotros(w, conocidas):
     return False
 
 
+FILAS = ["qwertyuiop", "asdfghjklñ", "zxcvbnm"]
+VECINAS = {}
+for f, fila in enumerate(FILAS):
+    for i, c in enumerate(fila):
+        v = set()
+        if i > 0:
+            v.add(fila[i - 1])
+        if i < len(fila) - 1:
+            v.add(fila[i + 1])
+        for g in (f - 1, f + 1):
+            if 0 <= g < len(FILAS):
+                otra = FILAS[g]
+                # La fila de abajo está corrida: se toman las dos teclas que quedan debajo/encima
+                for j in (i - 1, i, i + 1):
+                    if 0 <= j < len(otra):
+                        v.add(otra[j])
+        VECINAS[c] = v
+VOCAL_TILDE = {"a": "á", "e": "é", "i": "í", "o": "ó", "u": "ú"}
+
+
+def variantes(w):
+    """Lo que sale de [w] con un solo dedazo (sin contar letras de más)"""
+    n = len(w)
+    for i in range(n):
+        yield w[:i] + w[i + 1:]                      # una letra de más en w
+        if i < n - 1 and w[i] != w[i + 1]:
+            yield w[:i] + w[i + 1] + w[i] + w[i + 2:]  # letras cruzadas
+        base = sin_tildes(w[i])
+        for v in VECINAS.get(base, ()):
+            yield w[:i] + v + w[i + 1:]              # tecla vecina
+        if base in VOCAL_TILDE and w[i] == base:
+            yield w[:i] + VOCAL_TILDE[base] + w[i + 1:]  # le faltó la tilde
+
+
+def es_dedazo(w, c, cuenta, borradas):
+    """[w] (vista [c] veces) parece un error de tipeo de otra palabra muchísimo más usada"""
+    tope = max(400, c * 40)
+    for v in variantes(w):
+        if v != w and cuenta.get(v, 0) >= tope:
+            return True
+    # Le falta una letra: w es una palabra común sin una de sus letras ("porqe" ← "porque")
+    if borradas.get(w, 0) >= tope:
+        return True
+    return False
+
+
+def limpiar_errores(ruta, palabras):
+    """Quita de errores.txt los errores que ahora son palabras del diccionario"""
+    try:
+        lineas = open(ruta, encoding="utf-8").read().split("\n")
+    except OSError:
+        return
+    salida = []
+    quitados = 0
+    for l in lineas:
+        if l and not l.startswith("#"):
+            k = l.split(":", 1)[0]
+            if k in palabras:
+                quitados += 1
+                continue
+        salida.append(l)
+    if quitados:
+        open(ruta, "w", encoding="utf-8").write("\n".join(salida))
+    print(f"errores.txt: {quitados} errores quitados (ahora son palabras)")
+
+
 def main():
     if len(sys.argv) < 3:
         print("uso: ampliar_diccionario.py diccionario.txt frecuencias.txt [cuantas]")
         return
     ruta_dic, ruta_frec = sys.argv[1], sys.argv[2]
     cuantas = int(sys.argv[3]) if len(sys.argv) > 3 else 50000
+    ruta_errores = sys.argv[4] if len(sys.argv) > 4 else None
+    minimo = int(sys.argv[5]) if len(sys.argv) > 5 else 1
     lineas = open(ruta_dic, encoding="utf-8").read().split("\n")
     while lineas and lineas[-1] == "":
         lineas.pop()
 
     frec = []
+    cuenta = {}
     for linea in open(ruta_frec, encoding="utf-8", errors="ignore"):
         partes = linea.strip().split()
         if len(partes) < 2:
             continue
-        w = partes[0].lower()
+        w = unicodedata.normalize("NFC", partes[0].lower())
+        try:
+            c = int(partes[1])
+        except ValueError:
+            continue
+        if c < minimo:
+            break
         if LETRAS.match(w):
-            frec.append(w)
+            if w not in cuenta:
+                frec.append(w)
+            cuenta[w] = cuenta.get(w, 0) + c
         if len(frec) >= cuantas:
             break
     if len(frec) < 1000:
@@ -109,13 +195,31 @@ def main():
     anclas = sorted((rango[w], i) for w, i in existentes.items() if w in rango and i >= desde)
     claves = [a[0] for a in anclas]
 
+    # Palabras comunes sin una de sus letras (para reconocer el error "le faltó una letra")
+    borradas = {}
+    for w, c in cuenta.items():
+        if c < 400:
+            continue
+        for i in range(len(w)):
+            b = w[:i] + w[i + 1:]
+            if borradas.get(b, 0) < c:
+                borradas[b] = c
+
     quitar = {w for w in existentes if w in QUITAR}
+    dedazos = 0
     nuevas = {}  # índice de línea -> palabras que van después de esa línea
     agregadas = 0
     for r, w in enumerate(frec):
         if rango[w] != r or w in existentes or w in ESPANA or w in RUIDO:
             continue
-        if len(w) < 2 or parece_ingles(w) or es_de_vosotros(w, conocidas):
+        if len(w) < 2 or len(w) > 24 or parece_ingles(w) or es_de_vosotros(w, conocidas):
+            continue
+        # Tres letras iguales seguidas ("holaaa", "siii"): se escriben así a propósito
+        if re.search(r"(.)\1\1", w):
+            continue
+        # Error de tipeo de los subtítulos: no entra
+        if es_dedazo(w, cuenta.get(w, 0), cuenta, borradas):
+            dedazos += 1
             continue
         # Una palabra sin tilde que ya existe con tilde ("esta" sí existe; "telefono" no)
         k = bisect.bisect_right(claves, r) - 1
@@ -137,7 +241,11 @@ def main():
                 continue
             salida.append(w)
     open(ruta_dic, "w", encoding="utf-8").write("\n".join(salida) + "\n")
-    print(f"Diccionario: {agregadas} palabras nuevas, {len(quitar)} quitadas (solo de España)")
+    print(f"Diccionario: {agregadas} palabras nuevas, {len(quitar)} quitadas (solo de España), "
+          f"{dedazos} errores de tipeo descartados")
+    if ruta_errores:
+        palabras = {l.strip().lower() for l in salida if l.strip() and not l.startswith("#")}
+        limpiar_errores(ruta_errores, palabras)
 
 
 if __name__ == "__main__":

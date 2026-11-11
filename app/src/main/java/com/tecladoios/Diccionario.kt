@@ -77,6 +77,20 @@ class Diccionario(context: Context) {
      * dedazos que tú sueles hacer. Es una copia para leerla rápido en cada comparación.
      */
     @Volatile private var confusion: FloatArray? = null
+    /** Letras que sueles comerte y letras que sueles poner de más (perfil del cerebro) */
+    @Volatile private var falta: FloatArray? = null
+    @Volatile private var sobra: FloatArray? = null
+    /** Qué tanto sueles cruzar letras con los dos pulgares (1 = normal, menos = seguido) */
+    @Volatile private var factorCruce = 1f
+
+    /** Copia el perfil de errores del cerebro para leerlo rápido en cada comparación */
+    private fun refrescarPerfil() {
+        val pf = cerebro.perfil()
+        confusion = pf?.cambio
+        falta = pf?.falta
+        sobra = pf?.sobra
+        factorCruce = pf?.cruce ?: 1f
+    }
 
     /** La app donde estás escribiendo (el cerebro aprende cómo escribes en cada una) */
     @Volatile var app = ""
@@ -152,7 +166,7 @@ class Diccionario(context: Context) {
         val app = context.applicationContext
         Thread({
             try { cerebro.cargar() } catch (e: Throwable) { Registro.anotar("cargar el cerebro", e) }
-            try { confusion = cerebro.factoresConfusion() } catch (_: Throwable) { }
+            try { refrescarPerfil() } catch (_: Throwable) { }
             try { indice = construir(app) } catch (e: Throwable) { Registro.anotar("armar el diccionario", e) }
         }, "diccionario").apply {
             priority = Thread.NORM_PRIORITY - 1
@@ -191,19 +205,45 @@ class Diccionario(context: Context) {
      * de las palabras más usadas ("tranajo" → "trabajo", "nafie" → "nadie"). Solo los que no
      * se pueden confundir con otra palabra; se corrigen al instante, sin calcular nada.
      */
-    @Volatile private var tipeos: Map<String, String> = emptyMap()
+    @Volatile private var tipeos: Tipeos = Tipeos(emptyArray(), emptyArray())
     /**
      * Los mismos errores de fábrica ordenados (para saber rápido si lo que vas escribiendo es el
      * comienzo de un dedazo conocido: entonces es UNA palabra mal tocada y no se separa)
      */
     @Volatile private var tipeosOrden: Array<String> = emptyArray()
 
-    private fun leerTipeos(c: Context): Map<String, String> {
-        val m = HashMap<String, String>(340_000)
+    /**
+     * Más de medio millón de errores de fábrica guardados en dos listas ordenadas (el error y su
+     * corrección) en vez de una tabla: ocupan muchos megas menos de memoria y se buscan igual de
+     * rápido (búsqueda binaria: unas 20 comparaciones por palabra).
+     */
+    private class Tipeos(val claves: Array<String>, val destinos: Array<String>) {
+        private fun buscar(k: String): Int {
+            var a = 0
+            var b = claves.size - 1
+            while (a <= b) {
+                val m = (a + b) ushr 1
+                val c = claves[m].compareTo(k)
+                if (c == 0) return m
+                if (c < 0) a = m + 1 else b = m - 1
+            }
+            return -1
+        }
+
+        operator fun get(k: String): String? {
+            val i = buscar(k)
+            return if (i >= 0) destinos[i] else null
+        }
+
+        fun containsKey(k: String) = buscar(k) >= 0
+    }
+
+    private fun leerTipeos(c: Context): Tipeos {
         // Muchos errores llevan a la misma palabra: se guarda una sola copia de cada una
-        // (con 160 mil errores eso ahorra varios megas de memoria)
-        val unicas = HashMap<String, String>(30_000)
-        val claves = ArrayList<String>(260_000)
+        // (con medio millón de errores eso ahorra muchos megas de memoria)
+        val unicas = HashMap<String, String>(60_000)
+        val claves = ArrayList<String>(580_000)
+        val destinos = ArrayList<String>(580_000)
         try {
             c.assets.open("errores.txt").bufferedReader().useLines { lineas ->
                 for (linea in lineas) {
@@ -211,21 +251,28 @@ class Diccionario(context: Context) {
                     val i = linea.indexOf(':')
                     if (i <= 0 || i >= linea.length - 1) continue
                     val d = linea.substring(i + 1).trim().replace('_', ' ')
-                    val k = linea.substring(0, i)
-                    m[k] = unicas.getOrPut(d) { d }
-                    claves.add(k)
+                    claves.add(linea.substring(0, i))
+                    destinos.add(unicas.getOrPut(d) { d })
                 }
             }
         } catch (_: Exception) { }
-        try {
-            val orden = claves.toTypedArray()
-            // El archivo ya viene ordenado; si alguien lo editó a mano, se ordena aquí
-            var ordenado = true
-            for (i in 1 until orden.size) if (orden[i - 1] > orden[i]) { ordenado = false; break }
-            if (!ordenado) orden.sort()
-            tipeosOrden = orden
-        } catch (_: Throwable) { }
-        return m
+        unicas.clear()
+        var k = claves.toTypedArray()
+        var v = destinos.toTypedArray()
+        claves.clear()
+        destinos.clear()
+        // El archivo ya viene ordenado; si alguien lo editó a mano, se ordena aquí
+        var ordenado = true
+        for (x in 1 until k.size) if (k[x - 1] > k[x]) { ordenado = false; break }
+        if (!ordenado) {
+            val idx = k.indices.sortedBy { k[it] }
+            val k2 = Array(k.size) { k[idx[it]] }
+            val v2 = Array(v.size) { v[idx[it]] }
+            k = k2
+            v = v2
+        }
+        tipeosOrden = k
+        return Tipeos(k, v)
     }
 
     /** ¿[np] es el comienzo de un dedazo de fábrica? ("connsec" → "connsecuencia") */
@@ -638,36 +685,47 @@ class Diccionario(context: Context) {
         for (j in 1..m) antes[j] = antes[j - 1] + if (b[j - 1] == 'h') 0.3f else 1f
         val tq = toq?.takeIf { it.size == n }
         val cf = confusion
+        val fFalta = falta
+        val fSobra = sobra
+        val fCruce = factorCruce
         for (i in 1..n) {
             actual[0] = i.toFloat()
             var minimo = actual[0]
             val ca = a[i - 1]
+            val ia = if (cf != null || fSobra != null) Cerebro.letra(ca) else -1
             // Letra de más: si repetiste la letra o es vecina de la anterior/siguiente, fue un
-            // dedo que rozó dos teclas ("hokla" → "hola") y cuesta menos
-            val extra = when {
+            // dedo que rozó dos teclas ("hokla" → "hola") y cuesta menos. Si es una letra que
+            // tú sueles poner de más (lo aprendió el cerebro), cuesta todavía menos
+            var extra = when {
                 i >= 2 && a[i - 2] == ca -> 0.5f
                 (i >= 2 && costoCambio(a[i - 2], ca) <= 0.4f) || (i < n && costoCambio(a[i], ca) <= 0.4f) -> 0.65f
                 else -> 1f
             }
-            val ia = if (cf != null) Cerebro.letra(ca) else -1
+            if (fSobra != null && ia >= 0) extra *= fSobra[ia]
             for (j in 1..m) {
                 val cb = b[j - 1]
                 var cambio = if (tq != null) costoToque(tq[i - 1], ca, cb) else costoCambio(ca, cb)
                 // Un dedazo tuyo de siempre (lo aprendió el cerebro) cuesta menos
-                if (ia >= 0 && cambio > 0f) {
+                if (cf != null && ia >= 0 && cambio > 0f) {
                     val ib = Cerebro.letra(cb)
                     if (ib >= 0) cambio *= cf!![ia * Cerebro.LETRAS + ib]
                 }
                 var v = antes[j - 1] + cambio
                 v = minOf(v, antes[j] + extra)
-                // Letra que faltó (letra doble o "h" muda cuestan menos: "aroz" → "arroz", "ola" → "hola")
-                v = minOf(v, actual[j - 1] + if (cb == 'h') 0.3f else if (j >= 2 && b[j - 2] == cb) 0.5f else 1f)
+                // Letra que faltó (letra doble o "h" muda cuestan menos: "aroz" → "arroz", "ola" → "hola").
+                // Las letras que tú sueles comerte (lo aprendió el cerebro) cuestan menos todavía
+                var falto = if (cb == 'h') 0.3f else if (j >= 2 && b[j - 2] == cb) 0.5f else 1f
+                if (fFalta != null) {
+                    val ib = Cerebro.letra(cb)
+                    if (ib >= 0) falto *= fFalta[ib]
+                }
+                v = minOf(v, actual[j - 1] + falto)
                 // Dos letras invertidas: "qeu" → "que". Si los dos pulgares tocaron casi a la vez
                 // (menos de 70 ms entre uno y otro), el orden se cruza muy fácil: cuesta la mitad
                 if (i > 1 && j > 1 && ca == b[j - 2] && a[i - 2] == cb) {
                     val t = tq?.get(i - 1)
                     val alaVez = t != null && t.size > 3 && t[3] >= 0f && t[3] < 70f
-                    v = minOf(v, antes2[j - 2] + if (alaVez) 0.3f else 0.6f)
+                    v = minOf(v, antes2[j - 2] + (if (alaVez) 0.3f else 0.6f) * fCruce)
                 }
                 actual[j] = v
                 if (v < minimo) minimo = v
@@ -1117,6 +1175,7 @@ class Diccionario(context: Context) {
     private fun separar(ix: Indice, p: String): String? {
         val l = p.lowercase()
         if (l.length < 5) return null
+        val confPegada = cerebro.confianzaEspacio(null)
         var mejor: String? = null
         var mejorPuntaje = 0
         for (k in 1 until l.length - 1) {
@@ -1130,6 +1189,8 @@ class Diccionario(context: Context) {
             if (rb < 0 || rb > COMUN) continue
             var s = minOf(frec(ra), frec(rb)) + (frec(ra) + frec(rb)) / 4
             if (paresFijos(a)?.contains(b) == true || pares[a]?.containsKey(b) == true) s += 250
+            // Lo que aprendió de tus espacios: si deshaces seguido estas separaciones, se cuida más
+            s += ((confPegada - 1f) * 300f).toInt()
             if (s > mejorPuntaje) { mejorPuntaje = s; mejor = ix.palabras[ra].lowercase() + " " + ix.palabras[rb] }
         }
         // Solo si ambas partes son bastante comunes (evita cortes raros)
@@ -1164,6 +1225,10 @@ class Diccionario(context: Context) {
             val juntas = paresFijos(pa)?.contains(pb.lowercase()) == true ||
                 pares[pa]?.containsKey(pb.lowercase()) == true
             if (soloSeguro && !juntas) continue
+            // Lo que aprendió de tus espacios con esa letra (deshaces seguido las separaciones
+            // con la n → casi no separa con la n; las dejas siempre con la b → se anima más)
+            val conf = cerebro.confianzaEspacio(l[k])
+            if (conf < 0.5f && !juntas) continue
             // Partes cortitas ("te", "os", "pe"): solo si son palabras de enlace o van juntas
             // (así "acompañante" nunca se vuelve "acompaña te")
             if (!juntas) {
@@ -1172,6 +1237,7 @@ class Diccionario(context: Context) {
             }
             var s = minOf(frec(ra), frec(rb)) + (frec(ra) + frec(rb)) / 4
             if (juntas) s += 250
+            s += ((conf - 1f) * 300f).toInt()
             if (s > mejorPuntaje) { mejorPuntaje = s; mejor = "$pa $pb" }
         }
         return if (mejorPuntaje >= 520) mejor else null
@@ -1230,11 +1296,17 @@ class Diccionario(context: Context) {
 
         var mejor: String? = null
         var mejorS = 0f
+        // Lo que aprendió de tus espacios: palabras pegadas sin letra en medio
+        val confPegada = cerebro.confianzaEspacio(null)
         for (k in 2..n - 3) {
             for (conSep in 0..1) {
                 // La letra que cayó en lugar del espacio: se mira la tecla de verdad (la ñ
                 // tiene su propia tecla y nunca es un espacio, aunque sin tilde sea "n")
                 if (conSep == 1 && l[k] !in JUNTO_AL_ESPACIO) continue
+                // Con esa letra deshaces seguido las separaciones: mientras escribes ya no se
+                // separa con ella (al dar espacio todavía puede, si esas palabras van juntas)
+                val conf = if (conSep == 1) cerebro.confianzaEspacio(l[k]) else confPegada
+                if (conf < 0.55f) continue
                 val desdeB = k + conSep
                 val largoB = n - desdeB
                 // Lo que sigue tiene que tener sustancia: 3 letras (4 si la primera es cortita)
@@ -1305,6 +1377,8 @@ class Diccionario(context: Context) {
                 if (previa.isNotEmpty()) s += contexto(previa, formaA, previa2) * 120f
                 // Con una letra en lugar del espacio se pide más seguridad
                 if (conSep == 1) s -= 60f
+                // Lo aprendido de tus espacios mueve la vara para un lado o para el otro
+                s += (conf - 1f) * 300f
                 if (s > mejorS) {
                     mejorS = s
                     mejor = formaA + " " + p.substring(desdeB)
@@ -1607,10 +1681,12 @@ class Diccionario(context: Context) {
 
     /** Deshiciste la separación de [original] (borrar justo después): no se vuelve a hacer */
     @Synchronized
-    fun rechazarSeparacion(original: String) {
+    fun rechazarSeparacion(original: String, separado: String? = null) {
         val n = normal(original)
         if (pausado || n.length < 3) return
         rechazos.add("$n>~")
+        // El cerebro aprende que con esa letra (o sin letra) no tenía que separar
+        if (separado != null) cerebro.aprenderEspacio(original, separado, false)
         cambios = true
     }
 
@@ -1637,6 +1713,18 @@ class Diccionario(context: Context) {
         if (rp >= 0 || propia(l, usada)) {
             // Nombres que siempre escribes con mayúscula: "javier" → "Javier"
             if (p[0].isLowerCase() && esNombre(l) && !bloqueada(l)) return p.replaceFirstChar { it.uppercase() }
+            // Error difícil de ver: la palabra existe, pero después de [previa] tú siempre la
+            // cambias por otra ("no tubo" → "no tuvo"). El cerebro lo aprendió de tus cambios
+            cerebro.cambioEnContexto(previa, l)?.let { q ->
+                if (!bloqueada(q) && !lisuraAjena(q)) return igualarMayus(q, p).takeIf { it != p }
+            }
+            // Otra palabra que suena igual encaja mucho mejor con lo que TÚ sueles escribir
+            // ("no tubo" → "no tuvo"): si el cerebro está muy seguro, se corrige sola
+            if (rp >= 0 && previa.isNotEmpty()) {
+                alternativa(ix, l, previa, previa2)?.let { (v, fuerte) ->
+                    if (fuerte) return igualarMayus(v, p).takeIf { it != p }
+                }
+            }
             // Una palabra rarísima que nunca usaste, tocada justo en el borde de una tecla,
             // cuando a un toque hay una palabra muy común: casi seguro fue un dedo desviado
             // ("cpmo" está en el diccionario como rara → "como"). Solo con la posición del dedo.
@@ -1678,15 +1766,14 @@ class Diccionario(context: Context) {
         // (una palabra rara escrita una sola vez puede ser un error; cuando la repites ya es tuya)
         if (mejor == null && np.length >= 3) {
             // El límite se calibra solo según qué tan seguido deshaces la autocorrección
-            mejor = masParecida(ix, np, limitePara(np.length) * cerebro.audacia(), previa, previa2)
+            mejor = masParecida(ix, np, limitePara(np.length) * cerebro.audacia() * factorRitmo(), previa, previa2)
         }
         // La separación gana solo si lo escrito no se parece mucho a UNA palabra: "entones"
         // es "entonces" (no "en tones") y "ventamas" es "ventanas" (no "ve tamas")
         if (sepSegura != null) {
             val m = mejor
             if (m == null) return conMayus(sepSegura, p)
-            val nm = normal(m)
-            if (distancia(np, nm, nm.length, 2f) > 0.9f) return conMayus(sepSegura, p)
+            if (prefiereEspacio(np, m, sepSegura, p, previa, previa2)) return conMayus(sepSegura, p)
         }
         // 4) Palabras pegadas: "estoybien" → "estoy bien", "yonsoy" → "yo soy"
         if (mejor == null && np.length >= 4) {
@@ -1700,6 +1787,136 @@ class Diccionario(context: Context) {
         val elegida = mejor ?: return null
         val resultado = igualarMayus(elegida, p)
         return if (resultado == p) null else resultado
+    }
+
+    /**
+     * Escribiendo muy rápido con dos pulgares salen más dedazos por palabra: la autocorrección
+     * se anima un poquito más (hasta 12 %). Se mira el ritmo de las letras de esta palabra.
+     */
+    private fun factorRitmo(): Float {
+        val t = toq ?: return 1f
+        var suma = 0f
+        var cuantas = 0
+        for (k in 1 until t.size) {
+            val r = t[k].getOrNull(3) ?: continue
+            if (r <= 0f || r > 1500f) continue
+            suma += r
+            cuantas++
+        }
+        if (cuantas < 2) return 1f
+        val prom = suma / cuantas
+        return when {
+            prom < 110f -> 1.12f
+            prom < 150f -> 1.07f
+            else -> 1f
+        }
+    }
+
+    /**
+     * ¿Espacio o UNA palabra? Lo escrito ([np]) puede ser dos palabras con una letra en lugar
+     * del espacio ([separada]: "que hago") o una sola palabra con un dedazo ([palabra]:
+     * "entonces"). Antes la vara era fija; ahora se mueve con:
+     *  - Lo que aprendió de tus espacios con esa letra (si las deshaces seguido, gana la palabra).
+     *  - Lo que sueles escribir: si después de [previa] casi siempre va [palabra], gana la
+     *    palabra; si las dos partes van juntas en lo tuyo, gana el espacio.
+     *  - Qué tanto se parece lo escrito a la palabra (un dedazo chiquito casi siempre es eso).
+     */
+    private fun prefiereEspacio(np: String, palabra: String, separada: String, p: String, previa: String, previa2: String): Boolean {
+        val nm = normal(palabra)
+        val d = distancia(np, nm, nm.length, 2.5f)
+        val conf = cerebro.confianzaSeparar(p, separada)
+        var vara = 0.9f / conf
+        if (contexto(previa, palabra, previa2) >= 0.5f) vara += 0.3f
+        val sp = separada.indexOf(' ')
+        if (sp > 0) {
+            val a = separada.substring(0, sp)
+            val b = separada.substring(sp + 1)
+            if (cerebro.prob(a, previa, b, app) > 0.2f) vara -= 0.2f
+            if (previa.isNotEmpty() && contexto(previa, a, previa2) >= 0.5f) vara -= 0.1f
+        }
+        return d > vara.coerceIn(0.5f, 1.6f)
+    }
+
+    // ---------- Espacio cruzado (escribir con dos pulgares) ----------
+
+    /**
+     * Con dos pulgares, el espacio y una letra se cruzan muy seguido:
+     *  - "hol aamigo" → "hola amigo" (la última letra de la primera salió después del espacio)
+     *  - "holaa migo" → "hola amigo" (la primera letra de la segunda salió antes del espacio)
+     * Solo si lo escrito NO son palabras y al mover esa letra las dos sí lo son (palabras
+     * comunes o tuyas). [original]: cómo escribiste la primera antes de que la autocorrección
+     * la cambiara. Si deshaces el arreglo, no se vuelve a hacer. Devuelve (primera, segunda) o null.
+     */
+    @Synchronized
+    fun cruzarEspacio(previa: String, palabra: String, original: String? = null): Pair<String, String>? {
+        val ix = indice ?: return null
+        if (palabra.length < 2 || palabra.length > 20 || !palabra.all { it.isLetter() }) return null
+        if (palabra.any { it.isUpperCase() }) return null
+        val lp = palabra.lowercase()
+        if (lp in INGLES || expresiva(lp) || conoce(ix, palabra)) return null
+        if (cerebro.confianzaCruce() < 0.55f) return null
+        toq = null
+        sinCorte = true
+        try {
+            val opciones = if (original != null && original != previa) listOf(original, previa) else listOf(previa)
+            for (a in opciones) {
+                if (a.length < 2 || a.length > 20 || !a.all { it.isLetter() }) continue
+                val la = a.lowercase()
+                if (conoce(ix, a) || expresiva(la) || la in INGLES) continue
+                if (rechazos.isNotEmpty() &&
+                    (("$la $lp>x") in rechazos || (previa.lowercase() + " " + lp + ">x") in rechazos)
+                ) continue
+                // 1) La letra se fue después del espacio: "hol" + "aamigo"
+                if (lp.length >= 3) {
+                    val w1 = formaComun(ix, la + lp[0])
+                    val w2 = if (w1 != null) formaComun(ix, lp.substring(1)) else null
+                    if (w1 != null && w2 != null) return igualarMayus(w1, a) to w2
+                }
+                // 2) La letra salió antes del espacio: "holaa" + "migo"
+                if (la.length >= 3) {
+                    val w1 = formaComun(ix, la.dropLast(1))
+                    val w2 = if (w1 != null) formaComun(ix, la.last().toString() + lp) else null
+                    if (w1 != null && w2 != null) return igualarMayus(w1, a) to w2
+                }
+            }
+            return null
+        } catch (e: Throwable) {
+            Registro.anotar("cruzar", e)
+            return null
+        } finally {
+            sinCorte = false
+        }
+    }
+
+    /** La forma del diccionario de [l] si es una palabra común ("tambien" → "también") o tuya; si no, null */
+    private fun formaComun(ix: Indice, l: String): String? {
+        if (l.length < 2) return if (l in ENLACE) l else null
+        var r = rango(ix, l)
+        if (r < 0) r = mejorPorNormal(ix, normal(l))
+        if (r in 0..COMUN) {
+            val f = ix.palabras[r]
+            return if (bloqueada(f) || lisuraAjena(f)) null else f
+        }
+        val n = aprendidas[l] ?: 0
+        return if (propia(l, n) && !bloqueada(l)) l else null
+    }
+
+    /** El espacio cruzado se arregló ([bien]) o lo deshiciste ([original] era lo que querías) */
+    @Synchronized
+    fun notarCruce(original: String, bien: Boolean) {
+        if (pausado) return
+        cerebro.aprenderCruce(bien)
+        if (!bien) {
+            val o = original.trim().lowercase()
+            if (o.contains(' ') && o.length <= 60) rechazos.add("$o>x")
+        }
+        cambios = true
+    }
+
+    /** Separaste mientras escribías: [original] ("yanpode") quedó como [separado] ("ya pode") */
+    @Synchronized
+    fun notarSeparacion(original: String, separado: String) {
+        if (!pausado) cerebro.aprenderEspacio(original, separado, true)
     }
 
     /**
@@ -1917,7 +2134,124 @@ class Diccionario(context: Context) {
         if (pausado) return
         val f = final.trim().trimEnd { !it.isLetterOrDigit() }
         cerebro.aprenderError(escrito.trim(), f, peso)
-        confusion = cerebro.factoresConfusion()
+        refrescarPerfil()
+        cambios = true
+    }
+
+    // ---------- Palabras que suenan igual (errores difíciles de ver) ----------
+
+    /**
+     * Las formas que suenan igual que [n] (sin tildes): b/v, s/c/z, y/ll, g/j y la h muda.
+     * "tubo" → "tuvo", "baya" → "vaya", "aya" → "haya", "caso" → "cazo".
+     */
+    private fun suenanIgual(n: String): List<String> {
+        val r = ArrayList<String>()
+        fun poner(v: String) { if (v != n && v.length >= 2 && v !in r) r.add(v) }
+        for (i in n.indices) {
+            val c = n[i]
+            val sig = if (i + 1 < n.length) n[i + 1] else ' '
+            val suave = sig == 'e' || sig == 'i'
+            when (c) {
+                'b' -> poner(n.substring(0, i) + 'v' + n.substring(i + 1))
+                'v' -> poner(n.substring(0, i) + 'b' + n.substring(i + 1))
+                's' -> {
+                    poner(n.substring(0, i) + 'z' + n.substring(i + 1))
+                    if (suave) poner(n.substring(0, i) + 'c' + n.substring(i + 1))
+                }
+                'z' -> {
+                    poner(n.substring(0, i) + 's' + n.substring(i + 1))
+                    if (suave) poner(n.substring(0, i) + 'c' + n.substring(i + 1))
+                }
+                'c' -> if (suave) {
+                    poner(n.substring(0, i) + 's' + n.substring(i + 1))
+                    poner(n.substring(0, i) + 'z' + n.substring(i + 1))
+                }
+                'y' -> if (i + 1 < n.length) poner(n.substring(0, i) + "ll" + n.substring(i + 1))
+                'l' -> if (sig == 'l') poner(n.substring(0, i) + 'y' + n.substring(i + 2))
+                'g' -> if (suave) poner(n.substring(0, i) + 'j' + n.substring(i + 1))
+                'j' -> if (suave) poner(n.substring(0, i) + 'g' + n.substring(i + 1))
+                'h' -> if (i == 0) poner(n.substring(1))
+            }
+        }
+        if (n[0] != 'h') poner("h$n")
+        return r
+    }
+
+    /**
+     * ¿[l] (una palabra que existe) es en realidad otra que suena igual? Solo si después de
+     * [previa] la otra encaja claramente y [l] casi nunca va ahí. Devuelve (la otra, segura):
+     * segura = lo dicen TUS frases (el cerebro), no solo el diccionario. null si no hay duda.
+     */
+    private fun alternativa(ix: Indice, l: String, previa: String, previa2: String): Pair<String, Boolean>? {
+        val n = normal(l)
+        if (n.length < 2 || n.length > 20 || previa.isEmpty()) return null
+        if (l in INGLES || esContacto(l)) return null
+        val rp = rango(ix, l)
+        val cp = contexto(previa, l, previa2)
+        if (cp >= 0.05f) return null
+        var mejor: String? = null
+        var mejorC = 0f
+        for (v in suenanIgual(n)) {
+            val r = mejorPorNormal(ix, v)
+            if (r < 0 || r > COMUN) continue
+            // La otra no puede ser muchísimo más rara que lo escrito
+            if (rp >= 0 && r > rp * 4 + 2000) continue
+            val w = ix.palabras[r]
+            if (bloqueada(w) || lisuraAjena(w)) continue
+            val cv = contexto(previa, w, previa2)
+            if (cv > mejorC) { mejorC = cv; mejor = w }
+        }
+        val w = mejor ?: return null
+        if (mejorC < 0.35f) return null
+        val tuya = cerebro.prob(previa, previa2, w, app)
+        val lo = cerebro.prob(previa, previa2, l, app)
+        val segura = tuya >= 0.3f && lo < 0.02f && mejorC >= 0.5f
+        return w to segura
+    }
+
+    /**
+     * Para la barra: la palabra que suena igual y encaja mejor después de [previa]
+     * ("no tubo" → "tuvo"). Se ofrece al centro para elegirla de un toque.
+     */
+    @Synchronized
+    fun alternativaEnContexto(p: String, previa: String, previa2: String): String? {
+        val ix = indice ?: return null
+        if (p.length < 2 || !valida(p) || rango(ix, p) < 0) return null
+        return try {
+            alternativa(ix, p.lowercase(), previa, previa2)?.first?.let { igualarMayus(it, p) }
+        } catch (e: Throwable) { Registro.anotar("alternativa", e); null }
+    }
+
+    /** Borraste la letra [borrada] y escribiste [nueva] en su lugar: si son vecinas, el cerebro lo anota */
+    @Synchronized
+    fun notarTecla(borrada: Char, nueva: Char) {
+        if (pausado) return
+        val a = borrada.lowercaseChar()
+        val b = nueva.lowercaseChar()
+        if (a == b || !a.isLetter() || !b.isLetter()) return
+        val pa = sinTildes(a.toString()).firstOrNull() ?: return
+        val pb = sinTildes(b.toString()).firstOrNull() ?: return
+        if (VECINOS[pa]?.contains(pb) != true && !similares(pa, pb)) return
+        cerebro.aprenderTecla(pa, pb)
+        refrescarPerfil()
+        cambios = true
+    }
+
+    /**
+     * Cambiaste una palabra que existe ([escrita]) por otra que también existe y se le parece
+     * ([querida]) después de [previa]: "tubo" → "tuvo". Es un error difícil de ver (la
+     * autocorrección no lo nota porque ambas son palabras); el cerebro lo aprende por contexto.
+     */
+    @Synchronized
+    fun notarCambio(previa: String, escrita: String, querida: String, peso: Float = 1f) {
+        if (pausado) return
+        val ix = indice ?: return
+        val e = escrita.trim()
+        val q = querida.trim()
+        if (e.length < 2 || q.length < 2 || !valida(e) || !valida(q) || e.equals(q, ignoreCase = true)) return
+        if (!conoce(ix, e) || !conoce(ix, q)) return
+        if (!Cerebro.parecidas(normal(e.lowercase()), normal(q.lowercase()))) return
+        cerebro.aprenderCambio(previa, e, q, peso)
         cambios = true
     }
 
@@ -1940,7 +2274,8 @@ class Diccionario(context: Context) {
         val c = corregido.trim().trimEnd { !it.isLetterOrDigit() }.lowercase()
         if (pausado || o.isEmpty() || c.isEmpty() || o.contains(' ') || o == c) return
         cerebro.rechazarError(o, c)
-        confusion = cerebro.factoresConfusion()
+        cerebro.rechazarCambio(o, c)
+        refrescarPerfil()
         val clave = "$o>$c"
         // La primera vez solo se anota; la segunda vez ya no se vuelve a corregir
         if (clave in rechazos) return
@@ -2848,7 +3183,7 @@ class Diccionario(context: Context) {
             yevar:llevar yevas:llevas yeve:llevé yorar:llorar yoro:lloro yover:llover yovizna:llovizna
             zanpada:zampada zanpado:zampado zanpar:zampar zanparse:zamparse zanpon:zampón zanpona:zampona
             zapatiyas:zapatillas
-        """.trim().split(ESPACIOS).mapNotNull { par ->
+        """.plus(" ").plus(ERRORES_MAS).trim().split(ESPACIOS).mapNotNull { par ->
             val i = par.indexOf(':')
             if (i <= 0) null else par.substring(0, i) to par.substring(i + 1).replace('_', ' ')
         }.toMap()
@@ -2908,7 +3243,7 @@ class Diccionario(context: Context) {
             se que|sé que; no se|no sé; yo se|yo sé; ya se|ya sé; solo se|solo sé;
             tambien te|también te; tambien me|también me; tambien yo|también yo; yo tambien|yo también;
             despues te|después te; despues de|después de
-        """.let { leerPares(it) } + leerPares(CONFUSIONES)
+        """.let { leerPares(it) } + leerPares(CONFUSIONES) + leerPares(CONFUSIONES_MAS)
 
         /**
          * "a|b": la palabra anterior y la actual escritas como "a" se cambian por "b". Si "b"
@@ -3008,6 +3343,74 @@ class Diccionario(context: Context) {
             asta luego|hasta luego; asta mañana|hasta mañana; asta pronto|hasta pronto
         """
 
+        /**
+         * Más errores de oído y de apuro que son muy comunes (b/v, c/s/z, ll/y, g/j, la h,
+         * palabras pegadas): "pasiensia" → "paciencia", "hize" → "hice", "alamejor" → "a lo mejor".
+         */
+        private const val ERRORES_MAS = """
+            hechame:échame hechale:échale hechalo:échalo hechate:échate pasiensia:paciencia pasiencia:paciencia
+            ecselente:excelente exelentes:excelentes exsito:éxito exitos:éxitos vuelbo:vuelvo vuelbe:vuelve
+            vuelben:vuelven bolvi:volví bolver:volver volber:volver devemos:debemos deveriamos:deberíamos
+            devido:debido deven:deben cresco:crezco ofresco:ofrezco agradesco:agradezco meresco:merezco
+            conosca:conozca agradesca:agradezca hize:hice hizimos:hicimos hizieron:hicieron hiziste:hiciste
+            sientate:siéntate preucupes:preocupes preucupa:preocupa preucupado:preocupado trabage:trabaje
+            trabages:trabajes trabaga:trabaja trabagar:trabajar trabaho:trabajo desepcion:decepción
+            desepcionado:decepcionado desepcionada:decepcionada embes:en_vez enves:en_vez hiendo:yendo
+            creiendo:creyendo leiendo:leyendo caiendo:cayendo oiendo:oyendo huiendo:huyendo escusas:excusas
+            espliqué:expliqué porsiacaso:por_si_acaso porciacaso:por_si_acaso alamejor:a_lo_mejor nosé:no_sé
+            sobretodo:sobre_todo apartirde:a_partir_de entodo:en_todo derepente:de_repente denuevo:de_nuevo
+            depronto:de_pronto devez:de_vez nomas:nomás ensima:encima atraz:atrás atras:atrás
+            alrrededor:alrededor reciví:recibí resibir:recibir resibido:recibido desidir:decidir desidi:decidí
+            desidio:decidió desision:decisión intereza:interesa interezante:interesante interezado:interesado
+            empesar:empezar empeso:empezó empese:empecé empesamos:empezamos empesaron:empezaron canbio:cambio
+            simpre:siempre selular:celular tamien:también tamben:también bacio:vacío bacia:vacía vasio:vacío
+            vasia:vacía yueve:llueve yorando:llorando cojer:coger cojí:cogí eleji:elegí
+            jeneralmente:generalmente injeniero:ingeniero ablo:hablo oy:hoy bez:vez beces:veces bida:vida
+            bivir:vivir bivo:vivo biaje:viaje verda:verdad havia:había havian:habían haviamos:habíamos
+            quiza:quizá desagradesido:desagradecido agradesido:agradecido agradesida:agradecida coraçon:corazón
+        """
+
+        /**
+         * Errores difíciles de ver: las dos palabras existen, pero juntas no tienen sentido.
+         * Solo se nota por la palabra de al lado: "tubo que" → "tuvo que", "halla sido" →
+         * "haya sido", "haz visto" → "has visto", "te valla bien" → "te vaya bien",
+         * "aver si" → "a ver si", "debe aver" → "debe haber", "hay dios" → "ay Dios".
+         */
+        private const val CONFUSIONES_MAS = """
+            tubo que|tuvo que; tube que|tuve que; se callo|se cayó; halla sido|haya sido; halla hecho|haya hecho;
+            halla llegado|haya llegado; halla pasado|haya pasado; halla venido|haya venido;
+            halla terminado|haya terminado; halla salido|haya salido; halla visto|haya visto;
+            halla dicho|haya dicho; aya sido|haya sido; aya hecho|haya hecho; aya llegado|haya llegado;
+            aya pasado|haya pasado; aya venido|haya venido; aya terminado|haya terminado; aya salido|haya salido;
+            aya visto|haya visto; aya dicho|haya dicho; te valla|te vaya; le valla|le vaya; les valla|les vaya;
+            me valla|me vaya; nos valla|nos vaya; se valla|se vaya; valla bien|vaya bien; valla mal|vaya mal;
+            vallas bien|vayas bien; vallan a|vayan a; as echo|has hecho; an echo|han hecho; de echo|de hecho;
+            el echo|el hecho; un echo|un hecho; los echos|los hechos; echo realidad|hecho realidad;
+            haz visto|has visto; haz hecho|has hecho; haz ido|has ido; haz llegado|has llegado;
+            haz comido|has comido; haz dicho|has dicho; haz terminado|has terminado; haz pensado|has pensado;
+            haz escuchado|has escuchado; haz estado|has estado; haz sido|has sido; haz tenido|has tenido;
+            haz podido|has podido; haz leido|has leído; haz dormido|has dormido; haz trabajado|has trabajado;
+            haz recibido|has recibido; haz enviado|has enviado; has caso|haz caso; ha ser|a ser;
+            ha hacer|a hacer; ha dar|a dar; ha comer|a comer; ha llegar|a llegar; ha salir|a salir;
+            ha decir|a decir; ha trabajar|a trabajar; ha estudiar|a estudiar; ha jugar|a jugar;
+            ha dormir|a dormir; ha buscar|a buscar; ha mi|a mí; ha ti|a ti; ha usted|a usted;
+            ha ustedes|a ustedes; ha veces|a veces; ha pesar|a pesar; ha partir|a partir; ha tiempo|a tiempo;
+            debe aver|debe haber; debería aver|debería haber; deberia aver|debería haber; puede aver|puede haber;
+            podría aver|podría haber; podria aver|podría haber; suele aver|suele haber; aver si|a ver+si;
+            aver que|a ver+qué; aver cuando|a ver+cuándo; aver como|a ver+cómo; aver donde|a ver+dónde;
+            aver quien|a ver+quién; aver dime|a ver+dime; aver muestra|a ver+muestra; aver pasa|a ver+pasa;
+            a lado|al lado; si mismo|sí mismo; si misma|sí misma; hay dios|ay+Dios; hay no|ay no;
+            ay esta|ahí está; ay estoy|ahí estoy; ay voy|ahí voy; hay te|ahí te; hay le|ahí le; ay te|ahí te;
+            ay le|ahí le; ahí que|hay que; ahi que|hay que; se a|se ha; se an|se han; me e|me he; se e|se he;
+            la e|la he; lo as|lo has; la as|la has; lo an|lo han; la an|la han; ya e|ya he; ya as|ya has;
+            ya an|ya han; nunca e|nunca he; aún así|aun así; aun asi|aun así; otra bez|otra vez; tal bez|tal vez;
+            una bez|una vez; voy aser|voy+a hacer; vas aser|vas+a hacer; va aser|va+a hacer;
+            vamos aser|vamos+a hacer; van aser|van+a hacer; ahí boy|ahí voy; nos bemos|nos vemos;
+            nos bamos|nos vamos; hechar de|echar de; hechar la|echar la; abía una|había una; abia una|había una;
+            avía una|había una; havia una|había una; ola amiga|hola amiga; ola amigo|hola amigo;
+            ola chicos|hola chicos
+        """
+
         /** Largo máximo de una frase en la barra (para que se lea sin cortarse) */
         private const val MAX_FRASE = 26
 
@@ -3039,7 +3442,24 @@ class Diccionario(context: Context) {
             te espero aquí; ya estoy aquí; ya llegué a la casa; feliz día de la madre; feliz día del padre;
             feliz año nuevo; feliz navidad para todos; buen viaje; salgo en un rato;
             estoy ocupado ahorita; estoy ocupada ahorita; sigo en el trabajo; ya salí del trabajo; mañana te confirmo;
-            luego te cuento; después te cuento; te cuento después
+            luego te cuento; después te cuento; te cuento después;
+            ya llegué a la casa; ya estoy en camino; ya estoy en la casa; ya estoy saliendo de la casa;
+            voy saliendo en un rato; llego en diez minutos; estoy en una reunión; estoy en clases;
+            te llamo en un rato; te llamo apenas salga; te escribo apenas llegue; te aviso apenas pueda;
+            no te olvides de avisarme; no te preocupes por eso; no hay apuro; todo bien gracias;
+            todo tranquilo por aquí; qué tal tu día; cómo te fue en el trabajo; cómo sigues de salud;
+            ya comiste; qué vas a comer hoy; vamos a almorzar; nos vemos el fin de semana;
+            que tengas buen fin de semana; buen fin de semana; feliz fin de semana; que te diviertas;
+            mucho éxito en todo; te deseo lo mejor; cuenta conmigo; aquí estoy para lo que necesites;
+            gracias por la información; gracias por la confirmación; gracias por la paciencia;
+            disculpa no vi tu mensaje; recién veo tu mensaje; perdón recién veo; te leo en un rato;
+            mándame la ubicación; mándame la foto; pásame el número; pásame el dato;
+            sí claro no hay problema; claro que sí con gusto; con mucho gusto; de nada para eso estamos;
+            se adjunta el documento para su revisión; adjunto el informe para su conocimiento;
+            para su conocimiento y fines pertinentes; quedo atento a sus comentarios;
+            agradeceré su pronta respuesta; en relación al documento de la referencia;
+            se solicita su atención al presente; sin otro particular me despido;
+            buenos días estimado colega; buenas tardes estimados colegas; saludos cordiales
             """.trim().split(";")) {
                 val w = linea.trim().split(ESPACIOS).filter { it.isNotEmpty() }
                 for (k in 2 until w.size) {
