@@ -43,6 +43,21 @@ jobs:
           fi
           ls -la app/src/main/assets
 
+      - name: Ampliar el diccionario con el español que se usa de verdad
+        run: |
+          # Lista completa de palabras del español conversado con su frecuencia (subtítulos).
+          # Entran las que faltan (también las formales y del trabajo), en el lugar que les toca,
+          # sin los errores de tipeo. Sin internet el diccionario queda como está.
+          BASE=https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/es
+          if curl -fsSL -o frecuencias.txt "$BASE/es_full.txt"; then
+            python3 herramientas/ampliar_diccionario.py app/src/main/assets/diccionario.txt frecuencias.txt 260000 app/src/main/assets/errores.txt 12
+          elif curl -fsSL -o frecuencias.txt "$BASE/es_50k.txt"; then
+            python3 herramientas/ampliar_diccionario.py app/src/main/assets/diccionario.txt frecuencias.txt 50000 app/src/main/assets/errores.txt
+          else
+            echo "::warning::No se pudo descargar la lista de palabras: se usa el diccionario sin ampliar"
+          fi
+          rm -f frecuencias.txt
+
       - name: Poner la llave de firma (desde los secretos de GitHub)
         env:
           FIRMA_BASE64: ${{ secrets.FIRMA_BASE64 }}
