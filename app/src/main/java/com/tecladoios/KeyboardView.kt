@@ -99,7 +99,7 @@ class KeyboardView(
     private fun invalidarTecla(t: Tecla) {
         val r = t.rect
         if (r.isEmpty) { invalidate(); return }
-        val m = dp(2f)
+        val m = dp(2f) + cantoTecla
         invalidate((r.left - m).toInt(), (r.top - m).toInt(),
             (r.right + m).toInt() + 1, (r.bottom + m).toInt() + 1)
     }
@@ -135,6 +135,8 @@ class KeyboardView(
     // Esquinas como las teclas de iOS 26 (redondas pero sin parecer pastillas)
     // Un poco más redondas: el teclado se ve más suave
     private val radio = dp(8.4f)
+    /** Alto del canto (la base oscura que asoma debajo de cada tecla) */
+    private val cantoTecla = dp(1.8f)
     private val formaPulso = Path()
     private val rectPulso = RectF()
 
@@ -290,6 +292,13 @@ class KeyboardView(
      * corto manda siempre la tecla donde cayó el dedo.
      */
     private val bajadaMs = HashMap<Int, Long>()
+    /**
+     * Último punto (x, y) y momento de cada dedo apoyado. Sirve para ver cuándo un dedo "salta"
+     * de golpe a otra tecla lejana: eso no es un dedo moviéndose, son DOS pulgares que la
+     * pantalla juntó en un solo toque (ver [saltoDeDedo]).
+     */
+    private val ultimoPunto = HashMap<Int, FloatArray>()
+    private val ultimoMs = HashMap<Int, Long>()
     private val burbujas = KeyPreviewOverlay(this).apply { radioTecla = radio }
     private val variantes = VariantesPopup(this).apply {
         // Un toquecito al pasar de un acento a otro (se siente qué estás eligiendo)
@@ -647,6 +656,8 @@ class KeyboardView(
         presionadas.clear()
         escritas.clear()
         puntosToque.clear()
+        ultimoPunto.clear()
+        ultimoMs.clear()
         manejador.removeCallbacks(repetirBorrar)
         manejador.removeCallbacks(abrirVariantes)
         manejador.removeCallbacks(activarCursor)
@@ -738,13 +749,14 @@ class KeyboardView(
             // Encima, solo las teclas que están cambiando (presionadas o terminando su animación)
             if (!modoCursor) {
                 val m = dp(1.5f)
+                val mAbajo = cantoTecla + dp(1f)
                 for (fila in filas) for (t in fila) {
                     if (t.tipo == Tipo.VACIO) continue
                     val presionada = estaPresionada(t)
                     val f = pulsos[t] ?: 0f
                     if (!presionada && f <= 0f) continue
                     val r = t.rect
-                    canvas.drawRect(r.left - m, r.top - m, r.right + m, r.bottom + m, pinturaTapar)
+                    canvas.drawRect(r.left - m, r.top - m, r.right + m, r.bottom + mAbajo, pinturaTapar)
                     dibujar(canvas, t, presionada, f)
                 }
             }
@@ -790,8 +802,10 @@ class KeyboardView(
             return
         }
         val desde = pulsos[t] ?: return
+        // Si vas escribiendo rápido (otra letra hace muy poco) la tecla se apaga más ligero
+        val rapido = ultimaBajadaLetra > 0L && SystemClock.uptimeMillis() - ultimaBajadaLetra < 230L
         val anim = ValueAnimator.ofFloat(desde, 0f).apply {
-            duration = Movimiento.TOQUE_SALIDA
+            duration = if (rapido) Movimiento.TOQUE_SALIDA_RAPIDA else Movimiento.TOQUE_SALIDA
             interpolator = FRENO_PULSO
             addUpdateListener {
                 val v = it.animatedValue as Float
@@ -841,20 +855,29 @@ class KeyboardView(
         }
         // Cuánto está "encendida" la tecla ahora (para agrandar apenas su letra al tocarla)
         val toque = if (presionada) 1f else f
-        // Al presionar, la tecla apenas se hunde (no crece ni brilla)
-        // Se hunde un poco más que antes: el toque se nota "con peso"
-        val r = if (f > 0f) rectPulso.apply { set(t.rect); inset(dp(1.0f) * f, dp(0.8f) * f) } else t.rect
+        // Tecla con base (como una tecla de verdad): debajo de cada tecla asoma un canto oscuro
+        // y firme. Al presionarla la tecla BAJA sobre su base (no se encoge): el toque se ve y
+        // se siente pesado, y al soltarla sube de vuelta.
+        val canto = cantoTecla
+        val r = if (f > 0f) rectPulso.apply {
+            set(t.rect)
+            inset(dp(0.4f) * f, 0f)
+            offset(0f, canto * 0.85f * f)
+        } else t.rect
         val forma = if (f > 0f) {
             Formas.suave(formaPulso, r.left, r.top, r.right, r.bottom, radio, 0f, t.curvaDer, t.curvaIzq)
             formaPulso
         } else t.forma
 
         if (Color.alpha(color) > 0) {
-            if (Color.alpha(tema.sombra) > 0) {
+            if (Color.alpha(tema.sombra) > 0 && !sinFondo && !modoCursor) {
+                // El canto se queda quieto (es la base); solo se ve lo que asoma debajo de la
+                // tecla (la tecla es translúcida: debajo de ella no se pinta nada)
                 pintura.color = tema.sombra
                 c.save()
-                c.translate(0f, dp(1f))
-                c.drawPath(forma, pintura)
+                c.clipOutPath(forma)
+                c.translate(0f, canto)
+                c.drawPath(t.forma, pintura)
                 c.restore()
             }
             pintura.color = color
@@ -902,8 +925,9 @@ class KeyboardView(
         // La letra presionada la muestra la vista previa de arriba, no la tecla
         if (t.tipo == Tipo.LETRA && presionada && vistaPrevia && !pad) return
 
-        val cx = t.rect.centerX()
-        val cy = t.rect.centerY()
+        // La letra baja junto con la tecla
+        val cx = r.centerX()
+        val cy = r.centerY()
         val contenido = conAparicion(when {
             t.tipo == Tipo.ENTER && enterAccion && !presionada -> tema.textoAcento
             t.tipo == Tipo.SHIFT && shift > 0 -> tema.textoActivo
@@ -1249,6 +1273,83 @@ class KeyboardView(
             }
         }
         puntosToque.remove(id)
+        ultimoPunto.remove(id)
+        ultimoMs.remove(id)
+    }
+
+    /**
+     * Escribiendo rápido con dos pulgares, muchas pantallas juntan los dos dedos en UN solo
+     * toque cuando el segundo baja casi a la vez que se levanta el primero: Android avisa que
+     * el primer dedo "se movió" de golpe hasta la otra punta del teclado, en vez de avisar
+     * que bajó un dedo nuevo. Antes esa segunda letra se perdía (un toque corto no cambia de
+     * tecla). Ahora, si el dedo salta más de una tecla y media entre una lectura y la
+     * siguiente (en menos de 35 ms, imposible para un dedo de verdad), se toma como lo que
+     * es: se suelta la primera tecla (su letra se escribe) y se toca la nueva, en orden.
+     */
+    private fun saltoDeDedo(e: MotionEvent, i: Int, id: Int, x: Float, y: Float): Boolean {
+        val antes = ultimoPunto[id]
+        val antesMs = ultimoMs[id]
+        if (antes == null || antesMs == null) {
+            ultimoPunto[id] = floatArrayOf(x, y)
+            ultimoMs[id] = e.eventTime
+            return false
+        }
+        // Buscar el salto entre todas las lecturas de este aviso (las agrupadas y la última)
+        var px = antes[0]
+        var py = antes[1]
+        var pt = antesMs
+        var salto = false
+        val limite = unidad * 1.5f
+        val n = e.historySize
+        for (h in 0..n) {
+            val hx = if (h < n) e.getHistoricalX(i, h) else x
+            val hy = if (h < n) e.getHistoricalY(i, h) else y
+            val ht = if (h < n) e.getHistoricalEventTime(h) else e.eventTime
+            if (!salto && ht - pt in 0L..35L && Math.hypot((hx - px).toDouble(), (hy - py).toDouble()) > limite) salto = true
+            px = hx; py = hy; pt = ht
+        }
+        antes[0] = x
+        antes[1] = y
+        ultimoMs[id] = e.eventTime
+        if (!salto) return false
+        // Solo entre letras y el espacio, y nunca mientras eliges acentos, mueves el cursor,
+        // deslizas desde 123 o deslizas una palabra
+        if (deslizando || modoCursor || id == punteroVariantes || id == punteroCambio) return false
+        if (deslizarActivo && id == punteroTrazo) return false
+        if (id == punteroEspacio && espacioAcepto) return false
+        val actual = presionadas[id] ?: return false
+        if (actual.tipo != Tipo.LETRA && actual.tipo != Tipo.ESPACIO) return false
+        val nueva = teclaEn(x, y) ?: return false
+        if (nueva === actual || (nueva.tipo != Tipo.LETRA && nueva.tipo != Tipo.ESPACIO)) return false
+        val donde = puntosToque[id]
+        simularToque(e, MotionEvent.ACTION_UP, id, donde?.get(0) ?: x, donde?.get(1) ?: y)
+        simularToque(e, MotionEvent.ACTION_DOWN, id, x, y)
+        return true
+    }
+
+    /** Pasa por el teclado un toque armado a mano (soltar o tocar), con el dedo [id] */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun simularToque(e: MotionEvent, accion: Int, id: Int, x: Float, y: Float) {
+        val prop = MotionEvent.PointerProperties()
+        prop.id = id
+        prop.toolType = e.getToolType(0)
+        val coord = MotionEvent.PointerCoords()
+        coord.x = x
+        coord.y = y
+        coord.pressure = 1f
+        coord.size = 0f
+        // Tamaño de contacto en cero: el de dos dedos juntos parecería la palma
+        coord.touchMajor = 0f
+        coord.touchMinor = 0f
+        val ev = MotionEvent.obtain(
+            e.downTime, e.eventTime, accion, 1, arrayOf(prop), arrayOf(coord),
+            e.metaState, e.buttonState, 1f, 1f, e.deviceId, 0, e.source, e.flags,
+        )
+        try {
+            onTouchEvent(ev)
+        } finally {
+            ev.recycle()
+        }
     }
 
     /** Si el teclado se esconde con un dedo apoyado, nada queda presionado al volver */
@@ -1351,6 +1452,8 @@ class KeyboardView(
                 }
                 presionadas[id] = t
                 bajadaMs[id] = e.eventTime
+                ultimoPunto[id] = floatArrayOf(x, y)
+                ultimoMs[id] = e.eventTime
                 presionar(t, id, x, y)
             }
             MotionEvent.ACTION_MOVE -> {
@@ -1359,6 +1462,8 @@ class KeyboardView(
                     val id = e.getPointerId(i)
                     val x = e.getX(i)
                     val y = e.getY(i)
+                    // Dos pulgares que la pantalla juntó en uno: se separan en dos toques
+                    if (e.pointerCount == 1 && saltoDeDedo(e, i, id, x, y)) return true
                     if (id == punteroVariantes) {
                         variantes.mover(x)
                         continue
@@ -1513,6 +1618,8 @@ class KeyboardView(
                     }
                 }
                 puntosToque.remove(id)
+                ultimoPunto.remove(id)
+                ultimoMs.remove(id)
                 invalidate()
             }
             MotionEvent.ACTION_CANCEL -> reiniciar()

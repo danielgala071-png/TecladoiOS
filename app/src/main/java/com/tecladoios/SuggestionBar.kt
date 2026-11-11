@@ -547,7 +547,7 @@ class SuggestionBar(
         if (i < 0 || !isShown) { soltado = -1; brilloSoltado = 0f; return }
         soltado = i
         animSoltado = ValueAnimator.ofFloat(1f, 0f).apply {
-            duration = Movimiento.TOQUE_SALIDA
+            duration = Movimiento.ELEGIDA
             interpolator = FRENO_BARRA
             addUpdateListener {
                 brilloSoltado = it.animatedValue as Float
@@ -563,10 +563,23 @@ class SuggestionBar(
             // Al tocarla: cápsula de vidrio (misma forma que la destacada). Al soltar no
             // desaparece de golpe: se apaga suave, como en iPhone
             val rp = (height - 16 * d) / 2f
-            val f = if (i == presionado) 1f else brilloSoltado
-            pintura.color = (tema.teclaPresionada and 0x00FFFFFF) or
+            val elegida = i != presionado
+            val f = if (!elegida) 1f else brilloSoltado
+            // Al soltarla (la elegiste) la cápsula toma el color de la app y se apaga suave:
+            // se nota clarito cuál palabra se puso
+            val base = if (elegida) Tema.mezclar(tema.teclaPresionada, tema.azul, 0.45f) else tema.teclaPresionada
+            pintura.color = (base and 0x00FFFFFF) or
                 ((Color.alpha(tema.teclaPresionada) * f).toInt().coerceIn(0, 255) shl 24)
-            c.drawRoundRect(x0 + 6 * d, 6 * d, x0 + ancho - 6 * d, height - 10 * d, rp, rp, pintura)
+            // Presionada se ve apenas hundida; al soltarla vuelve a su tamaño
+            val hundir = if (!elegida) 2f * d else 2f * d * f
+            c.drawRoundRect(x0 + 6 * d + hundir, 6 * d + hundir * 0.5f, x0 + ancho - 6 * d - hundir,
+                height - 10 * d - hundir * 0.5f, rp, rp, pintura)
+            if (elegida && f > 0f) {
+                val previo = pinturaBorde.color
+                pinturaBorde.color = (tema.azul and 0x00FFFFFF) or ((0xB0 * f).toInt().coerceIn(0, 255) shl 24)
+                c.drawRoundRect(x0 + 6 * d, 6 * d, x0 + ancho - 6 * d, height - 10 * d, rp, rp, pinturaBorde)
+                pinturaBorde.color = previo
+            }
         }
         if (i != presionado && s.destacada) {
             // La corrección que se pondrá sola va en una cápsula de vidrio con el filo de la app

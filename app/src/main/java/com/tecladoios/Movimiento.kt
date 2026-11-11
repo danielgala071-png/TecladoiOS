@@ -21,6 +21,13 @@ object Movimiento {
     // Un poco más largas y con el mismo frenado suave: todo se siente más fluido, sin
     // hacer esperar al dedo (al presionar la tecla se marca al instante; solo la salida dura)
     const val TOQUE_SALIDA = 210L
+    /**
+     * Escribiendo rápido la tecla se apaga más ligero: con dos pulgares, varias teclas
+     * encendidas a la vez se veían como una mancha. Así cada toque se ve limpio y separado.
+     */
+    const val TOQUE_SALIDA_RAPIDA = 125L
+    /** La cápsula de la sugerencia que elegiste brilla con el color de la app y se apaga */
+    const val ELEGIDA = 320L
     const val LETRAS = 190L
     const val LETRAS_DESLIZAR = 280L
     const val BARRA_APARECE = 240L

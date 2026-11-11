@@ -1154,15 +1154,15 @@ class Cerebro(private val archivo: File) {
 
         private const val VERSION = "tecladoios-cerebro-1"
         private const val INICIO = "^"
-        /** Días en que algo que ya no usas pierde la mitad de su peso */
-        private const val VIDA_MEDIA = 180.0
-        private const val MAX_ENTRADAS = 150_000
-        private const val MAX_ERRORES = 6000
+        /** Días en que algo que ya no usas pierde la mitad de su peso (ahora recuerda más tiempo) */
+        private const val VIDA_MEDIA = 240.0
+        private const val MAX_ENTRADAS = 260_000
+        private const val MAX_ERRORES = 12_000
         /** Palabras reales que cambias por otra (contextos guardados como mucho) */
-        private const val MAX_CAMBIOS = 4000
-        private const val MAX_IGNORADAS = 3000
+        private const val MAX_CAMBIOS = 8000
+        private const val MAX_IGNORADAS = 5000
         /** Memoria de la conversación: cuántas palabras y en cuántos minutos se apagan */
-        private const val MAX_RECIENTES = 400
+        private const val MAX_RECIENTES = 600
         private const val VIDA_RECIENTE_MIN = 25.0
         /** Lo normal: se deshace más o menos 1 de cada 12 autocorrecciones */
         private const val TASA_BASE = 0.08f

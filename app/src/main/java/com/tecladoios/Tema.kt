@@ -106,7 +106,9 @@ data class Tema(
                 // Mayúsculas activadas: blanco suave, no encandila sobre el negro
                 teclaActiva = 0xFFE3E3E8.toInt(),
                 textoActivo = 0xFF0A0A0B.toInt(),
-                sombra = 0,
+                // Canto firme debajo de cada tecla (la base): grafito oscuro apenas teñido con la
+                // app. Hace que el teclado se vea sólido y "con peso", no flotando en el negro
+                sombra = mezclar(0xFF1B1B1E.toInt(), color, 0.10f),
                 texto = 0xFFF5F5F7.toInt(),
                 textoSecundario = 0xFF8E8E93.toInt(),
                 azul = color,
@@ -121,7 +123,8 @@ data class Tema(
                 desenfoque = 0,
                 // Se dibujan con opacidad propia (no dependen de la transparencia de la tecla)
                 brillo = a(0x1A, BLANCO),
-                profundidad = a(0x3A, NEGRO),
+                // Más suave que antes: el volumen ahora lo da el canto de abajo
+                profundidad = a(0x26, NEGRO),
                 reflejo = a(0x24, BLANCO),
                 resplandor = a(0x18, color),
             )

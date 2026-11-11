@@ -1241,6 +1241,12 @@ class TecladoService : InputMethodService(),
         val corr = if (op.revisar) diccionario.corregir(p, previa, previa2, t, toq) else null
         if (!diccionario.vigente(t)) return null
         var otras = diccionario.sugerir(p, 4, previa, previa2, t, toq).filter { it != corr && it != p }
+        // Empate entre dos palabras (la autocorrección no se animó a elegir): las dos van
+        // juntas al centro y a la derecha de la barra, para elegir de un toque
+        if (corr == null && op.revisar) {
+            val duda = try { diccionario.opcionesDeDuda(p) } catch (_: Throwable) { emptyList() }
+            if (duda.isNotEmpty()) otras = duda + otras.filter { o -> duda.none { it.equals(o, ignoreCase = true) } }
+        }
         // Error difícil de ver: lo escrito existe, pero otra palabra que suena igual encaja
         // mucho mejor ("no tubo" → "tuvo"). Va al centro de la barra para elegirla de un toque
         if (corr == null && p.length >= 2 && previa.isNotEmpty() && diccionario.vigente(t)) {
@@ -2564,6 +2570,8 @@ class TecladoService : InputMethodService(),
             diccionario.notarCorreccion(escrito, s.texto, 2f)
             // Si lo escrito también era una palabra ("casa" → "cada"), se aprende en su contexto
             diccionario.notarCambio(pv, escrito, s.texto, 1.5f)
+            // Si era un empate entre dos palabras, aprende cuál querías después de esa palabra
+            diccionario.notarEleccionDuda(pv, escrito, s.texto)
         }
         enMotor {
             diccionario.aprender(s.texto, if (s.literal) 3 else 2)
@@ -2700,28 +2708,39 @@ class TecladoService : InputMethodService(),
         else -> 3
     }
 
-    /** Como en iPhone: el espacio y el intro se sienten un poco más firmes, las de función más suaves */
+    /**
+     * Toque PESADO, como una tecla de verdad que baja y toca fondo: un golpe firme (CLICK) y,
+     * pegadito detrás, un golpe grave y corto (LOW_TICK) que da la sensación de peso. Todo
+     * dura menos de 20 ms, así escribiendo rápido a dos dedos cada toque se siente separado
+     * y no se vuelve un zumbido. El espacio y el intro van más firmes; las de función, más
+     * livianas. Si el celular no tiene esos golpes finos, se usa el clic fuerte del sistema.
+     */
     private fun crearEfecto(clase: Int): VibrationEffect {
         val nivel = fuerzaVibracion
         return if (toqueFino == true) {
-            val base = when (clase) { 1 -> 0.85f; 2 -> 0.7f; 3 -> 0.5f; else -> 0.7f }
-            val por = when (nivel) { "suave" -> 0.55f; "fuerte" -> 1.45f; else -> 1f }
-            val fuerza = (base * por).coerceIn(0.08f, 1f)
-            // Toque con más cuerpo: las letras, el espacio y el intro usan CLICK (firme, se
-            // siente que la tecla bajó). Solo en "suave" y en las teclas de función va TICK.
-            val primitivo = if (nivel == "suave" || (clase == 3 && nivel != "fuerte"))
-                VibrationEffect.Composition.PRIMITIVE_TICK
-                else VibrationEffect.Composition.PRIMITIVE_CLICK
-            VibrationEffect.startComposition().addPrimitive(primitivo, fuerza).compose()
+            val base = when (clase) { 1 -> 1f; 2 -> 0.85f; 3 -> 0.65f; else -> 0.9f }
+            val por = when (nivel) { "suave" -> 0.6f; "fuerte" -> 1.3f; else -> 1f }
+            val fuerza = (base * por).coerceIn(0.1f, 1f)
+            val comp = VibrationEffect.startComposition()
+                .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, fuerza)
+            // El golpe grave de "peso" (no en suave ni en las teclas de función)
+            if (golpeGrave == true && nivel != "suave" && clase != 3) {
+                val grave = ((if (nivel == "fuerte") 1f else 0.75f) * (if (clase == 1) 1f else 0.85f)).coerceIn(0.1f, 1f)
+                comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_LOW_TICK, grave, 6)
+            }
+            comp.compose()
         } else {
             val efecto = when (nivel) {
-                "suave" -> VibrationEffect.EFFECT_TICK
-                "fuerte" -> if (clase == 1) VibrationEffect.EFFECT_HEAVY_CLICK else VibrationEffect.EFFECT_CLICK
-                else -> if (clase == 3) VibrationEffect.EFFECT_TICK else VibrationEffect.EFFECT_CLICK
+                "suave" -> VibrationEffect.EFFECT_CLICK
+                "fuerte" -> VibrationEffect.EFFECT_HEAVY_CLICK
+                else -> if (clase == 3) VibrationEffect.EFFECT_CLICK else VibrationEffect.EFFECT_HEAVY_CLICK
             }
             VibrationEffect.createPredefined(efecto)
         }
     }
+
+    /** ¿El motor de vibración tiene el golpe grave (LOW_TICK)? Se pregunta una sola vez */
+    private var golpeGrave: Boolean? = null
 
     override fun retro(tipo: Tipo) {
         val conVibrar = vibrar
@@ -2769,6 +2788,8 @@ class TecladoService : InputMethodService(),
             if (toqueFino == null) {
                 toqueFino = v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_TICK,
                     VibrationEffect.Composition.PRIMITIVE_CLICK)
+                golpeGrave = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_LOW_TICK)
             }
             val clase = claseRetro(tipo)
             val efecto = efectos[clase] ?: crearEfecto(clase).also { efectos[clase] = it }

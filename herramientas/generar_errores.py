@@ -12,6 +12,7 @@ palabras más usadas, los dedazos más probables:
   - Letras invertidas al escribir con dos pulgares: "qeu" → "que"
   - Confusiones de oído: b/v, s/c/z, y/ll, h muda, g/j, qu/k
   - Dos errores juntos en palabras largas y muy usadas
+  - Pulgar que cae una fila más arriba o más abajo, e/i y o/u de oído, d final que no suena
 
 A cada error se le da una probabilidad (qué tan común es ese tipo de dedazo × qué tan común es
 la palabra). Un error solo se guarda si:
@@ -98,6 +99,9 @@ TIPO = {
     "tecla_larga": 0.3,      # la tecla vecina salió EN VEZ y ADEMÁS de la buena al barrer ("hiola")
     "fila_abajo": 0.25,      # el pulgar cae una fila más abajo de lo que quería ("nueno" → "bueno")
     "falta_dos": 0.15,       # palabras largas: se pierden dos letras al ir muy rápido
+    "fila_arriba": 0.2,      # el pulgar se estira de más y cae una fila más arriba ("yodo" → "todo")
+    "vocal_oido": 0.3,       # e/i y o/u que se confunden al hablar ("siguir", "dispues", "polecia")
+    "fin_d": 0.5,            # la d del final que no se pronuncia ("verda", "ciuda", "uste")
 }
 
 OIDO = [
@@ -198,6 +202,22 @@ def errores_de(w):
             for o, (ox, oy) in POS.items():
                 if oy == y + 1 and abs(ox - x) <= 0.55:
                     poner(w[:i] + o + w[i + 1:], TIPO["fila_abajo"] * (0.4 if i == 0 else 1.0))
+    # El pulgar se estira de más y cae justo arriba (al revés de fila_abajo)
+    for i in range(n):
+        c = w[i]
+        if c in POS:
+            x, y = POS[c]
+            for o, (ox, oy) in POS.items():
+                if oy == y - 1 and abs(ox - x) <= 0.55:
+                    poner(w[:i] + o + w[i + 1:], TIPO["fila_arriba"] * (0.4 if i == 0 else 1.0))
+    # e/i y o/u de oído (en sílabas sin acento, muy común al escribir como se habla)
+    for i in range(1, n):
+        par = {"e": "i", "i": "e", "o": "u", "u": "o"}.get(w[i])
+        if par and not (i > 0 and w[i - 1] == "q") and not (i > 0 and w[i - 1] == "g" and w[i] == "u"):
+            poner(w[:i] + par + w[i + 1:], TIPO["vocal_oido"])
+    # d final que no suena: "verdad" → "verda", "usted" → "uste"
+    if n >= 4 and w.endswith("d"):
+        poner(w[:-1], TIPO["fin_d"])
     # Palabras largas: dos letras que no salieron (no seguidas)
     if n >= 8:
         for i in range(1, n - 2):
@@ -218,10 +238,10 @@ def leer_palabras(ruta):
 
 def main():
     ruta_dic, ruta_kt, ruta_err = sys.argv[1], sys.argv[2], sys.argv[3]
-    maximo = int(sys.argv[4]) if len(sys.argv) > 4 else 560000
+    maximo = int(sys.argv[4]) if len(sys.argv) > 4 else 720000
     # Hasta qué palabra (por frecuencia) se entrenan errores y hasta cuál van errores dobles
-    alcance = int(sys.argv[5]) if len(sys.argv) > 5 else 100000
-    alcance_doble = int(sys.argv[6]) if len(sys.argv) > 6 else 40000
+    alcance = int(sys.argv[5]) if len(sys.argv) > 5 else 140000
+    alcance_doble = int(sys.argv[6]) if len(sys.argv) > 6 else 60000
 
     codigo = open(ruta_kt, encoding="utf-8").read()
     # El orden es el mismo que usa el teclado: primero lo más usado en el chat (FRECUENCIA del

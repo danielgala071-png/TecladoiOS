@@ -1057,7 +1057,7 @@ class Diccionario(context: Context) {
         fun sirve(w: String) = !bloqueada(w) && !lisuraAjena(w) && conoce(ix, w) &&
             !(enFormal && (esLisura(w) || esJerga(w)))
         val siguen = ArrayList<String>(4)
-        for (w in cerebro.continuar(previa, previa2, primera, app, 4)) {
+        for (w in cerebro.continuar(previa, previa2, primera, app, 5)) {
             if (!sirve(w)) break
             siguen.add(FORMAS[sinTildes(w)] ?: if (esNombre(w)) w.replaceFirstChar { it.uppercase() } else w)
         }
@@ -1129,6 +1129,14 @@ class Diccionario(context: Context) {
     ): String? {
         var mejor: String? = null
         var mejorTotal = Float.MAX_VALUE
+        // La segunda mejor (otra palabra de verdad, no la misma con o sin tilde): si queda
+        // casi empatada con la primera, no se adivina a ciegas (ver [ultimaDuda])
+        var mejorN = ""
+        var mejorD = 99f
+        var segundoTotal = Float.MAX_VALUE
+        var segunda: String? = null
+        ultimaDuda = false
+        ultimaSegunda = null
         var vistas = 0
         for (ch in iniciales(np)) {
             if (cortado()) return null
@@ -1145,7 +1153,10 @@ class Diccionario(context: Context) {
                             // Si no es un error "de tecla vecina", solo corrige hacia palabras comunes
                             if (!(d > 0.65f && i > 2500 && ctx == 0f)) {
                                 val total = d * 2.5f + Math.log(i + 30.0).toFloat() * 0.3f - ctx
-                                if (total < mejorTotal) { mejorTotal = total; mejor = c }
+                                if (total < mejorTotal) {
+                                    if (mejor != null && n != mejorN) { segundoTotal = mejorTotal; segunda = mejor }
+                                    mejorTotal = total; mejor = c; mejorN = n; mejorD = d
+                                } else if (total < segundoTotal && n != mejorN) { segundoTotal = total; segunda = c }
                             }
                         }
                     }
@@ -1162,10 +1173,54 @@ class Diccionario(context: Context) {
                 val d = distancia(np, nc, nc.length, lim)
                 if (d > lim || (d > 0.65f && n < 3)) continue
                 val total = d * 2.5f + 1.1f - minOf(n, 30) * 0.04f - contexto(previa, c, previa2) - recencia(c) * 0.004f
-                if (total < mejorTotal) { mejorTotal = total; mejor = c }
+                if (total < mejorTotal) {
+                    if (mejor != null && nc != mejorN) { segundoTotal = mejorTotal; segunda = mejor }
+                    mejorTotal = total; mejor = c; mejorN = nc; mejorD = d
+                } else if (total < segundoTotal && nc != mejorN) { segundoTotal = total; segunda = c }
             }
         }
+        // Empate: dos palabras explican igual de bien lo escrito y ni tu historia ni la frase
+        // deciden cuál es ("cssa": ¿casa o cosa?). Un dedazo chiquito en el borde de la tecla
+        // sí se corrige igual (ahí el dedo ya dijo cuál era).
+        ultimaDuda = mejor != null && segunda != null && segundoTotal - mejorTotal < MARGEN_DUDA && mejorD >= 0.5f
+        ultimaSegunda = segunda
         return mejor
+    }
+
+    /**
+     * La última búsqueda de [masParecida] terminó casi empatada entre dos palabras distintas.
+     * Entonces la autocorrección no cambia nada al tocar espacio (como Gboard): las dos quedan
+     * en la barra de sugerencias y eliges tú con un toque. Así no cambia una palabra bien
+     * pensada por otra que no querías.
+     */
+    private var ultimaDuda = false
+    /** La segunda mejor de la última búsqueda (la otra palabra del empate) */
+    private var ultimaSegunda: String? = null
+
+    /** La última palabra que quedó en duda (sin tildes, en minúsculas) y sus dos opciones */
+    private var dudaEscrita = ""
+    private var dudaOpciones: List<String> = emptyList()
+
+    /**
+     * Si [p] es la palabra que quedó en empate, las dos opciones (la más probable primero),
+     * para ponerlas juntas en la barra y elegir de un toque. Vacío si no hubo empate.
+     */
+    @Synchronized
+    fun opcionesDeDuda(p: String): List<String> =
+        if (dudaOpciones.isNotEmpty() && dudaEscrita == p.lowercase()) dudaOpciones else emptyList()
+
+    /**
+     * Elegiste en la barra una de las dos opciones de un empate: el cerebro aprende cuál
+     * querías DESPUÉS DE ESA PALABRA ("mi cssa" → casa, "una cssa" → cosa). Con dos veces en
+     * la misma frase, el empate ya se resuelve solo; con varias, en cualquier lugar.
+     */
+    @Synchronized
+    fun notarEleccionDuda(previa: String, escrito: String, elegida: String) {
+        if (pausado || dudaOpciones.isEmpty() || dudaEscrita != escrito.trim().lowercase()) return
+        if (dudaOpciones.none { it.equals(elegida.trim(), ignoreCase = true) }) return
+        cerebro.aprenderCambio(previa, escrito.trim(), elegida.trim(), 1.5f)
+        dudaOpciones = emptyList()
+        cambios = true
     }
 
     /**
@@ -1764,10 +1819,26 @@ class Diccionario(context: Context) {
         val sepSegura = if (mejor == null && np.length >= 4) separarEspacio(ix, p, soloSeguro = true) else null
         // 3) Errores de tipeo con la distribución del teclado
         // (una palabra rara escrita una sola vez puede ser un error; cuando la repites ya es tuya)
+        var duda = false
         if (mejor == null && np.length >= 3) {
             // El límite se calibra solo según qué tan seguido deshaces la autocorrección
             mejor = masParecida(ix, np, limitePara(np.length) * cerebro.audacia() * factorRitmo(), previa, previa2)
+            // Empate entre dos palabras: no se adivina (las dos quedan en la barra). Tampoco se
+            // separa en dos palabras: lo escrito es claramente UNA palabra mal tocada
+            if (mejor != null && ultimaDuda) {
+                val opciones = listOfNotNull(mejor, ultimaSegunda).filter { !bloqueada(it) && !lisuraAjena(it) }
+                // ¿Ya elegiste antes una de las dos después de esta misma palabra? Eso decide
+                cerebro.cambioEnContexto(previa, l)?.let { q ->
+                    val gana = opciones.firstOrNull { normal(it) == normal(q) }
+                    if (gana != null) return igualarMayus(gana, p).takeIf { it != p }
+                }
+                dudaEscrita = l
+                dudaOpciones = opciones.map { igualarMayus(it, p) }
+                mejor = null
+                duda = true
+            }
         }
+        if (duda) return null
         // La separación gana solo si lo escrito no se parece mucho a UNA palabra: "entones"
         // es "entonces" (no "en tones") y "ventamas" es "ventanas" (no "ve tamas")
         if (sepSegura != null) {
@@ -3413,6 +3484,8 @@ class Diccionario(context: Context) {
 
         /** Largo máximo de una frase en la barra (para que se lea sin cortarse) */
         private const val MAX_FRASE = 26
+        /** Diferencia mínima de puntaje entre la mejor y la segunda para corregir sola */
+        private const val MARGEN_DUDA = 0.3f
 
         /**
          * Frases hechas para completar la oración. De cada frase sale, para cada par de

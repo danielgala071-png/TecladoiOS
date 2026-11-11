@@ -841,3 +841,125 @@ quedo: atento, atenta
 a la: espera, brevedad, fecha
 en relación: a, al, con
 con relación: a, al
+# --- Más frases (v8): conversaciones del día a día, trabajo y sector público ---
+voy a: llegar, salir, ir, ver, llamar, comer, dormir, estar, tener, hacer, pasar, comprar, mandar, revisar, preguntar, esperar
+vas a: venir, ir, llegar, salir, poder, estar, comer, querer, ver, hacer
+vamos a: ir, ver, comer, salir, hacer, llegar, almorzar, cenar, jugar, esperar
+tengo que: ir, salir, hacer, trabajar, estudiar, pagar, terminar, llegar, ver, comprar, preguntar, revisar, enviar
+tienes que: venir, ir, ver, hacer, decirme, avisarme, llamar, pagar, traer
+hay que: ver, hacer, ir, pagar, esperar, comprar, avisar, revisar, coordinar, presentar
+puedes venir: hoy, mañana, ahora, ahorita, temprano
+me puedes: ayudar, decir, pasar, mandar, llamar, avisar, enviar, prestar, confirmar, explicar
+me podrías: ayudar, decir, pasar, enviar, confirmar, explicar, indicar, apoyar
+te puedo: llamar, preguntar, pedir, ayudar, escribir, mandar
+no te: preocupes, olvides, vayas, demores, molestes, pierdas
+no me: digas, olvides, dijiste, avisaste, llamaste, contestas, acuerdo, gusta, deja
+no se: puede, preocupe, olvide, sabe, nota
+ya está: listo, lista, bien, hecho, todo, pagado, enviado
+está listo: el, la, para, ya
+cómo te: fue, va, sientes, llamas
+cómo está: tu, la, el, todo, usted
+cómo están: todos, ustedes, por, en
+qué vas: a, hacer
+qué hiciste: hoy, ayer, ahí
+qué hora: es, sales, llegas, nos, vienes, termina, empieza
+a qué: hora, te, se, vas
+en qué: estás, momento, quedamos, lugar
+dónde: estás, vives, queda, nos, vamos, es, compraste, dejaste
+cuándo: vienes, llegas, sales, nos, es, regresas, empieza, termina
+cuánto: es, cuesta, sale, debo, te, falta, demoras
+para qué: es, sirve, hora
+por qué: no, me, te, dices, lo
+me avisas: cuando, si, para, apenas, cualquier
+avísame: cuando, si, apenas, cualquier, para
+apenas: llegue, llegues, salga, salgas, termine, pueda, puedas, sepa
+cuando: llegues, salgas, puedas, termines, tengas, quieras, llegue, salga, pueda
+cuando llegues: me, avísame, a, te
+si puedes: me, avísame, pásame, mándame, llámame, venir
+si quieres: te, nos, vamos, vienes, puedo
+te mando: el, la, los, las, un, una, foto, ubicación, audio
+te paso: el, la, los, las, mi, foto, número, ubicación, voz
+te dejo: el, la, mi, un, una
+gracias por: todo, tu, la, el, avisar, venir, escribir, el apoyo, tu tiempo, tu ayuda
+todo bien: por, gracias, y, en, contigo
+y tú: qué, cómo, dónde, ya
+estoy en: casa, el, la, camino, clase, una, reunión, la oficina, el trabajo
+estoy por: llegar, salir, terminar, ir
+recién: llego, llegué, salgo, salí, termino, terminé, me, veo, vi
+ya llegué: a, al, bien
+ya salí: de, del
+me voy: a, al, ya, a dormir, temprano
+nos vamos: a, al, ya, juntos
+mañana: temprano, en, a, nos, te, tengo, voy, es, hay
+el fin: de
+fin de: semana, mes, año
+toda la: semana, tarde, noche, mañana, familia
+todo el: día, mundo, tiempo, año, mes
+buen fin: de
+qué rico: está, se, todo
+qué bonito: está, es, se
+qué buena: noticia, idea, onda
+qué bueno: que, saberlo, verte
+me alegra: mucho, saber, que, verte
+lo bueno: es, que
+lo malo: es, que
+la verdad: es, que, no
+de hecho: ya, es, no, me
+al final: no, se, me, del, de
+por si: acaso, las, no
+por cierto: ya, te, me
+mi casa: o, de, a, en
+a mi: casa, mamá, papá, trabajo, me
+# Sector público y trabajo
+se remite: el, la, los, las, adjunto
+se adjunta: el, la, los, las, copia
+se solicita: su, el, la, a, autorizar, información
+se comunica: que, a
+se informa: que, a
+mediante el: presente, cual
+mediante la: presente, cual
+por medio: del, de
+dar cumplimiento: a, al
+en cumplimiento: de, del, a
+en virtud: de, del, a
+de conformidad: con
+conforme a: lo, la, ley, ley de
+lo dispuesto: en, por
+el área: usuaria, de, responsable, técnica
+área usuaria: para, de, y
+la oficina: de, general, del
+oficina de: administración, logística, recursos, presupuesto, planeamiento, asesoría, abastecimiento, tesorería
+recursos humanos: para, de, y
+el informe: técnico, de, legal, n°, final
+informe técnico: n°, de, para
+requerimiento de: bienes, servicios, personal, información
+términos de: referencia
+especificaciones: técnicas
+orden de: servicio, compra
+certificación de: crédito, presupuesto
+crédito presupuestal: para, de
+plazo de: ejecución, entrega, atención, días
+dentro del: plazo
+para su: conocimiento, atención, revisión, aprobación, firma, trámite, evaluación
+para los: fines, cuales
+fines pertinentes: atentamente
+reciba usted: mi, un
+sin otro: particular
+otro particular: me, quedo, hago
+hago propicia: la
+la oportunidad: para, de
+la ocasión: para
+expresarle: mi, los
+mi especial: consideración
+especial consideración: y, atentamente
+# Chat peruano
+al toque: te, me, voy, llego, salgo, nomás
+de una: vamos, ya, causa, nomás
+habla: causa, bro, pe, qué, mano
+qué fue: causa, bro, mano, de, pe
+ya pe: causa, bro, apura, no
+nos vemos: mañana, luego, en, a, el, temprano, más, allá, ahí
+más rato: te, nos, hablamos, llego
+más tarde: te, nos, hablamos, paso
+te llamo: en, más, mañana, luego, ahorita, apenas
+te escribo: en, más, mañana, luego, apenas
