@@ -121,7 +121,7 @@ class KeyPreviewOverlay(private val anchor: View) {
 
         fun valor(ahora: Long): Float {
             val f = ((ahora - inicio).toFloat() / duracion).coerceIn(0f, 1f)
-            val i = if (rebote) REBOTE.getInterpolation(f) else FRENO.getInterpolation(f)
+            val i = if (rebote) REBOTE_BURBUJA.getInterpolation(f) else FRENO.getInterpolation(f)
             return desde + (hasta - desde) * i
         }
 
@@ -145,7 +145,13 @@ class KeyPreviewOverlay(private val anchor: View) {
         private val sombra = Paint(Paint.ANTI_ALIAS_FLAG)
         private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = maxOf(0.8f, 0.6f * d)
+            strokeWidth = maxOf(1.2f, 1.3f * d)
+        }
+        /** Resplandor del color de la app alrededor de la burbuja */
+        private val resplandor = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeJoin = Paint.Join.ROUND
+            strokeWidth = 4.5f * d
         }
         /** Colores calculados una sola vez por tema (antes se armaban degradados en cada cuadro) */
         private var temaColores: Tema? = null
@@ -181,7 +187,8 @@ class KeyPreviewOverlay(private val anchor: View) {
             activas.remove(id) // si el mismo dedo cambió de tecla, la anterior desaparece en su sitio
             val b = Burbuja(RectF(rect), etiqueta)
             // Aparece casi al instante (como en iPhone): nace ya grande y termina con un rebote corto
-            if (deslizando) b.animar(0.9f, 1f, 70, true, t) else b.animar(0.55f, 1f, 85, true, t)
+            // Rebote marcado: la burbuja salta, se pasa un poquito de su tamaño y se acomoda
+            if (deslizando) b.animar(0.9f, 1f, 70, true, t) else b.animar(0.45f, 1f, 150, true, t)
             activas[id] = b
             postInvalidateOnAnimation()
         }
@@ -283,6 +290,8 @@ class KeyPreviewOverlay(private val anchor: View) {
             c.translate(0f, 1.2f * d)
             c.drawPath(path, sombra)
             c.restore()
+            resplandor.color = (colorBorde and 0x00FFFFFF) or (0x3A shl 24)
+            c.drawPath(path, resplandor)
             cuerpo.color = colorCuerpo
             c.drawPath(path, cuerpo)
             matrizBrillo.setScale(1f, maxOf(1f, bh * 0.6f))
@@ -309,6 +318,8 @@ class KeyPreviewOverlay(private val anchor: View) {
         /** Lo mínimo que se ve la burbuja de una tecla, aunque el toque sea cortísimo (ms) */
         const val VISIBLE_MINIMO = 115L
         val REBOTE = Movimiento.REBOTE
+        /** Salta y se pasa ~10% de su tamaño antes de acomodarse */
+        val REBOTE_BURBUJA = android.view.animation.OvershootInterpolator(2.6f)
         val FRENO = Movimiento.SUAVE
 
         /** Color [a] (con transparencia) puesto encima de [b] (opaco) */

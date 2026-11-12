@@ -2142,6 +2142,9 @@ class Diccionario(context: Context) {
 
     private fun valida(p: String) = p.length >= 1 && p.all { it.isLetter() }
 
+    /** Avisa (desde el hilo del motor) cuando una palabra nueva pasa a ser tuya */
+    @Volatile var alAprenderNueva: ((String) -> Unit)? = null
+
     /** peso 2 o más = lo elegiste a propósito (sugerencia entre comillas o deshacer corrección) */
     @Synchronized
     fun aprender(p: String, peso: Int = 1) {
@@ -2152,9 +2155,17 @@ class Diccionario(context: Context) {
             if (peso < 2) return
             bloqueadas.remove(l)
         }
-        ponerAprendida(l, (aprendidas[l] ?: 0) + peso)
+        val antes = aprendidas[l] ?: 0
+        ponerAprendida(l, antes + peso)
         usadas[l] = hoy()
         cambios = true
+        // ¿Recién se volvió tuya una palabra que no está en el diccionario? (un nombre, una
+        // jerga, una palabra de tu trabajo): se avisa para mostrarlo en la barra
+        val ix = indice
+        if (ix != null && !propia(l, antes) && propia(l, antes + peso)) {
+            val k = clase(ix, l)
+            if (k != EN_DICCIONARIO && k != SIN_TILDE) alAprenderNueva?.invoke(p)
+        }
         // Por si Android cierra el teclado de golpe: cada tanto se guarda igual
         if (++sinGuardar >= 150) guardar()
     }
@@ -3254,7 +3265,7 @@ class Diccionario(context: Context) {
             yevar:llevar yevas:llevas yeve:llevé yorar:llorar yoro:lloro yover:llover yovizna:llovizna
             zanpada:zampada zanpado:zampado zanpar:zampar zanparse:zamparse zanpon:zampón zanpona:zampona
             zapatiyas:zapatillas
-        """.plus(" ").plus(ERRORES_MAS).plus(" ").plus(ERRORES_V9).trim().split(ESPACIOS).mapNotNull { par ->
+        """.plus(" ").plus(ERRORES_MAS).plus(" ").plus(ERRORES_V9).plus(" ").plus(ERRORES_V10).trim().split(ESPACIOS).mapNotNull { par ->
             val i = par.indexOf(':')
             if (i <= 0) null else par.substring(0, i) to par.substring(i + 1).replace('_', ' ')
         }.toMap()
@@ -3452,6 +3463,23 @@ class Diccionario(context: Context) {
          * conjugados ("ponido", "detení", "quedría", "cabió"), escritura de chat ("ke", "ai",
          * "grax") y palabras peruanas mal escritas ("chebere", "guachafo", "chivolo", "aji").
          */
+        /**
+         * Más errores de oído (v10): b/v ("bibir", "nuebo"), c/s/z ("sebolla", "pareser",
+         * "reconosco"), ll/y ("cabayo", "gayetas"), la h que sobra ("hechando", "hiban") y
+         * frases pegadas ("atraves", "nadamas", "alafirme").
+         */
+        private const val ERRORES_V10 = """
+            hechando:echando hechó:echó atraves:a_través porsiaca:por_si_acaso hiban:iban beo:veo bibir:vivir
+            nuebo:nuevo nueba:nueva llebas:llevas estubimos:estuvimos obio:obvio obia:obvia obiamente:obviamente
+            ovbio:obvio nadamas:nada_más sertesa:certeza serteza:certeza sigiente:siguiente siguente:siguiente
+            sigiendo:siguiendo pareser:parecer aparese:aparece aparesen:aparecen naser:nacer creser:crecer
+            ofreser:ofrecer agradeser:agradecer agradesemos:agradecemos reconosco:reconozco alafirme:a_la_firme
+            disque:dizque ezperar:esperar okupado:ocupado trabago:trabajo chamva:chamba comprame:cómprame
+            vamonos:vámonos bamonos:vámonos yena:llena cabayo:caballo gayetas:galletas sebolla:cebolla
+            senamos:cenamos sincuenta:cincuenta selu:celu senso:censo sigarro:cigarro sapato:zapato
+            sapatos:zapatos sapatilla:zapatilla zerveza:cerveza serbeza:cerveza serveza:cerveza
+        """
+
         private const val ERRORES_V9 = """
             porfa_vor:por_favor asique:así_que asiq:así_que porfin:por_fin osino:o_si_no enverdad:en_verdad alrrato:al_rato
             deveras:de_veras alfinal:al_final enfin:en_fin porlomenos:por_lo_menos porloque:por_lo_que porejemplo:por_ejemplo

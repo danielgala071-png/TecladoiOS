@@ -17,7 +17,30 @@ class VariantesView(context: Context) : View(context) {
 
     var opciones: List<String> = emptyList()
     var seleccion = 0
-        set(value) { field = value; invalidate() }
+        set(value) {
+            if (value == field) return
+            field = value
+            // La cápsula se desliza hasta el acento nuevo (no salta)
+            animMarca?.cancel()
+            animMarca = android.animation.ValueAnimator.ofFloat(posMarca, value.toFloat()).apply {
+                duration = 150
+                interpolator = Movimiento.SUAVE
+                addUpdateListener { posMarca = it.animatedValue as Float; invalidate() }
+                start()
+            }
+        }
+    /** Dónde está la cápsula ahora (en celdas; se mueve suave entre una y otra) */
+    private var posMarca = 0f
+    private var animMarca: android.animation.ValueAnimator? = null
+
+    /** Pone la selección sin animar (al abrir el menú) */
+    fun fijarSeleccion(i: Int) {
+        animMarca?.cancel()
+        seleccion = i
+        animMarca?.cancel()
+        posMarca = i.toFloat()
+        invalidate()
+    }
     var celda = 0f
     var altoCelda = 0f
     var oscuro = false
@@ -36,7 +59,7 @@ class VariantesView(context: Context) : View(context) {
     private val cuerpo = Paint(Paint.ANTI_ALIAS_FLAG)
     private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1f * d
+        strokeWidth = 1.4f * d
     }
     private val marca = Paint(Paint.ANTI_ALIAS_FLAG)
     private val texto = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -49,26 +72,35 @@ class VariantesView(context: Context) : View(context) {
         rect.set(pad, pad, width - pad, height - pad)
         val radio = altoCelda * 0.32f
         // Negro AMOLED con el filo del color de la app
-        val arriba = if (oscuro) 0xF7202022.toInt() else 0xF5FBFBFD.toInt()
-        val abajo = if (oscuro) 0xF70E0E10.toInt() else 0xF0E8EAEF.toInt()
+        val arriba = if (oscuro) 0xFA151517.toInt() else 0xF5FBFBFD.toInt()
+        val abajo = if (oscuro) 0xFA050506.toInt() else 0xF0E8EAEF.toInt()
         cuerpo.shader = LinearGradient(0f, rect.top, 0f, rect.bottom, arriba, abajo, Shader.TileMode.CLAMP)
         cuerpo.setShadowLayer(12f * d, 0f, 3f * d, 0x38000000)
         c.drawRoundRect(rect, radio, radio, cuerpo)
-        borde.color = if (oscuro) (acento and 0x00FFFFFF) or 0xCC000000.toInt() else 0xB3FFFFFF.toInt()
+        // Filo metálico: plateado arriba y del color de la app hacia abajo, como las teclas
+        if (oscuro) {
+            val plata = Tema.mezclar(0xFFDDE1E8.toInt(), acento, 0.12f)
+            borde.shader = LinearGradient(0f, rect.top, 0f, rect.bottom,
+                intArrayOf(plata, acento or (0xFF shl 24), (acento and 0x00FFFFFF) or 0xCC000000.toInt()),
+                floatArrayOf(0f, 0.35f, 1f), Shader.TileMode.CLAMP)
+        } else {
+            borde.shader = null
+            borde.color = 0xB3FFFFFF.toInt()
+        }
         c.drawRoundRect(rect, radio, radio, borde)
 
         texto.textSize = altoCelda * 0.5f
         val fm = texto.fontMetrics
         val izq = pad + margen
         val cy = pad + margen + altoCelda / 2f
+        // La cápsula del color de la app, en su posición animada
+        val xm = izq + posMarca * celda
+        celdaRect.set(xm + 1.5f * d, pad + margen, xm + celda - 1.5f * d, pad + margen + altoCelda)
+        marca.color = acento
+        c.drawRoundRect(celdaRect, radio * 0.75f, radio * 0.75f, marca)
         opciones.forEachIndexed { i, op ->
             val x = izq + i * celda
-            val elegida = i == seleccion
-            if (elegida) {
-                celdaRect.set(x + 1.5f * d, pad + margen, x + celda - 1.5f * d, pad + margen + altoCelda)
-                marca.color = acento
-                c.drawRoundRect(celdaRect, radio * 0.75f, radio * 0.75f, marca)
-            }
+            val elegida = Math.abs(i - posMarca) < 0.5f
             texto.color = when {
                 elegida -> if ((0.299 * Color.red(acento) + 0.587 * Color.green(acento) + 0.114 * Color.blue(acento)) > 175) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
                 oscuro -> 0xFFFFFFFF.toInt()
@@ -109,7 +141,7 @@ class VariantesPopup(private val anchor: View) {
         if (izq + ancho > anchoTeclado - 4f * d) izq = anchoTeclado - 4f * d - ancho
         if (izq < 4f * d) izq = 4f * d
         izquierda = izq
-        vista.seleccion = ((r.centerX() - izq) / vista.celda).toInt().coerceIn(0, opciones.size - 1)
+        vista.fijarSeleccion(((r.centerX() - izq) / vista.celda).toInt().coerceIn(0, opciones.size - 1))
 
         val loc = IntArray(2)
         anchor.getLocationInWindow(loc)

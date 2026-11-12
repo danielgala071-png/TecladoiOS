@@ -369,7 +369,26 @@ class BarraCategorias(
 ) : View(context) {
 
     var marcado = 0
-        set(v) { if (v != field) { field = v; invalidate() } }
+        set(v) {
+            if (v == field) return
+            field = v
+            // La píldora se desliza hasta la categoría nueva
+            animPildora?.cancel()
+            if (width == 0) { posPildora = v.toFloat(); invalidate(); return }
+            animPildora = android.animation.ValueAnimator.ofFloat(posPildora, v.toFloat()).apply {
+                duration = 240
+                interpolator = Movimiento.SUAVE
+                addUpdateListener { posPildora = it.animatedValue as Float; invalidate() }
+                start()
+            }
+        }
+    /** Dónde está la píldora ahora (en categorías; se mueve suave) */
+    private var posPildora = 0f
+    private var animPildora: android.animation.ValueAnimator? = null
+    private val bordePildora = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    /** La categoría marcada se ve en el color de la app (el emoji gris teñido) */
+    private val tenido = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+    private var tenidoDe = 0
 
     private val d = Medidas.escala(context)
     private val gris = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -392,20 +411,40 @@ class BarraCategorias(
         textoSimbolos.color = tema.textoSecundario
         val fm = gris.fontMetrics
         val fm2 = textoSimbolos.fontMetrics
+        // Píldora deslizante del color de la app: relleno suave y filo intenso
+        val px = ancho * posPildora + ancho / 2f
+        val rx = minOf(ancho * 0.46f, height * 0.5f)
+        val ry = height * 0.36f
+        circulo.color = (tema.azul and 0x00FFFFFF) or 0x40000000
+        c.drawRoundRect(px - rx, cy - ry, px + rx, cy + ry, ry, ry, circulo)
+        bordePildora.strokeWidth = 1.4f * d
+        bordePildora.color = tema.azul or (0xFF shl 24)
+        c.drawRoundRect(px - rx, cy - ry, px + rx, cy + ry, ry, ry, bordePildora)
+        if (tenidoDe != tema.azul) {
+            tenidoDe = tema.azul
+            val r = Color.red(tema.azul) / 255f
+            val g = Color.green(tema.azul) / 255f
+            val b = Color.blue(tema.azul) / 255f
+            // Gris (sin color) y luego teñido con el color de la app, con un poco más de luz
+            val m = ColorMatrix().apply { setSaturation(0f) }
+            m.postConcat(ColorMatrix(floatArrayOf(
+                r * 1.5f, 0f, 0f, 0f, 0f,
+                0f, g * 1.5f, 0f, 0f, 0f,
+                0f, 0f, b * 1.5f, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f,
+            )))
+            tenido.colorFilter = ColorMatrixColorFilter(m)
+        }
+        tenido.textSize = gris.textSize
         CATEGORIAS.forEachIndexed { i, cat ->
             val cx = ancho * i + ancho / 2f
-            if (i == marcado) {
-                // Categoría marcada: cápsula suave y fina (antes un círculo grande)
-                circulo.color = (tema.teclaPresionada and 0x00FFFFFF) or 0x3A000000
-                val rx = minOf(ancho * 0.46f, height * 0.5f)
-                val ry = height * 0.36f
-                c.drawRoundRect(cx - rx, cy - ry, cx + rx, cy + ry, ry, ry, circulo)
-            }
-            gris.alpha = if (i == marcado) 255 else 150
+            val elegida = i == marcado
+            gris.alpha = 150
             if (cat.icono == "&%") {
+                textoSimbolos.color = if (elegida) tema.azul or (0xFF shl 24) else tema.textoSecundario
                 c.drawText(cat.icono, cx, cy - (fm2.ascent + fm2.descent) / 2f, textoSimbolos)
             } else {
-                c.drawText(cat.icono, cx, cy - (fm.ascent + fm.descent) / 2f, gris)
+                c.drawText(cat.icono, cx, cy - (fm.ascent + fm.descent) / 2f, if (elegida) tenido else gris)
             }
         }
     }
@@ -589,6 +628,8 @@ class EmojiGrid(
         // Sin crear objetos por cada emoji dibujado (deslizar más fluido)
         val pi = presionado?.first ?: -1
         val pj = presionado?.second ?: -1
+        val ri = rebote?.first ?: -1
+        val rj = rebote?.second ?: -1
         secciones.forEachIndexed { i, s ->
             val ini = inicios.getOrElse(i) { 0f }
             val fin = finales.getOrElse(i) { 0f }
@@ -614,8 +655,30 @@ class EmojiGrid(
                     val j = col * filas + fila
                     if (j >= s.emojis.size) break
                     val y = altoTitulo + fila * altoCelda
+                    if (ri == i && rj == j && avanceRebote in 0f..1f) {
+                        // Emoji con rebote: salta, se pasa, se encoge apenas y se acomoda
+                        val q = avanceRebote
+                        val k = when {
+                            q < 0.3f -> 1.14f + (1.45f - 1.14f) * (q / 0.3f)
+                            q < 0.6f -> 1.45f + (0.92f - 1.45f) * ((q - 0.3f) / 0.3f)
+                            else -> 0.92f + (1f - 0.92f) * ((q - 0.6f) / 0.4f)
+                        }
+                        val sube = if (q < 0.6f) Math.sin(q / 0.6 * Math.PI).toFloat() * 6f * d else 0f
+                        val cx = x + anchoCelda / 2f
+                        val cy = y + altoCelda / 2f
+                        fondo.color = (tema.azul and 0x00FFFFFF) or ((0x55 * (1f - q)).toInt().coerceIn(0, 255) shl 24)
+                        val rr = 12f * d
+                        c.drawRoundRect(x + 3f * d, y + 1f * d, x + anchoCelda - 3f * d, y + altoCelda - 1f * d, rr, rr, fondo)
+                        c.save()
+                        c.translate(0f, -sube)
+                        c.scale(k, k, cx, cy)
+                        c.drawText(conTono(s.emojis[j]), cx, cy + centroY, pintura)
+                        c.restore()
+                        continue
+                    }
                     if (pi == i && pj == j) {
-                        fondo.color = (tema.teclaPresionada and 0x00FFFFFF) or 0x80000000.toInt()
+                        // Al tocarlo: un fondo suave del color de la app
+                        fondo.color = (tema.azul and 0x00FFFFFF) or 0x48000000
                         val r = 12f * d
                         c.drawRoundRect(x + 3f * d, y + 1f * d, x + anchoCelda - 3f * d, y + altoCelda - 1f * d, r, r, fondo)
                         // El emoji que tocas crece un poquito (se siente el toque)
@@ -644,6 +707,28 @@ class EmojiGrid(
             }
         }
         return null
+    }
+
+    /** El emoji que acabas de tocar y cuánto avanzó su rebote (0..1) */
+    private var rebote: Pair<Int, Int>? = null
+    private var avanceRebote = -1f
+    private var animRebote: android.animation.ValueAnimator? = null
+
+    private fun rebotar(p: Pair<Int, Int>) {
+        animRebote?.cancel()
+        rebote = p
+        avanceRebote = 0f
+        animRebote = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = Movimiento.REBOTE_EMOJI
+            interpolator = android.view.animation.LinearInterpolator()
+            addUpdateListener { avanceRebote = it.animatedValue as Float; invalidate() }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    if (animRebote === animation) { rebote = null; avanceRebote = -1f; invalidate() }
+                }
+            })
+            start()
+        }
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -683,7 +768,10 @@ class EmojiGrid(
                 presionado = null
                 invalidate()
                 val quieto = Math.abs(e.x - x0) < slop && Math.abs(e.y - y0) < slop
-                if (p != null && quieto) alElegir(conTono(secciones[p.first].emojis[p.second]))
+                if (p != null && quieto) {
+                    rebotar(p)
+                    alElegir(conTono(secciones[p.first].emojis[p.second]))
+                }
             }
             MotionEvent.ACTION_CANCEL -> {
                 // Si los tonos estaban abiertos, se cierran sin elegir nada

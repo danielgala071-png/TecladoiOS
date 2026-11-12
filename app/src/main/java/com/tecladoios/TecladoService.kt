@@ -38,6 +38,13 @@ class TecladoService : InputMethodService(),
     KeyboardView.Acciones, EmojiPanel.Acciones, SuggestionBar.Acciones {
 
     companion object {
+        /** Terminaciones de páginas y archivos: "google.com", "gob.pe", "foto.jpg" */
+        private val TERMINACIONES_WEB = setOf(
+            "com", "pe", "net", "org", "edu", "gob", "gov", "io", "app", "co", "es", "info", "ly",
+            "me", "tv", "jpg", "jpeg", "png", "gif", "pdf", "doc", "docx", "xls", "xlsx", "ppt",
+            "pptx", "txt", "mp3", "mp4", "zip", "rar", "apk",
+        )
+
         /** Cuánto texto antes del cursor se guarda en la copia local */
         private const val MAX_ESPEJO = 300
         /** Lo copiado se ofrece en la barra durante este tiempo (como en iPhone) */
@@ -342,6 +349,8 @@ class TecladoService : InputMethodService(),
         Fuentes.iniciar(this)
         Registro.iniciar(this)
         diccionario = Diccionario(this)
+        // Palabra nueva aprendida: se muestra un momento en la barra con un brillito
+        diccionario.alAprenderNueva = { w -> manejador.post { barra?.mostrarAprendida(w) } }
         // Revisa en segundo plano qué emojis puede dibujar el celular (el panel abre al instante)
         Thread({ try { CATEGORIAS.forEach { it.emojis } } catch (_: Throwable) { } }, "emojis").apply {
             isDaemon = true
@@ -662,7 +671,13 @@ class TecladoService : InputMethodService(),
         // reinician la caja de texto al enviar): antes se apagaba y volvía a aparecer, y se
         // veía un parpadeo. Ahora se queda quieta y solo cambia lo que muestra. Solo arranca
         // escondida cuando el teclado recién se abre (para aparecer con su animación).
-        if (!isInputViewShown) barra?.visible(false, animar = false)
+        if (!isInputViewShown) {
+            barra?.visible(false, animar = false)
+            // Recién se abre el teclado: un destello de luz pasa una vez sobre las teclas
+            teclado?.destello()
+            // Y una luz recorre el borde de arriba
+            barra?.luzBorde()
+        }
         volverABC()
         actualizar()
         // La vista previa de las teclas se prepara antes del primer toque (así la primera
@@ -1002,6 +1017,24 @@ class TecladoService : InputMethodService(),
         var i = antes.length
         while (i > 0 && !antes[i - 1].isWhitespace()) i--
         return antes.substring(i)
+    }
+
+    /**
+     * Lo escrito NO es una palabra para corregir: un enlace (www.algo, algo.com, https://),
+     * un correo o @usuario, un #hashtag, algo con números (placas, códigos, "2do"), un
+     * archivo ("foto.jpg") o algo con guion bajo. El teclado sabe que ahí no debe intervenir.
+     */
+    private fun tokenSeRespeta(token: String): Boolean {
+        if (token.length <= 1) return false
+        if (token.any { it.isDigit() }) return true
+        if (token.contains('@') || token.contains('#') || token.contains('/') || token.contains('_') ||
+            token.contains("://") || token.startsWith("www.", ignoreCase = true)) return true
+        val punto = token.lastIndexOf('.')
+        if (punto in 1 until token.length - 1) {
+            val fin = token.substring(punto + 1).lowercase()
+            if (fin in TERMINACIONES_WEB) return true
+        }
+        return false
     }
 
     private fun buscarAtajo(token: String): String? {
@@ -1434,6 +1467,7 @@ class TecladoService : InputMethodService(),
                     ultimaCorreccionAuto = ultimaCorreccion
                 }
                 final = corr
+                barra?.destellarCorreccion()
                 val escrito = d.palabra
                 ultimaCerrada?.let { if (it.palabra == escrito) it.aprendida = corr }
                 enMotor {
@@ -1523,8 +1557,10 @@ class TecladoService : InputMethodService(),
         var nuevaPalabra = palabra
         val hecha = calculada
         val yaCalculada = hecha != null && hecha.palabra == palabra && hecha.previa == previa && hecha.previa2 == previa2
-        var corr = if (autocorreccionActiva && yaCalculada) hecha!!.correccion else null
-        var diferir = autocorreccionActiva && !yaCalculada
+        // Enlaces, correos, @usuarios, #hashtags, números o archivos: ahí no se interviene
+        val intervenir = autocorreccionActiva && !tokenSeRespeta(token)
+        var corr = if (intervenir && yaCalculada) hecha!!.correccion else null
+        var diferir = intervenir && !yaCalculada
         if (diferir && sincrono) {
             // Hay que saberla YA (antes de poner ¿ o ¡): se calcula aquí mismo, sin esperar
             diccionario.interrumpir()
@@ -1535,6 +1571,8 @@ class TecladoService : InputMethodService(),
         }
         if (corr != null) {
             nuevaPalabra = corr
+            // La cápsula de la corrección destella con el color de la app
+            if (corr != palabra) barra?.destellarCorreccion()
             // El cerebro anota este error tuyo (si lo deshaces, se resta) y se calibra
             enMotor {
                 diccionario.notarCorreccion(palabra, corr)
@@ -1545,7 +1583,7 @@ class TecladoService : InputMethodService(),
 
         // 3) Tildes que dependen de la palabra anterior ("que tal" → "qué tal")
         var nuevaPrevia = previa
-        if (autocorreccionActiva && previa.isNotEmpty()) {
+        if (intervenir && previa.isNotEmpty()) {
             diccionario.interrumpir()
             diccionario.corregirPar(previa, nuevaPalabra)?.let { (a, b) ->
                 nuevaPrevia = a
