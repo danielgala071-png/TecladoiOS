@@ -145,7 +145,7 @@ class KeyPreviewOverlay(private val anchor: View) {
         private val sombra = Paint(Paint.ANTI_ALIAS_FLAG)
         private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = maxOf(1.2f, 1.3f * d)
+            strokeWidth = maxOf(0.8f, 0.6f * d)
         }
 
         /** Colores calculados una sola vez por tema (antes se armaban degradados en cada cuadro) */
@@ -311,8 +311,8 @@ class KeyPreviewOverlay(private val anchor: View) {
         /** Lo mínimo que se ve la burbuja de una tecla, aunque el toque sea cortísimo (ms) */
         const val VISIBLE_MINIMO = 90L
         val REBOTE = Movimiento.REBOTE
-        /** Salta y se pasa ~10% de su tamaño antes de acomodarse */
-        val REBOTE_BURBUJA = android.view.animation.OvershootInterpolator(1.8f)
+        /** Aparece rápido y frena suave, sin rebote (como en iOS) */
+        val REBOTE_BURBUJA = android.view.animation.DecelerateInterpolator(1.6f)
         val FRENO = Movimiento.SUAVE
 
         /** Color [a] (con transparencia) puesto encima de [b] (opaco) */

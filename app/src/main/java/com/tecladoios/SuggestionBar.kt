@@ -145,8 +145,6 @@ class SuggestionBar(
     private val filo = Path()
     private val esquina = RectF()
     private val pinturaFondo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    /** Colores fundidos del filo de arriba (se arma una vez por ancho) */
-    private var shaderFilo: Shader? = null
 
     private var mostrando = false
     /** Qué tan visibles están las sugerencias (0 = apagadas, 1 = a la vista) */
@@ -180,7 +178,6 @@ class SuggestionBar(
         forma.reset()
         filo.reset()
         if (w <= 0f || h <= 0f) return
-        shaderFilo = Panel.degradadoFusion(w, tema.azul, tema.azul2)
         val r = minOf(18f * d, h / 2f)
         // Relleno negro: curvo arriba y recto abajo, hasta el borde del teclado
         forma.moveTo(0f, h)
@@ -449,17 +446,15 @@ class SuggestionBar(
         // Halo suave por dentro del filo (igual que en el teclado). Filo y halo van con los
         // colores fundidos: el de la app a la izquierda que se mezcla con su compañero
         val grosorFilo = pinturaBorde.strokeWidth
-        pinturaBorde.shader = shaderFilo
-        pinturaBorde.color = Color.BLACK
-        pinturaBorde.alpha = Color.alpha(tema.resplandor)
-        pinturaBorde.strokeWidth = grosorFilo * 8f
+        if (Color.alpha(tema.resplandor) > 0) {
+            pinturaBorde.color = tema.resplandor
+            pinturaBorde.strokeWidth = grosorFilo * 6f
+            c.drawPath(filo, pinturaBorde)
+            pinturaBorde.strokeWidth = grosorFilo
+        }
+        // El borde del teclado: una línea limpia del color de la app
+        pinturaBorde.color = tema.bordePanel
         c.drawPath(filo, pinturaBorde)
-        pinturaBorde.strokeWidth = grosorFilo * 4f
-        c.drawPath(filo, pinturaBorde)
-        pinturaBorde.strokeWidth = grosorFilo
-        pinturaBorde.alpha = Color.alpha(tema.bordePanel)
-        c.drawPath(filo, pinturaBorde)
-        pinturaBorde.shader = null
 
         val conf = confirmar
         if (conf != null) dibujarConfirmar(c, conf) else dibujarSugerencias(c)
@@ -552,11 +547,10 @@ class SuggestionBar(
         val arriba = height * 0.24f
         val abajo = height * 0.68f
         if (separador == null || separadorAlto != height) {
-            // Separadores metálicos: el mismo brillo plateado del filo de las teclas, fuerte al
-            // centro y desvanecido en las puntas
-            val col = tema.plata and 0x00FFFFFF
+            // Separadores finos y neutros, desvanecidos en las puntas
+            val col = tema.textoSecundario and 0x00FFFFFF
             separador = LinearGradient(0f, arriba, 0f, abajo,
-                intArrayOf(col, col or 0xB0000000.toInt(), col), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+                intArrayOf(col, col or 0x66000000, col), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
             separadorAlto = height
         }
         pintura.shader = separador
@@ -604,21 +598,15 @@ class SuggestionBar(
             val rp = (height - 16 * d) / 2f
             val elegida = i != presionado
             val f = if (!elegida) 1f else brilloSoltado
-            // Al soltarla (la elegiste) la cápsula toma el color de la app y se apaga suave:
-            // se nota clarito cuál palabra se puso
-            val base = if (elegida) Tema.mezclar(tema.teclaPresionada, tema.azul, 0.45f) else tema.teclaPresionada
+            // Al soltarla (la elegiste) la cápsula se apaga suave
+            val base = tema.teclaPresionada
             pintura.color = (base and 0x00FFFFFF) or
                 ((Color.alpha(tema.teclaPresionada) * f).toInt().coerceIn(0, 255) shl 24)
             // Presionada se ve apenas hundida; al soltarla vuelve a su tamaño
             val hundir = if (!elegida) 2f * d else 2f * d * f
             c.drawRoundRect(x0 + 6 * d + hundir, 6 * d + hundir * 0.5f, x0 + ancho - 6 * d - hundir,
                 height - 10 * d - hundir * 0.5f, rp, rp, pintura)
-            if (elegida && f > 0f) {
-                val previo = pinturaBorde.color
-                pinturaBorde.color = (tema.azul and 0x00FFFFFF) or ((0xB0 * f).toInt().coerceIn(0, 255) shl 24)
-                c.drawRoundRect(x0 + 6 * d, 6 * d, x0 + ancho - 6 * d, height - 10 * d, rp, rp, pinturaBorde)
-                pinturaBorde.color = previo
-            }
+
         }
         if (i != presionado && s.destacada) {
             // La corrección que se pondrá sola va en una cápsula de vidrio con el filo de la app
@@ -627,17 +615,9 @@ class SuggestionBar(
             val rc = (abajo - arriba) / 2f
             // Cápsula clara como en iOS 26: gris luminoso con un toque de la app. Así se ve de
             // un vistazo cuál palabra se pondrá sola al tocar espacio
-            // A todo color: la cápsula va teñida con el color de la app y con su filo intenso,
-            // igual que las teclas. Así sabes de un vistazo qué palabra va a cambiar.
-            pintura.color = (tema.azul and 0x00FFFFFF) or 0x30000000
+            // Cápsula simple, como iOS: un gris suave, sin filo de color
+            pintura.color = 0x26FFFFFF
             c.drawRoundRect(x0 + 6 * d, arriba, x0 + ancho - 6 * d, abajo, rc, rc, pintura)
-            val previo = pinturaBorde.color
-            val grosorPrevio = pinturaBorde.strokeWidth
-            pinturaBorde.color = tema.azul or (0xFF shl 24)
-            pinturaBorde.strokeWidth = 1.4f * d
-            c.drawRoundRect(x0 + 6 * d, arriba, x0 + ancho - 6 * d, abajo, rc, rc, pinturaBorde)
-            pinturaBorde.strokeWidth = grosorPrevio
-            pinturaBorde.color = previo
         }
         // Emoji sugerido: se dibuja grande y nítido (antes salía del tamaño de las letras)
         if (s.emoji) {

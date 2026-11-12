@@ -1193,7 +1193,10 @@ class Diccionario(context: Context) {
                             val ctx = contexto(previa, c, previa2)
                             // Si no es un error "de tecla vecina", solo corrige hacia palabras comunes
                             if (!(d > 0.65f && i > 2500 && ctx == 0f)) {
-                                val total = d * 2.5f + Math.log(i + 30.0).toFloat() * 0.3f - ctx
+                                // Le faltó solo la última letra ("curs" → "curso"): es el dedazo
+                                // más común al escribir rápido, gana sobre cambiar una letra ("cura")
+                                val falto = if (n.length == np.length + 1 && n.startsWith(np)) FALTO_ULTIMA else 0f
+                                val total = d * 2.5f + Math.log(i + 30.0).toFloat() * 0.3f - ctx - falto
                                 if (total < mejorTotal) {
                                     if (mejor != null && n != mejorN) { segundoTotal = mejorTotal; segunda = mejor }
                                     mejorTotal = total; mejor = c; mejorN = n; mejorD = d
@@ -1213,7 +1216,8 @@ class Diccionario(context: Context) {
                 if (Math.abs(nc.length - np.length) > 2 || !propia(c, n)) continue
                 val d = distancia(np, nc, nc.length, lim)
                 if (d > lim || (d > 0.65f && n < 3)) continue
-                val total = d * 2.5f + 1.1f - minOf(n, 30) * 0.04f - contexto(previa, c, previa2) - recencia(c) * 0.004f
+                val falto = if (nc.length == np.length + 1 && nc.startsWith(np)) FALTO_ULTIMA else 0f
+                val total = d * 2.5f + 1.1f - minOf(n, 30) * 0.04f - contexto(previa, c, previa2) - recencia(c) * 0.004f - falto
                 if (total < mejorTotal) {
                     if (mejor != null && nc != mejorN) { segundoTotal = mejorTotal; segunda = mejor }
                     mejorTotal = total; mejor = c; mejorN = nc; mejorD = d
@@ -3583,6 +3587,8 @@ class Diccionario(context: Context) {
         private const val MAX_FRASE = 26
         /** Diferencia mínima de puntaje entre la mejor y la segunda para corregir sola */
         private const val MARGEN_DUDA = 0.3f
+        /** Ventaja de la palabra a la que solo le faltó la última letra */
+        private const val FALTO_ULTIMA = 0.55f
 
         /**
          * Frases hechas para completar la oración. De cada frase sale, para cada par de

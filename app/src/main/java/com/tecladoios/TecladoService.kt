@@ -461,9 +461,7 @@ class TecladoService : InputMethodService(),
             grosor = maxOf(1f, resources.displayMetrics.density * 0.7f)
             colorBorde = t.bordePanel
             resplandor = t.resplandor
-            // El filo de arriba con los colores fundidos (como el de la barra y las teclas)
-            colorApp = t.azul
-            colorCompanero = t.azul2
+
             addView(zona, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
         p.setOnApplyWindowInsetsListener { v, insets ->
