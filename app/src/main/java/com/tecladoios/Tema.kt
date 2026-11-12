@@ -66,6 +66,10 @@ data class Tema(
     val reflejo: Int,
     /** Halo suave del color de la app alrededor del filo del teclado y de la barra */
     val resplandor: Int,
+    /** Cápsula de la corrección en la barra de sugerencias (gris suave, como iOS) */
+    val capsula: Int,
+    /** Sombra de lo que flota encima del teclado (vista previa, acentos) */
+    val sombraFlotante: Int,
 ) {
     companion object {
         private val BLANCO = 0xFFFFFFFF.toInt()
@@ -152,7 +156,8 @@ data class Tema(
                 oscuro = true,
                 fondo = NEGRO,
                 fondoArriba = NEGRO,
-                filoLuz = a(0x2A, BLANCO),
+                // Línea de luz arriba de cada tecla: un pelito más presente (pieza pulida)
+                filoLuz = a(0x30, BLANCO),
                 tinteInterior = 0,
                 halo = 0,
                 plata = 0xFFDDE1E8.toInt(),
@@ -161,9 +166,11 @@ data class Tema(
                 teclaFuncion = grafito,
                 // Presionada: un gris más claro, como en el iPhone
                 teclaPresionada = a(0x6E, BLANCO),
-                teclaActiva = 0xFFE6E6EB.toInt(),
+                teclaActiva = 0xFFE9E9EE.toInt(),
                 textoActivo = 0xFF0A0A0B.toInt(),
-                sombra = 0,
+                // Base finita debajo de cada tecla (asoma 1-2 px): la tecla parece una pieza
+                // real y al tocarla BAJA sobre su base. Va grabada en la capa fija: no gasta.
+                sombra = 0xFF161618.toInt(),
                 texto = 0xFFF5F5F7.toInt(),
                 textoSecundario = 0xFF8E8E93.toInt(),
                 azul = color,
@@ -174,13 +181,17 @@ data class Tema(
                 barra = a(0xF0, 0x0B0B0D),
                 enterAccion = color,
                 textoAcento = textoSobre(color),
-                burbuja = 0xFF404043.toInt(),
-                bordeBurbuja = a(0x26, BLANCO),
+                // Burbuja un tono más clara que las teclas: se ve flotando encima, no pegada
+                burbuja = 0xFF4B4B50.toInt(),
+                bordeBurbuja = a(0x33, BLANCO),
                 desenfoque = 0,
-                brillo = a(0x0E, BLANCO),
-                profundidad = a(0x18, NEGRO),
+                // Volumen de la tecla: apenas más clara arriba y más honda abajo
+                brillo = a(0x13, BLANCO),
+                profundidad = a(0x24, NEGRO),
                 reflejo = a(0x20, BLANCO),
                 resplandor = 0,
+                capsula = a(0x24, BLANCO),
+                sombraFlotante = a(0x80, NEGRO),
             )
         }
     }

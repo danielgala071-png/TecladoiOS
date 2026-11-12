@@ -272,9 +272,11 @@ class KeyboardView(
      * un pequeño acercamiento (crecen de 86 % a 100 %), sin deslizarse de lado
      */
     private fun escalaEtiqueta(): Float {
-        if (aparicion >= 1f || dirAparicion == 0) return 1f
+        if (aparicion >= 1f) return 1f
         val p = ((aparicion - 0.15f) / 0.85f).coerceIn(0f, 1f)
-        return 0.86f + 0.14f * p
+        // Mayúsculas ↔ minúsculas: las letras crecen apenas (94 % → 100 %) mientras aparecen,
+        // como si se transformaran; al cambiar de teclado el acercamiento es más notorio
+        return if (dirAparicion == 0) 0.94f + 0.06f * p else 0.86f + 0.14f * p
     }
 
     private fun animarEtiquetas(direccion: Int = 0) {
@@ -287,7 +289,7 @@ class KeyboardView(
             return
         }
         animAparicion = ValueAnimator.ofFloat(0.15f, 1f).apply {
-            duration = if (direccion == 0) Movimiento.LETRAS else Movimiento.LETRAS_DESLIZAR
+            duration = if (direccion == 0) Movimiento.MAYUS else Movimiento.LETRAS_DESLIZAR
             interpolator = Movimiento.SUAVE
             addUpdateListener {
                 aparicion = it.animatedValue as Float
@@ -1027,10 +1029,12 @@ class KeyboardView(
         // y firme. Al presionarla la tecla BAJA sobre su base (no se encoge): el toque se ve y
         // se siente pesado, y al soltarla sube de vuelta.
         val canto = cantoTecla
+        // Al presionar la tecla baja sobre su base y se encoge un pelito por los cuatro lados:
+        // se siente como una pieza que se hunde, firme y pesada
         val r = if (f > 0f) rectPulso.apply {
             set(t.rect)
-            inset(dp(0.4f) * f, 0f)
-            offset(0f, canto * 0.85f * f)
+            inset(dp(0.7f) * f, dp(0.3f) * f)
+            offset(0f, canto * 0.9f * f)
         } else t.rect
         val forma = if (f > 0f) {
             Formas.suave(formaPulso, r.left, r.top, r.right, r.bottom, radio, 0f, t.curvaDer, t.curvaIzq)
@@ -1147,11 +1151,13 @@ class KeyboardView(
             Tipo.LETRA -> {
                 if (pad) {
                     val conSub = t.sub.isNotEmpty()
-                    texto(c, t.texto, cx, if (conSub) cy - tx(5f) else cy, tx(26f) * (1f + 0.08f * toque), contenido)
+                    // Teclado numérico: número grande y limpio, letras chicas un tono más suave
+                    // (como el teclado del teléfono del iPhone)
+                    texto(c, t.texto, cx, if (conSub) cy - tx(5.5f) else cy, tx(27f) * (1f + 0.06f * toque), contenido)
                     if (conSub) {
                         pinturaSub.textSize = tx(9.5f)
-                        pinturaSub.color = contenido
-                        c.drawText(t.sub, cx, cy + tx(15f), pinturaSub)
+                        pinturaSub.color = conAlfa(contenido, 0.72f)
+                        c.drawText(t.sub, cx, cy + tx(15.5f), pinturaSub)
                     }
                 } else {
                     val minuscula = modo == Modo.LETRAS && shift == 0

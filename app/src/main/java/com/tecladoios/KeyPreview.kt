@@ -143,6 +143,11 @@ class KeyPreviewOverlay(private val anchor: View) {
         private val path = Path()
         private val cuerpo = Paint(Paint.ANTI_ALIAS_FLAG)
         private val sombra = Paint(Paint.ANTI_ALIAS_FLAG)
+        /** Sombra ancha y tenue (un trazo grueso hace de desenfoque sin costo) */
+        private val sombraAncha = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL_AND_STROKE
+            strokeJoin = Paint.Join.ROUND
+        }
         private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = maxOf(0.8f, 0.6f * d)
@@ -161,17 +166,17 @@ class KeyPreviewOverlay(private val anchor: View) {
             // Vidrio del color de la app (no una burbuja brillante): verde en WhatsApp, rosado en Instagram…
             colorCuerpo = tm.burbuja
             colorBorde = tm.bordeBurbuja
-            colorSombra = if (tm.oscuro) 0x59000000 else 0x33000000
+            colorSombra = tm.sombraFlotante
             colorLetra = tm.texto
         }
-        private val texto = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        private val texto = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
             textAlign = Paint.Align.CENTER
         }.also { Fuentes.aplicar(it, 400) }
         /**
          * Reflejo de vidrio arriba de la burbuja (igual que en las teclas). El degradado se arma
          * una sola vez y en cada cuadro solo se estira a la medida: no crea nada nuevo.
          */
-        private val degradadoBrillo = LinearGradient(0f, 0f, 0f, 1f, 0x26FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
+        private val degradadoBrillo = LinearGradient(0f, 0f, 0f, 1f, 0x2EFFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
         private val matrizBrillo = Matrix()
         private val brillo = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = degradadoBrillo }
 
@@ -183,7 +188,9 @@ class KeyPreviewOverlay(private val anchor: View) {
             val b = Burbuja(RectF(rect), etiqueta)
             // Aparece casi al instante (como en iPhone): nace ya grande y termina con un rebote corto
             // Rebote marcado: la burbuja salta, se pasa un poquito de su tamaño y se acomoda
-            if (deslizando) b.animar(0.9f, 1f, 70, true, t) else b.animar(0.6f, 1f, 100, true, t)
+            // Nace con un resorte fino: se pasa un pelito de su tamaño y se asienta (premium,
+            // sin parecer de goma). Si el dedo se deslizó a otra tecla, aparece casi completa.
+            if (deslizando) b.animar(0.9f, 1f, 80, true, t) else b.animar(0.55f, 1f, Movimiento.BURBUJA_ENTRA, true, t)
             activas[id] = b
             postInvalidateOnAnimation()
         }
@@ -196,7 +203,7 @@ class KeyPreviewOverlay(private val anchor: View) {
             // y recién ahí se recoge, un poco más despacio.
             val visto = t - b.inicio
             val espera = (VISIBLE_MINIMO - visto).coerceAtLeast(0L)
-            b.animar(if (espera > 0L) 1f else b.valor(t), 0f, 115, false, t + espera)
+            b.animar(if (espera > 0L) 1f else b.valor(t).coerceAtMost(1f), 0f, Movimiento.BURBUJA_SALE, false, t + espera)
             saliendo.add(b)
             postInvalidateOnAnimation()
         }
@@ -279,27 +286,41 @@ class KeyPreviewOverlay(private val anchor: View) {
             path.close()
 
             prepararColores(tm)
-            // Sombra suave y fina debajo (sin desenfoque: así cada cuadro se dibuja rapidísimo)
+            // Al recogerse, la burbuja además se desvanece (no solo se achica): se va limpia
+            val opaca = (p / 0.45f).coerceIn(0f, 1f)
+            // Sombra en dos capas (ancha y tenue + corta y firme): la burbuja flota sobre el
+            // teclado. Sin desenfoque real, así cada cuadro se dibuja rapidísimo.
+            sombraAncha.color = colorSombra
+            sombraAncha.alpha = (Color.alpha(colorSombra) * 0.28f * opaca).toInt()
+            sombraAncha.strokeWidth = 5f * d
+            c.save()
+            c.translate(0f, 3f * d)
+            c.drawPath(path, sombraAncha)
+            c.restore()
             sombra.color = colorSombra
+            sombra.alpha = (Color.alpha(colorSombra) * 0.7f * opaca).toInt()
             c.save()
             c.translate(0f, 1.2f * d)
             c.drawPath(path, sombra)
             c.restore()
             cuerpo.color = colorCuerpo
+            cuerpo.alpha = (255 * opaca).toInt()
             c.drawPath(path, cuerpo)
             matrizBrillo.setScale(1f, maxOf(1f, bh * 0.6f))
             matrizBrillo.postTranslate(0f, top)
             degradadoBrillo.setLocalMatrix(matrizBrillo)
+            brillo.alpha = (255 * opaca).toInt()
             c.drawPath(path, brillo)
             borde.color = colorBorde
+            borde.alpha = (Color.alpha(colorBorde) * opaca).toInt()
             c.drawPath(path, borde)
 
             // Letra grande en el cuadro de arriba
             val alfaLetra = ((p - 0.3f) / 0.55f).coerceIn(0f, 1f)
             if (alfaLetra <= 0f) return
             texto.color = colorLetra
-            texto.alpha = (255 * alfaLetra).toInt()
-            texto.textSize = kh * 0.72f
+            texto.alpha = (255 * alfaLetra * opaca).toInt()
+            texto.textSize = kh * 0.74f
             val fm = texto.fontMetrics
             val cx = (izq + der) / 2f
             val cy = top + bh * 0.5f
@@ -312,7 +333,7 @@ class KeyPreviewOverlay(private val anchor: View) {
         const val VISIBLE_MINIMO = 90L
         val REBOTE = Movimiento.REBOTE
         /** Aparece rápido y frena suave, sin rebote (como en iOS) */
-        val REBOTE_BURBUJA = android.view.animation.DecelerateInterpolator(1.6f)
+        val REBOTE_BURBUJA = Movimiento.POP
         val FRENO = Movimiento.SUAVE
 
         /** Color [a] (con transparencia) puesto encima de [b] (opaco) */

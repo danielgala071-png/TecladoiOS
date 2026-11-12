@@ -17,10 +17,16 @@ object Movimiento {
     /** Rebote apenas perceptible (vista previa de la tecla, acentos): vivo pero sin exagerar */
     val REBOTE = PathInterpolator(0.34f, 1.36f, 0.64f, 1f)
 
+    /**
+     * Resorte fino, como los de iOS: llega, se pasa un pelito y se asienta. Para la burbuja de
+     * la tecla: nace con cuerpo, sin parecer de goma.
+     */
+    val POP = PathInterpolator(0.25f, 1.22f, 0.45f, 1f)
+
     // Duraciones en milisegundos
     // Un poco más largas y con el mismo frenado suave: todo se siente más fluido, sin
     // hacer esperar al dedo (al presionar la tecla se marca al instante; solo la salida dura)
-    const val TOQUE_SALIDA = 150L
+    const val TOQUE_SALIDA = 170L
     /**
      * Escribiendo rápido la tecla se apaga más ligero: con dos pulgares, varias teclas
      * encendidas a la vez se veían como una mancha. Así cada toque se ve limpio y separado.
@@ -40,4 +46,12 @@ object Movimiento {
     const val BARRA_APARECE = 240L
     const val BARRA_SE_VA = 180L
     const val CAMBIO = 280L
+
+    /** Burbuja de la tecla: nace con un resorte cortito y se recoge en su tecla */
+    const val BURBUJA_ENTRA = 125L
+    const val BURBUJA_SALE = 130L
+    /** La cápsula de la corrección se desliza de una casilla a otra (no salta) */
+    const val CAPSULA = 230L
+    /** Mayúsculas ↔ minúsculas: las letras se transforman con un fundido y un leve crecer */
+    const val MAYUS = 160L
 }

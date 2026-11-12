@@ -278,6 +278,94 @@ class SuggestionBar(
         }
     }
 
+    // ---------- Cápsula de la corrección (se desliza, no salta) ----------
+    /** Posición de la cápsula ahora mismo, en casillas (0..2); se mueve suave entre ellas */
+    private var posCapsula = 1f
+    /** Qué tan visible está la cápsula (0..1) */
+    private var alfaCapsula = 0f
+    /** Casilla a la que va la cápsula (-1 = ninguna) */
+    private var destinoCapsula = -1
+    private var animCapsula: ValueAnimator? = null
+    private val rectCapsula = RectF()
+    /** Línea de luz finita arriba de la cápsula (vidrio pulido); se arma una vez por alto */
+    private var luzCapsula: LinearGradient? = null
+    private var luzCapsulaAlto = -1
+    private val pinturaLuz = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = maxOf(1f, 0.6f * d)
+    }
+
+    private fun indiceDestacada(): Int {
+        if (items[0]?.portapapeles == true) return -1
+        for (i in 0 until 3) {
+            val s = items[i] ?: continue
+            if (s.destacada && !s.emoji) return i
+        }
+        return -1
+    }
+
+    /**
+     * Lleva la cápsula a la casilla [nuevo]: si ya estaba a la vista se DESLIZA hasta allá
+     * (como la de los acentos), si no estaba aparece en su lugar con un fundido, y si ya no
+     * hay corrección se apaga suave. Solo mueve números y repinta la barra: no gasta nada.
+     */
+    private fun moverCapsula(nuevo: Int, animar: Boolean = true) {
+        if (nuevo == destinoCapsula && (animar || animCapsula == null)) return
+        destinoCapsula = nuevo
+        animCapsula?.cancel()
+        animCapsula = null
+        if (!animar || !mostrando || !isShown || width == 0) {
+            if (nuevo >= 0) posCapsula = nuevo.toFloat()
+            alfaCapsula = if (nuevo >= 0) 1f else 0f
+            return
+        }
+        val desdePos = if (alfaCapsula > 0.05f) posCapsula else nuevo.toFloat()
+        val hastaPos = if (nuevo >= 0) nuevo.toFloat() else posCapsula
+        val desdeAlfa = alfaCapsula
+        val hastaAlfa = if (nuevo >= 0) 1f else 0f
+        animCapsula = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = Movimiento.CAPSULA
+            interpolator = Movimiento.DESLIZAR
+            addUpdateListener {
+                val f = it.animatedValue as Float
+                posCapsula = desdePos + (hastaPos - desdePos) * f
+                alfaCapsula = desdeAlfa + (hastaAlfa - desdeAlfa) * f
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    private fun dibujarCapsula(c: Canvas, ancho: Float) {
+        if (alfaCapsula <= 0.01f) return
+        val arriba = 6 * d
+        val abajo = height - 10 * d
+        val rc = (abajo - arriba) / 2f
+        val x0 = ancho * posCapsula
+        // Aparece desde un poquito más chica y llega a su tamaño
+        val encoge = (1f - alfaCapsula) * 6f * d
+        rectCapsula.set(x0 + 6 * d + encoge, arriba + encoge * 0.4f, x0 + ancho - 6 * d - encoge, abajo - encoge * 0.4f)
+        val a = alfaCapsula
+        pintura.color = (tema.capsula and 0x00FFFFFF) or
+            ((Color.alpha(tema.capsula) * a).toInt().coerceIn(0, 255) shl 24)
+        c.drawRoundRect(rectCapsula, rc, rc, pintura)
+        if (luzCapsula == null || luzCapsulaAlto != height) {
+            luzCapsula = LinearGradient(0f, arriba, 0f, abajo,
+                intArrayOf(0x3DFFFFFF, 0x00FFFFFF, 0x00FFFFFF), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+            luzCapsulaAlto = height
+        }
+        pinturaLuz.shader = luzCapsula
+        pinturaLuz.alpha = (255 * a).toInt().coerceIn(0, 255)
+        c.drawRoundRect(rectCapsula, rc, rc, pinturaLuz)
+    }
+
+    /** Transparencia de la casilla que está apareciendo (1 = normal) */
+    private var alfaCasilla = 1f
+    private fun conAlfaCasilla(color: Int): Int {
+        if (alfaCasilla >= 1f) return color
+        return (color and 0x00FFFFFF) or ((Color.alpha(color) * alfaCasilla).toInt().coerceIn(0, 255) shl 24)
+    }
+
     // Fundido de las casillas que cambian
     private var cambio = 1f
     private val cambiadas = BooleanArray(3)
@@ -338,6 +426,7 @@ class SuggestionBar(
         animarCambio(items, lista)
         items = lista
         if (confirmar == null) presionado = -1
+        moverCapsula(indiceDestacada())
         invalidate()
     }
 
@@ -345,6 +434,7 @@ class SuggestionBar(
     fun mostrarEscrito(s: Sugerencia) {
         if (items[0] == s) return
         items = listOf(s, items[1], items[2])
+        moverCapsula(indiceDestacada())
         invalidate()
     }
 
@@ -364,6 +454,7 @@ class SuggestionBar(
         if (si) {
             // Al volver a aparecer no se ven las sugerencias de la palabra anterior
             items = listOf(null, null, null)
+            moverCapsula(-1, animar = false)
             if (cambia) alCambiar?.invoke(true)
         }
         if (cambia) alCambiarEstado?.invoke()
@@ -519,13 +610,17 @@ class SuggestionBar(
         busqueda?.let { dibujarBusqueda(c, it); return }
         items[0]?.let { if (it.portapapeles) { dibujarCopiado(c, it); return } }
         val ancho = width / 3f
+        // La cápsula de la corrección va debajo de las palabras y se desliza entre casillas
+        dibujarCapsula(c, ancho)
         for (i in 0 until 3) {
             val s = items[i] ?: continue
             val x0 = ancho * i
-            // Las casillas que acaban de cambiar aparecen con un fundido cortito (como en iPhone)
+            // Las casillas que acaban de cambiar aparecen con un fundido cortito (como en iPhone).
+            // El fundido va en el color de cada cosa (antes era una capa extra por casilla):
+            // mismo efecto, mucho menos trabajo para el celular
             val animando = cambio < 1f && cambiadas[i]
-            val capa = if (animando)
-                c.saveLayerAlpha(x0, 0f, x0 + ancho, height.toFloat(), (cambio * 255).toInt()) else -1
+            alfaCasilla = if (animando) cambio else 1f
+            val capa = if (animando) c.save() else -1
             if (animando) {
                 // La palabra nueva sube apenas mientras aparece (como en iPhone); la corrección
                 // resaltada además brota desde un poquito más chica
@@ -537,13 +632,15 @@ class SuggestionBar(
             }
             dibujarCasilla(c, i, s, x0, ancho)
             if (capa >= 0) c.restoreToCount(capa)
+            alfaCasilla = 1f
         }
         // Separadores finos entre las casillas, como en iPhone: se desvanecen en las puntas
         // (no son una raya dura) y no se dibujan junto a una cápsula (la corrección resaltada
         // o la que estás tocando), así la cápsula se ve limpia. Con la barra vacía quedan
         // apenas marcados: la barra nunca se ve como un hueco negro.
         val vacia = items.all { it == null }
-        fun conCapsula(k: Int) = k == presionado || (k == soltado && brilloSoltado > 0f) || items[k]?.destacada == true
+        fun conCapsula(k: Int) = k == presionado || (k == soltado && brilloSoltado > 0f) ||
+            (alfaCapsula > 0.05f && Math.abs(posCapsula - k) < 0.95f)
         val arriba = height * 0.24f
         val abajo = height * 0.68f
         if (separador == null || separadorAlto != height) {
@@ -593,38 +690,27 @@ class SuggestionBar(
     /** Dibuja una casilla de la barra (sugerencia, corrección, emoji o predicción en línea) */
     private fun dibujarCasilla(c: Canvas, i: Int, s: Sugerencia, x0: Float, ancho: Float) {
         if (i == presionado || (i == soltado && brilloSoltado > 0f)) {
-            // Al tocarla: cápsula de vidrio (misma forma que la destacada). Al soltar no
-            // desaparece de golpe: se apaga suave, como en iPhone
+            // Al tocarla: cápsula gris que se hunde apenas. Al soltarla (la elegiste) se
+            // enciende un instante con el color de la app y se apaga suave: confirma la elección
             val rp = (height - 16 * d) / 2f
             val elegida = i != presionado
             val f = if (!elegida) 1f else brilloSoltado
-            // Al soltarla (la elegiste) la cápsula se apaga suave
-            val base = tema.teclaPresionada
-            pintura.color = (base and 0x00FFFFFF) or
-                ((Color.alpha(tema.teclaPresionada) * f).toInt().coerceIn(0, 255) shl 24)
+            val base = if (elegida) Tema.mezclar(tema.teclaPresionada or (0xFF shl 24), tema.azul, 0.55f) else tema.teclaPresionada
+            val alfaBase = if (elegida) 0x70 else Color.alpha(tema.teclaPresionada)
+            pintura.color = (base and 0x00FFFFFF) or ((alfaBase * f).toInt().coerceIn(0, 255) shl 24)
             // Presionada se ve apenas hundida; al soltarla vuelve a su tamaño
             val hundir = if (!elegida) 2f * d else 2f * d * f
             c.drawRoundRect(x0 + 6 * d + hundir, 6 * d + hundir * 0.5f, x0 + ancho - 6 * d - hundir,
                 height - 10 * d - hundir * 0.5f, rp, rp, pintura)
-
-        }
-        if (i != presionado && s.destacada) {
-            // La corrección que se pondrá sola va en una cápsula de vidrio con el filo de la app
-            val arriba = 6 * d
-            val abajo = height - 10 * d
-            val rc = (abajo - arriba) / 2f
-            // Cápsula clara como en iOS 26: gris luminoso con un toque de la app. Así se ve de
-            // un vistazo cuál palabra se pondrá sola al tocar espacio
-            // Cápsula simple, como iOS: un gris suave, sin filo de color
-            pintura.color = 0x26FFFFFF
-            c.drawRoundRect(x0 + 6 * d, arriba, x0 + ancho - 6 * d, abajo, rc, rc, pintura)
         }
         // Emoji sugerido: se dibuja grande y nítido (antes salía del tamaño de las letras)
         if (s.emoji) {
             pinturaEmoji.textSize = 24f * d
+            pinturaEmoji.alpha = (255 * alfaCasilla).toInt().coerceIn(0, 255)
             val fe = pinturaEmoji.fontMetrics
             val cyE = (6 * d + height - 10 * d) / 2f - (fe.ascent + fe.descent) / 2f
             c.drawText(s.texto, x0 + ancho / 2f, cyE, pinturaEmoji)
+            pinturaEmoji.alpha = 255
             return
         }
         // Tipografía refinada: la principal (al centro o la corrección) en peso medio y blanco;
@@ -645,15 +731,15 @@ class SuggestionBar(
                 val izq = x0 + (ancho - total) / 2f
                 val alin = pinturaTexto.textAlign
                 pinturaTexto.textAlign = Paint.Align.LEFT
-                pinturaTexto.color = tema.texto
+                pinturaTexto.color = conAlfaCasilla(tema.texto)
                 c.drawText(s.texto, izq, cy, pinturaTexto)
-                pinturaTexto.color = tema.textoSecundario
+                pinturaTexto.color = conAlfaCasilla(tema.textoSecundario)
                 c.drawText(resto, izq + pinturaTexto.measureText(s.texto), cy, pinturaTexto)
                 pinturaTexto.textAlign = alin
                 return
             }
         }
-        pinturaTexto.color = colorPalabra
+        pinturaTexto.color = conAlfaCasilla(colorPalabra)
         val crudo = if (s.literal) "\u201C${s.texto}\u201D" else s.texto
         // Palabras largas: primero se achica un poco la letra (hasta 13) y solo si aun así
         // no cabe se corta con "…" (como en iPhone, casi nunca se ve cortada)

@@ -23,8 +23,8 @@ class VariantesView(context: Context) : View(context) {
             // La cápsula se desliza hasta el acento nuevo (no salta)
             animMarca?.cancel()
             animMarca = android.animation.ValueAnimator.ofFloat(posMarca, value.toFloat()).apply {
-                duration = 150
-                interpolator = Movimiento.SUAVE
+                duration = 170
+                interpolator = Movimiento.DESLIZAR
                 addUpdateListener { posMarca = it.animatedValue as Float; invalidate() }
                 start()
             }
@@ -59,8 +59,11 @@ class VariantesView(context: Context) : View(context) {
     private val cuerpo = Paint(Paint.ANTI_ALIAS_FLAG)
     private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1.4f * d
+        strokeWidth = maxOf(1f, 0.7f * d)
     }
+    /** Los degradados se arman una vez (no en cada cuadro) */
+    private var fondoAlto = -1
+    private var fondoOscuro = false
     private val marca = Paint(Paint.ANTI_ALIAS_FLAG)
     private val texto = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
@@ -71,22 +74,20 @@ class VariantesView(context: Context) : View(context) {
         if (opciones.isEmpty()) return
         rect.set(pad, pad, width - pad, height - pad)
         val radio = altoCelda * 0.32f
-        // Negro AMOLED con el filo del color de la app
-        val arriba = if (oscuro) 0xFA151517.toInt() else 0xF5FBFBFD.toInt()
-        val abajo = if (oscuro) 0xFA050506.toInt() else 0xF0E8EAEF.toInt()
-        cuerpo.shader = LinearGradient(0f, rect.top, 0f, rect.bottom, arriba, abajo, Shader.TileMode.CLAMP)
-        cuerpo.setShadowLayer(12f * d, 0f, 3f * d, 0x38000000)
-        c.drawRoundRect(rect, radio, radio, cuerpo)
-        // Filo metálico: plateado arriba y del color de la app hacia abajo, como las teclas
-        if (oscuro) {
-            val plata = Tema.mezclar(0xFFDDE1E8.toInt(), acento, 0.12f)
-            borde.shader = LinearGradient(0f, rect.top, 0f, rect.bottom,
-                intArrayOf(plata, acento or (0xFF shl 24), (acento and 0x00FFFFFF) or 0xCC000000.toInt()),
-                floatArrayOf(0f, 0.35f, 1f), Shader.TileMode.CLAMP)
-        } else {
-            borde.shader = null
-            borde.color = 0xB3FFFFFF.toInt()
+        // Grafito como la burbuja de las teclas: un tono más claro arriba, sombra suave y un
+        // filo de luz finito (el mismo lenguaje de todo el teclado, sin brillos metálicos)
+        if (fondoAlto != height || fondoOscuro != oscuro) {
+            fondoAlto = height
+            fondoOscuro = oscuro
+            val arriba = if (oscuro) 0xFF333337.toInt() else 0xF5FBFBFD.toInt()
+            val abajo = if (oscuro) 0xFF2A2A2D.toInt() else 0xF0E8EAEF.toInt()
+            cuerpo.shader = LinearGradient(0f, rect.top, 0f, rect.bottom, arriba, abajo, Shader.TileMode.CLAMP)
+            cuerpo.setShadowLayer(14f * d, 0f, 4f * d, 0x66000000)
+            borde.shader = if (oscuro) LinearGradient(0f, rect.top, 0f, rect.bottom,
+                intArrayOf(0x40FFFFFF, 0x14FFFFFF, 0x0DFFFFFF), floatArrayOf(0f, 0.4f, 1f), Shader.TileMode.CLAMP) else null
+            if (!oscuro) borde.color = 0xB3FFFFFF.toInt()
         }
+        c.drawRoundRect(rect, radio, radio, cuerpo)
         c.drawRoundRect(rect, radio, radio, borde)
 
         texto.textSize = altoCelda * 0.5f
@@ -158,10 +159,10 @@ class VariantesPopup(private val anchor: View) {
         vista.pivotX = (r.centerX() - izq) + vista.pad + vista.margen
         vista.pivotY = h.toFloat()
         vista.alpha = 0f
-        vista.scaleX = 0.7f
-        vista.scaleY = 0.7f
+        vista.scaleX = 0.78f
+        vista.scaleY = 0.78f
         vista.animate().alpha(1f).scaleX(1f).scaleY(1f)
-            .setDuration(190).setInterpolator(Movimiento.REBOTE).start()
+            .setDuration(200).setInterpolator(Movimiento.POP).start()
     }
 
     /** x en coordenadas del teclado */
