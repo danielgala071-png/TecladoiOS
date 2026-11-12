@@ -137,6 +137,8 @@ class SuggestionBar(
     private val filo = Path()
     private val esquina = RectF()
     private val pinturaFondo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    /** Colores fundidos del filo de arriba (se arma una vez por ancho) */
+    private var shaderFilo: Shader? = null
 
     private var mostrando = false
     /** Qué tan visibles están las sugerencias (0 = apagadas, 1 = a la vista) */
@@ -170,6 +172,7 @@ class SuggestionBar(
         forma.reset()
         filo.reset()
         if (w <= 0f || h <= 0f) return
+        shaderFilo = Panel.degradadoFusion(w, tema.azul, tema.azul2)
         val r = minOf(18f * d, h / 2f)
         // Relleno negro: curvo arriba y recto abajo, hasta el borde del teclado
         forma.moveTo(0f, h)
@@ -275,6 +278,9 @@ class SuggestionBar(
     private val cambiadas = BooleanArray(3)
     private var animCambio: ValueAnimator? = null
 
+    /** Cuándo cambiaron las sugerencias por última vez */
+    private var ultimoCambioMs = 0L
+
     private fun animarCambio(antes: List<Sugerencia?>, ahora: List<Sugerencia?>) {
         if (!mostrando || opacidad < 1f || !isShown) return
         var alguna = false
@@ -285,6 +291,16 @@ class SuggestionBar(
             if (cambia) alguna = true
         }
         if (!alguna) return
+        // Escribiendo rápido (la barra cambió hace muy poco) las palabras cambian al instante:
+        // el fundido usa una capa extra por casilla y, letra tras letra, hacía todo más lento
+        val ahoraMs = android.os.SystemClock.uptimeMillis()
+        val seguido = ahoraMs - ultimoCambioMs < 300
+        ultimoCambioMs = ahoraMs
+        if (seguido) {
+            animCambio?.cancel()
+            cambio = 1f
+            return
+        }
         animCambio?.cancel()
         animCambio = ValueAnimator.ofFloat(0.25f, 1f).apply {
             duration = 190
@@ -308,194 +324,6 @@ class SuggestionBar(
         val centro = items[1]
         if (centro != null && centro.accion == 0) return centro
         return items[2]?.takeIf { it.accion == 0 && !it.emoji && !it.frase }
-    }
-
-    // ---------- Luz que recorre el borde ----------
-
-    private var avanceLuz = -1f
-    private var animLuz: ValueAnimator? = null
-    private val medidor = android.graphics.PathMeasure()
-    private val tramoLuz = Path()
-    private val pinturaLuzBorde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
-    }
-
-    /**
-     * Al abrir el teclado, una luz del color de la app recorre el borde de arriba de lado a
-     * lado (sube por la izquierda, cruza la curva y baja por la derecha). Una sola vez.
-     */
-    fun luzBorde() {
-        postDelayed({
-            if (!mostrando || width == 0) return@postDelayed
-            animLuz?.cancel()
-            animLuz = ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = Movimiento.LUZ_BORDE
-                interpolator = Movimiento.SUAVE
-                addUpdateListener { avanceLuz = it.animatedValue as Float; invalidate() }
-                addListener(object : AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(animation: Animator) {
-                        if (animLuz === animation) { avanceLuz = -1f; invalidate() }
-                    }
-                })
-                start()
-            }
-        }, 220)
-    }
-
-    private fun dibujarLuzBorde(c: Canvas, grosorFilo: Float) {
-        val p = avanceLuz
-        if (p < 0f || p > 1f) return
-        medidor.setPath(filo, false)
-        val total = medidor.length
-        if (total <= 0f) return
-        val largo = total * 0.22f
-        val fin = -largo * 0.2f + (total + largo) * p
-        val ini = fin - largo
-        tramoLuz.reset()
-        if (!medidor.getSegment(maxOf(0f, ini), minOf(total, fin), tramoLuz, true)) return
-        // Se enciende al salir y se apaga al llegar
-        val fuerza = Math.sin(Math.PI * p).toFloat().coerceIn(0f, 1f)
-        val claro = Tema.mezclar(tema.azul or (0xFF shl 24), 0xFFFFFFFF.toInt(), 0.55f)
-        pinturaLuzBorde.strokeWidth = grosorFilo * 7f
-        pinturaLuzBorde.color = (tema.azul and 0x00FFFFFF) or ((0x50 * fuerza).toInt() shl 24)
-        c.drawPath(tramoLuz, pinturaLuzBorde)
-        pinturaLuzBorde.strokeWidth = grosorFilo * 2.2f
-        pinturaLuzBorde.color = (claro and 0x00FFFFFF) or ((0xF0 * fuerza).toInt() shl 24)
-        c.drawPath(tramoLuz, pinturaLuzBorde)
-    }
-
-    // ---------- Palabra aprendida y destello de corrección ----------
-
-    /** Palabra que el cerebro acaba de aprender (se muestra un momento en el centro) */
-    private var aprendida: String? = null
-    private var avanceAprendida = 0f
-    private var animAprendida: ValueAnimator? = null
-    private val estrella = Path()
-    private val pinturaAviso = Paint(Paint.ANTI_ALIAS_FLAG)
-
-    /**
-     * El cerebro aprendió una palabra tuya nueva: aparece en el centro de la barra con un
-     * brillito del color de la app, se queda un momento y se va sola (~1.7 s).
-     */
-    fun mostrarAprendida(w: String) {
-        if (!mostrando || width == 0) return
-        aprendida = w
-        animAprendida?.cancel()
-        animAprendida = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = Movimiento.APRENDIDA
-            interpolator = android.view.animation.LinearInterpolator()
-            addUpdateListener { avanceAprendida = it.animatedValue as Float; invalidate() }
-            addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    if (animAprendida === animation) { aprendida = null; invalidate() }
-                }
-            })
-            start()
-        }
-    }
-
-    /** Destello de la corrección: avance 0..1 (fuera de ese rango, apagado) */
-    private var destelloCorr = -1f
-    private var casillaDestello = 1
-    private var animDestelloCorr: ValueAnimator? = null
-
-    /** Se autocorrigió una palabra: la cápsula destella con el color de la app y suelta un anillo */
-    fun destellarCorreccion() {
-        if (!mostrando || width == 0) return
-        casillaDestello = items.indexOfFirst { it?.destacada == true }.takeIf { it >= 0 } ?: 1
-        animDestelloCorr?.cancel()
-        animDestelloCorr = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = Movimiento.DESTELLO_CORRECCION
-            interpolator = Movimiento.SUAVE
-            addUpdateListener { destelloCorr = it.animatedValue as Float; invalidate() }
-            addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    if (animDestelloCorr === animation) { destelloCorr = -1f; invalidate() }
-                }
-            })
-            start()
-        }
-    }
-
-    private fun dibujarDestelloCorreccion(c: Canvas) {
-        val p = destelloCorr
-        if (p < 0f || p > 1f) return
-        val ancho = width / 3f
-        val x0 = ancho * casillaDestello
-        val arriba = 6 * d
-        val abajo = height - 10 * d
-        val rc = (abajo - arriba) / 2f
-        val fuerza = 1f - p
-        // Relleno que se enciende y se apaga
-        pinturaAviso.style = Paint.Style.FILL
-        pinturaAviso.color = (tema.azul and 0x00FFFFFF) or ((0x80 * fuerza).toInt().coerceIn(0, 255) shl 24)
-        c.drawRoundRect(x0 + 6 * d, arriba, x0 + ancho - 6 * d, abajo, rc, rc, pinturaAviso)
-        // Anillo que se aleja de la cápsula
-        val e = 7 * d * p
-        pinturaAviso.style = Paint.Style.STROKE
-        pinturaAviso.strokeWidth = 1.6f * d * (1f - p * 0.5f)
-        pinturaAviso.color = (tema.azul and 0x00FFFFFF) or ((0xD0 * fuerza).toInt().coerceIn(0, 255) shl 24)
-        c.drawRoundRect(x0 + 6 * d - e, arriba - e * 0.5f, x0 + ancho - 6 * d + e, abajo + e * 0.5f, rc + e, rc + e, pinturaAviso)
-        pinturaAviso.style = Paint.Style.FILL
-    }
-
-    private fun dibujarAprendida(c: Canvas) {
-        val w = aprendida ?: return
-        val p = avanceAprendida
-        // Aparece rápido (con un pequeño crecimiento), se queda y se apaga al final
-        val alfa = when {
-            p < 0.12f -> p / 0.12f
-            p > 0.8f -> (1f - p) / 0.2f
-            else -> 1f
-        }.coerceIn(0f, 1f)
-        if (alfa <= 0f) return
-        val escala = if (p < 0.12f) 0.85f + 0.15f * (p / 0.12f) else 1f
-        val ancho = width / 3f
-        val x0 = ancho
-        val arriba = 6 * d
-        val abajo = height - 10 * d
-        val rc = (abajo - arriba) / 2f
-        val cxCasilla = x0 + ancho / 2f
-        val cyCasilla = (arriba + abajo) / 2f
-        c.save()
-        c.scale(escala, escala, cxCasilla, cyCasilla)
-        // Cápsula negra con filo del color de la app (tapa lo de abajo mientras se ve)
-        pinturaAviso.style = Paint.Style.FILL
-        pinturaAviso.color = (tema.fondo and 0x00FFFFFF) or ((255 * alfa).toInt() shl 24)
-        c.drawRoundRect(x0 + 4 * d, arriba, x0 + ancho - 4 * d, abajo, rc, rc, pinturaAviso)
-        pinturaAviso.color = (tema.azul and 0x00FFFFFF) or ((0x2E * alfa).toInt() shl 24)
-        c.drawRoundRect(x0 + 4 * d, arriba, x0 + ancho - 4 * d, abajo, rc, rc, pinturaAviso)
-        pinturaAviso.style = Paint.Style.STROKE
-        pinturaAviso.strokeWidth = 1.3f * d
-        pinturaAviso.color = (tema.azul and 0x00FFFFFF) or ((255 * alfa).toInt() shl 24)
-        c.drawRoundRect(x0 + 4 * d, arriba, x0 + ancho - 4 * d, abajo, rc, rc, pinturaAviso)
-        // Brillito (estrella de cuatro puntas) que gira apenas y la palabra en color
-        grosor(500)
-        val colorTexto = Tema.mezclar(tema.azul or (0xFF shl 24), 0xFFFFFFFF.toInt(), 0.15f)
-        pinturaTexto.color = (colorTexto and 0x00FFFFFF) or ((255 * alfa).toInt() shl 24)
-        val lado = 9 * d
-        val hueco = 5 * d
-        val maxTexto = ancho - 22 * d - lado - hueco
-        val txt = TextUtils.ellipsize(w, pinturaTexto, maxTexto, TextUtils.TruncateAt.END).toString()
-        val anchoTxt = pinturaTexto.measureText(txt)
-        val izq = cxCasilla - (lado + hueco + anchoTxt) / 2f
-        val sx = izq + lado / 2f
-        val brillo = 0.75f + 0.25f * Math.sin(p * Math.PI * 4).toFloat()
-        val r = lado / 2f * brillo
-        estrella.reset()
-        estrella.moveTo(sx, cyCasilla - r)
-        estrella.quadTo(sx, cyCasilla, sx + r, cyCasilla)
-        estrella.quadTo(sx, cyCasilla, sx, cyCasilla + r)
-        estrella.quadTo(sx, cyCasilla, sx - r, cyCasilla)
-        estrella.quadTo(sx, cyCasilla, sx, cyCasilla - r)
-        estrella.close()
-        pinturaAviso.style = Paint.Style.FILL
-        pinturaAviso.color = pinturaTexto.color
-        c.drawPath(estrella, pinturaAviso)
-        c.drawText(txt, izq + lado + hueco + anchoTxt / 2f, centroY(), pinturaTexto)
-        c.restore()
     }
 
     fun mostrar(nuevos: List<Sugerencia?>) {
@@ -602,24 +430,23 @@ class SuggestionBar(
         // Fondo negro como el teclado (curvo arriba) y el filo del color de la app
         pinturaFondo.color = tema.fondo
         c.drawPath(forma, pinturaFondo)
-        // Halo suave del color de la app por dentro del filo (igual que en el teclado)
+        // Halo suave por dentro del filo (igual que en el teclado). Filo y halo van con los
+        // colores fundidos: el de la app a la izquierda que se mezcla con su compañero
         val grosorFilo = pinturaBorde.strokeWidth
-        pinturaBorde.color = tema.resplandor
+        pinturaBorde.shader = shaderFilo
+        pinturaBorde.color = Color.BLACK
+        pinturaBorde.alpha = Color.alpha(tema.resplandor)
         pinturaBorde.strokeWidth = grosorFilo * 8f
         c.drawPath(filo, pinturaBorde)
         pinturaBorde.strokeWidth = grosorFilo * 4f
         c.drawPath(filo, pinturaBorde)
         pinturaBorde.strokeWidth = grosorFilo
-        pinturaBorde.color = tema.bordePanel
+        pinturaBorde.alpha = Color.alpha(tema.bordePanel)
         c.drawPath(filo, pinturaBorde)
-        dibujarLuzBorde(c, grosorFilo)
+        pinturaBorde.shader = null
 
         val conf = confirmar
-        if (conf != null) dibujarConfirmar(c, conf) else {
-            dibujarSugerencias(c)
-            dibujarDestelloCorreccion(c)
-            dibujarAprendida(c)
-        }
+        if (conf != null) dibujarConfirmar(c, conf) else dibujarSugerencias(c)
         if (capa >= 0) c.restoreToCount(capa)
     }
 

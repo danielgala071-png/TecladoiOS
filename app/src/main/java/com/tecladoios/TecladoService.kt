@@ -349,8 +349,6 @@ class TecladoService : InputMethodService(),
         Fuentes.iniciar(this)
         Registro.iniciar(this)
         diccionario = Diccionario(this)
-        // Palabra nueva aprendida: se muestra un momento en la barra con un brillito
-        diccionario.alAprenderNueva = { w -> manejador.post { barra?.mostrarAprendida(w) } }
         // Revisa en segundo plano qué emojis puede dibujar el celular (el panel abre al instante)
         Thread({ try { CATEGORIAS.forEach { it.emojis } } catch (_: Throwable) { } }, "emojis").apply {
             isDaemon = true
@@ -463,6 +461,9 @@ class TecladoService : InputMethodService(),
             grosor = maxOf(1f, resources.displayMetrics.density * 0.7f)
             colorBorde = t.bordePanel
             resplandor = t.resplandor
+            // El filo de arriba con los colores fundidos (como el de la barra y las teclas)
+            colorApp = t.azul
+            colorCompanero = t.azul2
             addView(zona, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
         p.setOnApplyWindowInsetsListener { v, insets ->
@@ -671,13 +672,7 @@ class TecladoService : InputMethodService(),
         // reinician la caja de texto al enviar): antes se apagaba y volvía a aparecer, y se
         // veía un parpadeo. Ahora se queda quieta y solo cambia lo que muestra. Solo arranca
         // escondida cuando el teclado recién se abre (para aparecer con su animación).
-        if (!isInputViewShown) {
-            barra?.visible(false, animar = false)
-            // Recién se abre el teclado: un destello de luz pasa una vez sobre las teclas
-            teclado?.destello()
-            // Y una luz recorre el borde de arriba
-            barra?.luzBorde()
-        }
+        if (!isInputViewShown) barra?.visible(false, animar = false)
         volverABC()
         actualizar()
         // La vista previa de las teclas se prepara antes del primer toque (así la primera
@@ -1467,7 +1462,6 @@ class TecladoService : InputMethodService(),
                     ultimaCorreccionAuto = ultimaCorreccion
                 }
                 final = corr
-                barra?.destellarCorreccion()
                 val escrito = d.palabra
                 ultimaCerrada?.let { if (it.palabra == escrito) it.aprendida = corr }
                 enMotor {
@@ -1571,8 +1565,6 @@ class TecladoService : InputMethodService(),
         }
         if (corr != null) {
             nuevaPalabra = corr
-            // La cápsula de la corrección destella con el color de la app
-            if (corr != palabra) barra?.destellarCorreccion()
             // El cerebro anota este error tuyo (si lo deshaces, se resta) y se calibra
             enMotor {
                 diccionario.notarCorreccion(palabra, corr)
@@ -2772,9 +2764,12 @@ class TecladoService : InputMethodService(),
     private fun crearEfecto(clase: Int): VibrationEffect {
         // [duración en ms, fuerza 1–255] para cada clase, según el nivel elegido
         val tabla: Array<IntArray> = when (fuerzaVibracion) {
-            "suave" -> arrayOf(intArrayOf(14, 170), intArrayOf(22, 225), intArrayOf(16, 190), intArrayOf(13, 160), intArrayOf(8, 110))
-            "fuerte" -> arrayOf(intArrayOf(26, 255), intArrayOf(40, 255), intArrayOf(30, 255), intArrayOf(22, 240), intArrayOf(12, 170))
-            else -> arrayOf(intArrayOf(20, 230), intArrayOf(32, 255), intArrayOf(24, 245), intArrayOf(17, 210), intArrayOf(10, 140))
+            // Golpes a fuerza máxima: lo que cambia entre teclas es la duración (más larga =
+            // más pesada). Así cada letra se siente firme y el espacio, el intro y la
+            // mayúscula, todavía más.
+            "suave" -> arrayOf(intArrayOf(18, 210), intArrayOf(26, 255), intArrayOf(20, 230), intArrayOf(15, 190), intArrayOf(8, 120))
+            "fuerte" -> arrayOf(intArrayOf(30, 255), intArrayOf(45, 255), intArrayOf(34, 255), intArrayOf(24, 255), intArrayOf(12, 180))
+            else -> arrayOf(intArrayOf(25, 255), intArrayOf(36, 255), intArrayOf(28, 255), intArrayOf(20, 240), intArrayOf(10, 150))
         }
         val valores = tabla[clase]
         val ms = valores[0].toLong()

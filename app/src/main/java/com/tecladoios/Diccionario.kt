@@ -2142,9 +2142,6 @@ class Diccionario(context: Context) {
 
     private fun valida(p: String) = p.length >= 1 && p.all { it.isLetter() }
 
-    /** Avisa (desde el hilo del motor) cuando una palabra nueva pasa a ser tuya */
-    @Volatile var alAprenderNueva: ((String) -> Unit)? = null
-
     /** peso 2 o más = lo elegiste a propósito (sugerencia entre comillas o deshacer corrección) */
     @Synchronized
     fun aprender(p: String, peso: Int = 1) {
@@ -2155,17 +2152,9 @@ class Diccionario(context: Context) {
             if (peso < 2) return
             bloqueadas.remove(l)
         }
-        val antes = aprendidas[l] ?: 0
-        ponerAprendida(l, antes + peso)
+        ponerAprendida(l, (aprendidas[l] ?: 0) + peso)
         usadas[l] = hoy()
         cambios = true
-        // ¿Recién se volvió tuya una palabra que no está en el diccionario? (un nombre, una
-        // jerga, una palabra de tu trabajo): se avisa para mostrarlo en la barra
-        val ix = indice
-        if (ix != null && !propia(l, antes) && propia(l, antes + peso)) {
-            val k = clase(ix, l)
-            if (k != EN_DICCIONARIO && k != SIN_TILDE) alAprenderNueva?.invoke(p)
-        }
         // Por si Android cierra el teclado de golpe: cada tanto se guarda igual
         if (++sinGuardar >= 150) guardar()
     }

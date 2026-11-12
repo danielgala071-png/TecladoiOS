@@ -54,6 +54,8 @@ class Tecla(val tipo: Tipo, val texto: String = "", val ancho: Float = 1f, val s
     var shaderFondo: Shader? = null
     /** Línea de luz en el filo de arriba (se calcula una vez) */
     var shaderReflejo: Shader? = null
+    /** El color de la app fundido con su compañero, según dónde está la tecla */
+    var tinte = 0
 }
 
 /** Las teclas dibujadas directamente en pantalla, con el diseño del teclado del iPhone. */
@@ -145,12 +147,6 @@ class KeyboardView(
     // Al presionar: la tecla se tiñe de vidrio del color de la app (sin brillo)
     private val pulsos = HashMap<Tecla, Float>()
     private val animPulsos = HashMap<Tecla, ValueAnimator>()
-    /**
-     * Onda de luz de cada tecla tocada: avance de 0 (recién tocada) a 1 (ya se desvaneció).
-     * Es independiente del dedo: aunque sueltes rápido, la onda termina su recorrido.
-     */
-    private val ondas = HashMap<Tecla, Float>()
-    private val animOndas = HashMap<Tecla, ValueAnimator>()
 
     /** Latido de borrar al mantenerlo: 1 = recién borró una letra, 0 = en calma */
     private var latidoBorrar = 0f
@@ -161,23 +157,6 @@ class KeyboardView(
     private var animDespegue: ValueAnimator? = null
     private val rectIntro = RectF()
 
-    /** Destello de luz que pasa sobre las teclas al abrir el teclado: avance 0..1 */
-    private var destello = -1f
-    private var animDestello: ValueAnimator? = null
-    private val formaTeclas = Path()
-    private var versionFormaTeclas = -1
-    private val pinturaDestello = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var degradadoDestello: LinearGradient? = null
-    private var anchoDestello = 0f
-    private val matrizDestello = android.graphics.Matrix()
-
-    /**
-     * Luz de toque: al presionar, un brillo suave del color de la app nace justo donde cayó el
-     * dedo y se apaga junto con la tecla (como el vidrio líquido de iOS 26). Así cada toque se
-     * ve y se siente exacto, aunque escribas rapidísimo.
-     */
-    private val luces = HashMap<Tecla, RadialGradient>()
-    private val pinturaLuz = Paint(Paint.ANTI_ALIAS_FLAG)
 
     /** Ritmo a dos pulgares: cuándo bajó el último dedo en una letra y el ritmo de cada dedo */
     private var ultimaBajadaLetra = 0L
@@ -234,11 +213,6 @@ class KeyboardView(
         set(value) { if (field !== value) { field = value; invalidate() } }
     private val pinturaIconoApp = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val rectIcono = RectF()
-    /** Resplandor del color de la app detrás del ícono del espacio (al abrir el teclado) */
-    private val pinturaBrilloIcono = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var degradadoIcono: RadialGradient? = null
-    private var degradadoIconoDe = 0
-    private val matrizIcono = android.graphics.Matrix()
 
     /** Trackpad de luz: dónde está el dedo mientras mueves el cursor con el espacio */
     private var dedoCursorX = 0f
@@ -549,6 +523,18 @@ class KeyboardView(
     private fun conAlfa(color: Int, f: Float): Int =
         (color and 0x00FFFFFF) or ((Color.alpha(color) * f).toInt().coerceIn(0, 255) shl 24)
 
+    /**
+     * Colores fundidos: el color de la app a la izquierda que se va mezclando hacia su
+     * compañero a la derecha (y un poco hacia abajo). Nunca pasa de un 60 % del compañero:
+     * el color principal de la app siempre se reconoce.
+     */
+    private fun fusion(x: Float, y: Float): Int {
+        val w = width.toFloat().takeIf { it > 0f } ?: return tema.azul
+        val h = alto().toFloat().coerceAtLeast(1f)
+        val f = (0.68f * (x / w) + 0.32f * (y / h)).coerceIn(0f, 1f)
+        return Tema.mezclar(tema.azul or (0xFF shl 24), tema.azul2, f * 0.6f)
+    }
+
     private fun colocar(t: Tecla, x: Float, w: Float, top: Float, sep: Float) {
         t.rect.set(x + sep, top + sepV, x + w - sep, top + altoFila - sepV)
         Formas.suave(t.forma, t.rect.left, t.rect.top, t.rect.right, t.rect.bottom, radio, 0f, t.curvaDer, t.curvaIzq)
@@ -558,9 +544,13 @@ class KeyboardView(
         // apaga suave hacia abajo. Son dos degradados juntos (color de lado a lado y fuerza de
         // arriba a abajo), armados una sola vez por tecla.
         val alfaFilo = Color.alpha(tema.borde) / 255f
-        val colorFilo = tema.borde or (0xFF shl 24)
+        // Colores fundidos: cada tecla toma la mezcla del color de la app y su compañero que
+        // le toca según su lugar (el color sigue de una tecla a la otra sin cortes)
+        t.tinte = fusion(r.centerX(), r.centerY())
+        val filoIzq = Tema.mezclar(fusion(r.left, r.centerY()), Color.WHITE, 0.06f)
+        val filoDer = Tema.mezclar(fusion(r.right, r.centerY()), Color.WHITE, 0.06f)
         val horizontal = LinearGradient(r.left, 0f, r.right, 0f,
-            intArrayOf(tema.plata, colorFilo, colorFilo, tema.plata),
+            intArrayOf(tema.plata, filoIzq, filoDer, tema.plata),
             floatArrayOf(0f, 0.3f, 0.7f, 1f), Shader.TileMode.CLAMP)
         val vertical = LinearGradient(0f, r.top, 0f, r.bottom,
             intArrayOf(conAlfa(Color.BLACK, 0.95f * alfaFilo), conAlfa(Color.BLACK, 0.5f * alfaFilo),
@@ -572,7 +562,8 @@ class KeyboardView(
             tema.brillo, tema.brillo and 0x00FFFFFF, Shader.TileMode.CLAMP)
         // Abajo, por dentro del vidrio, se asoma el color de la app (como luz que lo atraviesa)
         t.shaderFondo = LinearGradient(0f, r.top + r.height() * 0.42f, 0f, r.bottom,
-            tema.tinteInterior and 0x00FFFFFF, tema.tinteInterior, Shader.TileMode.CLAMP)
+            t.tinte and 0x00FFFFFF, (t.tinte and 0x00FFFFFF) or (tema.tinteInterior and 0xFF000000.toInt()),
+            Shader.TileMode.CLAMP)
         // Filo de luz: fuerte en el borde de arriba, se apaga a la mitad y vuelve apenas abajo
         // (la luz que rebota dentro del vidrio)
         val luz = tema.filoLuz
@@ -714,13 +705,9 @@ class KeyboardView(
     private fun reiniciar() {
         animPulsos.values.forEach { it.cancel() }
         animPulsos.clear()
-        animOndas.values.forEach { it.cancel() }
-        animOndas.clear()
-        ondas.clear()
         animLatido?.cancel()
         latidoBorrar = 0f
         pulsos.clear()
-        luces.clear()
         ritmoDedo.clear()
         presionadas.clear()
         escritas.clear()
@@ -854,8 +841,6 @@ class KeyboardView(
             Iconos.chevron(canvas, teclaUnaMano.rect.centerX(), teclaUnaMano.rect.centerY(), dp(22f),
                 pinturaIcono, haciaIzquierda = unaMano == "der")
         }
-        dibujarOndas(canvas)
-        dibujarDestello(canvas)
         if (deslizando && trazo.size >= 2) {
             pathTrazo.reset()
             pathTrazo.moveTo(trazo[0][0], trazo[0][1])
@@ -865,41 +850,10 @@ class KeyboardView(
         }
     }
 
-    /**
-     * Onda de luz al tocar: desde el borde de la tecla sale un anillo del color de la app que
-     * se expande y se desvanece (como una gota en el agua). Dura menos de medio segundo y,
-     * escribiendo rápido, cada tecla lanza la suya.
-     */
-    private fun lanzarOnda(t: Tecla) {
-        if (t.rect.isEmpty || modoCursor || Color.alpha(tema.halo) == 0) return
-        animOndas.remove(t)?.cancel()
-        ondas[t] = 0f
-        val anim = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = Movimiento.ONDA
-            interpolator = FRENO_ONDA
-            addUpdateListener {
-                ondas[t] = it.animatedValue as Float
-                invalidate()
-            }
-            addListener(object : android.animation.AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: android.animation.Animator) {
-                    if (animOndas[t] === animation) {
-                        animOndas.remove(t)
-                        ondas.remove(t)
-                        invalidate()
-                    }
-                }
-            })
-        }
-        animOndas[t] = anim
-        anim.start()
-    }
-
-    /** Un latido de borrar: se enciende y se apaga en ~150 ms, con su onda de luz */
+    /** Un latido de borrar: se enciende y se apaga en ~150 ms */
     private fun latir(t: Tecla) {
         animLatido?.cancel()
         latidoBorrar = 1f
-        lanzarOnda(t)
         animLatido = ValueAnimator.ofFloat(1f, 0f).apply {
             duration = Movimiento.LATIDO
             interpolator = FRENO_PULSO
@@ -968,46 +922,6 @@ class KeyboardView(
     }
 
     /**
-     * Destello al abrir: un reflejo de luz suave pasa una sola vez de izquierda a derecha
-     * sobre las teclas (como la luz que le pega a un vidrio). Dura ~0.6 s y no se repite
-     * mientras escribes.
-     */
-    fun destello() {
-        animDestello?.cancel()
-        destello = -1f
-        // Espera a que el teclado termine de subir para que se vea
-        postDelayed({ iniciarDestello() }, 140)
-    }
-
-    private fun iniciarDestello() {
-        if (!isShown || width == 0 || modoCursor || filas.isEmpty()) return
-        val ancho = width * 0.32f
-        if (degradadoDestello == null || anchoDestello != ancho) {
-            anchoDestello = ancho
-            val luz = 0x30FFFFFF
-            degradadoDestello = LinearGradient(0f, 0f, ancho, 0f,
-                intArrayOf(0x00FFFFFF, luz, 0x00FFFFFF), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
-            pinturaDestello.shader = degradadoDestello
-        }
-        animDestello?.cancel()
-        animDestello = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = Movimiento.DESTELLO
-            interpolator = Movimiento.SUAVE
-            addUpdateListener {
-                destello = it.animatedValue as Float
-                invalidate()
-            }
-            addListener(object : android.animation.AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: android.animation.Animator) {
-                    destello = -1f
-                    invalidate()
-                }
-            })
-            start()
-        }
-    }
-
-    /**
      * Trackpad de luz: mientras mueves el cursor con el espacio, las teclas quedan en blanco
      * y una luz del color de la app sigue tu dedo.
      */
@@ -1027,85 +941,6 @@ class KeyboardView(
         canvas.drawCircle(dedoCursorX, dedoCursorY, radio, pinturaTrackpad)
     }
 
-    private fun dibujarDestello(canvas: Canvas) {
-        val p = destello
-        val g = degradadoDestello
-        if (p < 0f || p > 1f || g == null || modoCursor) return
-        dibujarBrilloIcono(canvas, p)
-        if (versionFormaTeclas != versionDistribucion) {
-            formaTeclas.reset()
-            for (fila in filas) for (t in fila) if (t.tipo != Tipo.VACIO) formaTeclas.addPath(t.forma)
-            versionFormaTeclas = versionDistribucion
-        }
-        val x = -anchoDestello + (width + anchoDestello * 2f) * p
-        matrizDestello.setTranslate(x, 0f)
-        g.setLocalMatrix(matrizDestello)
-        canvas.save()
-        canvas.clipPath(formaTeclas)
-        canvas.drawRect(x, 0f, x + anchoDestello, height.toFloat(), pinturaDestello)
-        canvas.restore()
-    }
-
-    /** Al abrir el teclado, el ícono de la app en el espacio se ilumina y se apaga suave */
-    private fun dibujarBrilloIcono(canvas: Canvas, p: Float) {
-        val icono = iconoApp ?: return
-        if (rectIcono.isEmpty) return
-        val fuerza = Math.sin(Math.PI * p).toFloat()
-        if (fuerza <= 0.01f) return
-        if (degradadoIcono == null || degradadoIconoDe != tema.halo) {
-            degradadoIconoDe = tema.halo
-            val c = tema.halo and 0x00FFFFFF
-            degradadoIcono = RadialGradient(0f, 0f, 1f, intArrayOf(c or (0xA0 shl 24), c), null, Shader.TileMode.CLAMP)
-            pinturaBrilloIcono.shader = degradadoIcono
-        }
-        val radio = rectIcono.width() * 1.5f
-        val cx = rectIcono.centerX()
-        val cy = rectIcono.centerY()
-        matrizIcono.setScale(radio, radio)
-        matrizIcono.postTranslate(cx, cy)
-        degradadoIcono?.setLocalMatrix(matrizIcono)
-        pinturaBrilloIcono.alpha = (255 * fuerza).toInt().coerceIn(0, 255)
-        canvas.drawCircle(cx, cy, radio, pinturaBrilloIcono)
-        pinturaIconoApp.alpha = 255
-        canvas.drawBitmap(icono, null, rectIcono, pinturaIconoApp)
-    }
-
-    private val matrizOnda = android.graphics.Matrix()
-    private val formaOnda = Path()
-
-    private fun dibujarOndas(canvas: Canvas) {
-        if (ondas.isEmpty() || modoCursor) return
-        val alfaBase = Color.alpha(tema.halo)
-        for ((t, p) in ondas) {
-            if (p >= 1f) continue
-            val r = t.rect
-            if (r.isEmpty) continue
-            // Se aleja del borde hasta 13 dp y se apaga mientras crece
-            val crece = dp(13f) * p
-            val sx = (r.width() + crece * 2f) / r.width()
-            val sy = (r.height() + crece * 2f) / r.height()
-            matrizOnda.setScale(sx, sy, r.centerX(), r.centerY())
-            t.forma.transform(matrizOnda, formaOnda)
-            val fuerza = (1f - p) * (1f - p)
-            pinturaHalo.color = (tema.halo and 0x00FFFFFF) or
-                ((minOf(255, alfaBase * 2) * 0.9f * fuerza).toInt().coerceIn(0, 255) shl 24)
-            pinturaHalo.strokeWidth = dp(2.2f) * (1f - p * 0.6f)
-            canvas.drawPath(formaOnda, pinturaHalo)
-        }
-    }
-
-    /** Prende la luz de toque de [t] en el punto donde cayó el dedo */
-    private fun encenderLuz(t: Tecla, x: Float, y: Float) {
-        if (t.rect.isEmpty || modoCursor) return
-        val r = maxOf(t.rect.width(), t.rect.height()) * 1.05f
-        val centro = (tema.borde and 0x00FFFFFF) or (0x40 shl 24)
-        val medio = (tema.borde and 0x00FFFFFF) or (0x14 shl 24)
-        luces[t] = RadialGradient(
-            x.coerceIn(t.rect.left, t.rect.right), y.coerceIn(t.rect.top, t.rect.bottom), r,
-            intArrayOf(centro, medio, centro and 0x00FFFFFF), floatArrayOf(0f, 0.45f, 1f),
-            Shader.TileMode.CLAMP,
-        )
-    }
 
     private fun animarPulso(t: Tecla, hasta: Float) {
         animPulsos.remove(t)?.cancel()
@@ -1124,7 +959,7 @@ class KeyboardView(
             interpolator = FRENO_PULSO
             addUpdateListener {
                 val v = it.animatedValue as Float
-                if (v <= 0f) { pulsos.remove(t); luces.remove(t) } else pulsos[t] = v
+                if (v <= 0f) { pulsos.remove(t) } else pulsos[t] = v
                 invalidarTecla(t)
             }
         }
@@ -1171,7 +1006,7 @@ class KeyboardView(
         }
         // Borrar con ritmo: cada letra que se va, la tecla late con el color de la app
         if (t.tipo == Tipo.BORRAR && latidoBorrar > 0f && !modoCursor) {
-            color = mezclarConAlfa(color, tema.halo or (0xFF shl 24), 0.55f * latidoBorrar)
+            color = mezclarConAlfa(color, t.tinte or (0xFF shl 24), 0.55f * latidoBorrar)
         }
         // Cuánto está "encendida" la tecla ahora (para agrandar apenas su letra al tocarla)
         val toque = if (presionada) 1f else f
@@ -1194,12 +1029,10 @@ class KeyboardView(
         val brilloHalo = if (presionada) 1f else f
         if (brilloHalo > 0f && !modoCursor && !sinFondo && Color.alpha(tema.halo) > 0 &&
             !(t.tipo == Tipo.SHIFT && shift > 0)) {
+            // Un solo trazo (antes eran dos): mismo efecto, la mitad de trabajo por cuadro
             val alfaHalo = Color.alpha(tema.halo)
-            pinturaHalo.color = (tema.halo and 0x00FFFFFF) or ((alfaHalo * 0.32f * brilloHalo).toInt().coerceIn(0, 255) shl 24)
-            pinturaHalo.strokeWidth = dp(5f)
-            c.drawPath(forma, pinturaHalo)
-            pinturaHalo.color = (tema.halo and 0x00FFFFFF) or ((alfaHalo * 0.75f * brilloHalo).toInt().coerceIn(0, 255) shl 24)
-            pinturaHalo.strokeWidth = dp(2.2f)
+            pinturaHalo.color = (t.tinte and 0x00FFFFFF) or ((alfaHalo * 0.7f * brilloHalo).toInt().coerceIn(0, 255) shl 24)
+            pinturaHalo.strokeWidth = dp(3f)
             c.drawPath(forma, pinturaHalo)
         }
 
@@ -1230,14 +1063,6 @@ class KeyboardView(
                 pintura.shader = t.shaderFondo
                 c.drawPath(forma, pintura)
                 pintura.shader = null
-            }
-            // Luz de toque donde cayó el dedo (se apaga junto con la tecla)
-            val luz = luces[t]
-            if (luz != null && toque > 0f && !modoCursor && !(t.tipo == Tipo.SHIFT && shift > 0)) {
-                pinturaLuz.shader = luz
-                pinturaLuz.alpha = (255f * toque).toInt().coerceIn(0, 255)
-                c.drawPath(forma, pinturaLuz)
-                pinturaLuz.shader = null
             }
             // Filo de vidrio con el color de la app (no en la tecla blanca de mayúsculas:
             // ahí el filo de color se veía como una mancha)
@@ -1276,7 +1101,7 @@ class KeyboardView(
             t.tipo == Tipo.SHIFT && shift == 2 -> tema.textoAcento
             t.tipo == Tipo.SHIFT && shift > 0 -> tema.textoActivo
             // Obsidiana: el ícono o el texto de las teclas de función, en el color de la app
-            !presionada && esObsidiana(t) -> tema.textoFuncion
+            !presionada && esObsidiana(t) -> Tema.mezclar(t.tinte or (0xFF shl 24), Color.WHITE, 0.10f)
             else -> tema.texto
         })
         pinturaIcono.color = contenido
@@ -1909,7 +1734,7 @@ class KeyboardView(
                             y < t.rect.top + dp(3f) || y > t.rect.bottom - dp(3f)) continue
                         presionadas[id] = t
                         // La tecla anterior se apaga y se marca la nueva
-                        apagarSueltas(); encenderLuz(t, x, y); animarPulso(t, 1f)
+                        apagarSueltas(); animarPulso(t, 1f)
                         puntosToque[id] = floatArrayOf(x, y)
                         anticiparLetra(t, x, y)
                         programarVariantes(t, id)
@@ -2046,9 +1871,7 @@ class KeyboardView(
         // ilumina debajo de la burbuja y al soltarla se apaga suave). Así cada toque se SIENTE
         // presionado, aunque escribas rapidísimo con dos dedos.
         if (t.tipo != Tipo.UNA_MANO) {
-            encenderLuz(t, x, y)
             animarPulso(t, 1f)
-            lanzarOnda(t)
         }
         when (t.tipo) {
             Tipo.LETRA -> {
@@ -2179,7 +2002,6 @@ class KeyboardView(
     companion object {
         private val FRENO_PULSO = Movimiento.SUAVE
         /** La onda sale rápido y frena al alejarse */
-        private val FRENO_ONDA = android.view.animation.DecelerateInterpolator(1.6f)
         /** Un toque más corto que esto es "tocar y soltar": no cambia de tecla ni desliza */
         private const val TOQUE_RAPIDO_MS = 170L
         /** Una letra que llega a menos de esto de la anterior: vas escribiendo rápido */

@@ -40,6 +40,12 @@ data class Tema(
     val textoSecundario: Int,
     /** Color de la app */
     val azul: Int,
+    /**
+     * Color compañero del de la app (su vecino en el círculo de colores: el verde de WhatsApp
+     * va con un turquesa, el rosado de Instagram con un naranja coral). Se funde con el
+     * principal de un lado al otro del teclado; el principal siempre manda.
+     */
+    val azul2: Int,
     /** Filo de cada tecla con el color de la app */
     val borde: Int,
     /** Borde de todo el teclado con el color de la app */
@@ -93,6 +99,19 @@ data class Tema(
             if (hsv[1] < 0.12f) return color or (0xFF shl 24)
             hsv[1] = (hsv[1] * 1.25f + 0.12f).coerceAtMost(1f)
             hsv[2] = maxOf(hsv[2], 0.92f)
+            return Color.HSVToColor(0xFF, hsv)
+        }
+
+        /**
+         * El compañero de [color]: el tono vecino (unos 40° más allá en el círculo de colores),
+         * igual de vivo. Los grises se quedan como están.
+         */
+        fun companero(color: Int): Int {
+            val hsv = FloatArray(3)
+            Color.colorToHSV(color, hsv)
+            if (hsv[1] < 0.12f) return color or (0xFF shl 24)
+            hsv[0] = (hsv[0] + 40f) % 360f
+            hsv[2] = maxOf(hsv[2], 0.95f)
             return Color.HSVToColor(0xFF, hsv)
         }
 
@@ -152,6 +171,7 @@ data class Tema(
                 texto = 0xFFF5F5F7.toInt(),
                 textoSecundario = 0xFF8E8E93.toInt(),
                 azul = color,
+                azul2 = companero(color),
                 // Filo del color de la app con algo de luz: se nota sin "gritar"
                 // Filo a todo color (antes iba mezclado con blanco y se veía lavado)
                 borde = a(alfaBorde, mezclar(color, BLANCO, 0.06f)),
