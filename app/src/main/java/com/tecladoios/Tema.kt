@@ -23,6 +23,10 @@ data class Tema(
     val tinteInterior: Int,
     /** Halo del color de la app que rodea la tecla al tocarla (se apaga con la tecla) */
     val halo: Int,
+    /** Brillo plateado del filo metálico, en las esquinas de arriba de cada tecla */
+    val plata: Int,
+    /** Íconos y texto de las teclas de función (obsidiana): el color de la app con luz */
+    val textoFuncion: Int,
     /** Teclas de letras: vidrio translúcido apenas teñido con el color de la app */
     val tecla: Int,
     val teclaFuncion: Int,
@@ -78,6 +82,20 @@ data class Tema(
                 c(Color.blue(color), Color.blue(base)))
         }
 
+        /**
+         * El color de la app más vivo e intenso: más saturado y más luminoso, para que brille
+         * sobre el negro (el verde de WhatsApp, el rosado de Instagram, el rojo de YouTube…
+         * se ven a todo color). Los grises casi sin color se dejan como están.
+         */
+        fun intenso(color: Int): Int {
+            val hsv = FloatArray(3)
+            Color.colorToHSV(color, hsv)
+            if (hsv[1] < 0.12f) return color or (0xFF shl 24)
+            hsv[1] = (hsv[1] * 1.25f + 0.12f).coerceAtMost(1f)
+            hsv[2] = maxOf(hsv[2], 0.92f)
+            return Color.HSVToColor(0xFF, hsv)
+        }
+
         /** El color tal como se ve encima del negro (sirve para dibujar los huecos de los íconos) */
         fun sobreNegro(color: Int): Int {
             val f = Color.alpha(color) / 255f
@@ -100,27 +118,32 @@ data class Tema(
         /** [acento]: color de la app. [conDesenfoque] ya no se usa (el fondo es negro sólido). */
         @Suppress("UNUSED_PARAMETER")
         fun desde(context: Context, conDesenfoque: Boolean, acento: Int?): Tema {
-            val color = (acento ?: acentoSistema(context)) or (0xFF shl 24)
+            val color = intenso((acento ?: acentoSistema(context)) or (0xFF shl 24))
             // Filo de las teclas elegido en Ajustes (apagado, sutil, normal o vivo)
             val alfaBorde = when (Ajustes.bordeTeclas(context)) {
                 "apagado" -> 0x00
-                "sutil" -> 0x2A
-                "vivo" -> 0xB8
-                else -> 0x48
+                "sutil" -> 0x55
+                "vivo" -> 0xF0
+                else -> 0x96
             }
             return Tema(
                 oscuro = true,
                 fondo = NEGRO,
                 fondoArriba = NEGRO,
                 filoLuz = a(0x58, BLANCO),
-                tinteInterior = a(0x1E, color),
-                halo = a(0x5A, mezclar(color, BLANCO, 0.12f)),
+                tinteInterior = a(0x2C, color),
+                halo = a(0x8C, color),
+                // Plata fría, apenas teñida con la app (así combina con cualquier color)
+                plata = mezclar(0xFFDDE1E8.toInt(), color, 0.12f),
+                // Íconos de función a todo color (solo un toque de luz si el color es oscuro)
+                textoFuncion = mezclar(color, BLANCO, 0.10f),
                 // Grafito profundo, apenas teñido: las letras se distinguen claramente de las
                 // teclas de función (más oscuras), como en el teclado oscuro del iPhone
                 tecla = a(0x2E, mezclar(BLANCO, color, 0.06f)),
-                teclaFuncion = a(0x17, mezclar(BLANCO, color, 0.10f)),
+                // Obsidiana: más oscura y mate que las letras
+                teclaFuncion = a(0x12, mezclar(BLANCO, color, 0.10f)),
                 // Tecla presionada: se enciende en gris claro con un toque del color de la app
-                teclaPresionada = a(0x5A, mezclar(BLANCO, color, 0.26f)),
+                teclaPresionada = a(0x66, mezclar(BLANCO, color, 0.45f)),
                 // Mayúsculas activadas: blanco suave, no encandila sobre el negro
                 teclaActiva = 0xFFE6E6EB.toInt(),
                 textoActivo = 0xFF0A0A0B.toInt(),
@@ -130,19 +153,20 @@ data class Tema(
                 textoSecundario = 0xFF8E8E93.toInt(),
                 azul = color,
                 // Filo del color de la app con algo de luz: se nota sin "gritar"
-                borde = a(alfaBorde, mezclar(color, BLANCO, 0.25f)),
-                bordePanel = a(0x70, mezclar(color, BLANCO, 0.12f)),
+                // Filo a todo color (antes iba mezclado con blanco y se veía lavado)
+                borde = a(alfaBorde, mezclar(color, BLANCO, 0.06f)),
+                bordePanel = a(0xC0, color),
                 barra = a(0xF0, 0x0B0B0D),
-                enterAccion = a(0xE6, color),
+                enterAccion = color,
                 textoAcento = textoSobre(color),
                 burbuja = a(0xFA, mezclar(0xFF27272B.toInt(), color, 0.12f)),
-                bordeBurbuja = a(0xC0, mezclar(color, BLANCO, 0.20f)),
+                bordeBurbuja = a(0xE6, color),
                 desenfoque = 0,
                 // Se dibujan con opacidad propia (no dependen de la transparencia de la tecla)
                 brillo = a(0x18, BLANCO),
                 profundidad = a(0x20, NEGRO),
                 reflejo = a(0x24, BLANCO),
-                resplandor = a(0x22, color),
+                resplandor = a(0x38, color),
             )
         }
     }

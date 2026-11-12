@@ -6,11 +6,13 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ComposeShader
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PorterDuff
 import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.RenderNode
@@ -495,6 +497,17 @@ class KeyboardView(
         )
     }
 
+    /**
+     * Teclas de función en obsidiana (borrar, 123, emojis, mayúsculas sin activar y el intro
+     * normal): un tono más oscuro y mate, con su ícono del color de la app.
+     */
+    private fun esObsidiana(t: Tecla): Boolean = when (t.tipo) {
+        Tipo.BORRAR, Tipo.A_NUMEROS, Tipo.A_SIMBOLOS, Tipo.A_LETRAS, Tipo.EMOJI -> true
+        Tipo.SHIFT -> shift == 0
+        Tipo.ENTER -> !enterAccion
+        else -> false
+    }
+
     /** El mismo color con la opacidad multiplicada por [f] */
     private fun conAlfa(color: Int, f: Float): Int =
         (color and 0x00FFFFFF) or ((Color.alpha(color) * f).toInt().coerceIn(0, 255) shl 24)
@@ -503,14 +516,20 @@ class KeyboardView(
         t.rect.set(x + sep, top + sepV, x + w - sep, top + altoFila - sepV)
         Formas.suave(t.forma, t.rect.left, t.rect.top, t.rect.right, t.rect.bottom, radio, 0f, t.curvaDer, t.curvaIzq)
         val r = t.rect
-        // Filo del color de la app como luz que entra en diagonal: intenso arriba a la izquierda,
-        // tenue al medio y un poco más vivo abajo (como el borde de un vidrio grueso)
-        // Filo parejo en toda la tecla: un poco más vivo arriba (donde "pega la luz") y más
-        // tenue abajo. Antes iba en diagonal y la esquina de arriba a la izquierda se veía manchada.
-        // Se apaga más parejo hacia abajo: el filo se ve suave, sin un corte marcado
-        t.shaderBorde = LinearGradient(0f, r.top, 0f, r.bottom,
-            intArrayOf(conAlfa(tema.borde, 0.9f), conAlfa(tema.borde, 0.5f), conAlfa(tema.borde, 0.16f)),
+        // Filo metálico: el borde pasa del color de la app (al centro) a un brillo plateado en
+        // las esquinas de arriba, como el canto pulido de un reloj. Se ve fuerte arriba y se
+        // apaga suave hacia abajo. Son dos degradados juntos (color de lado a lado y fuerza de
+        // arriba a abajo), armados una sola vez por tecla.
+        val alfaFilo = Color.alpha(tema.borde) / 255f
+        val colorFilo = tema.borde or (0xFF shl 24)
+        val horizontal = LinearGradient(r.left, 0f, r.right, 0f,
+            intArrayOf(tema.plata, colorFilo, colorFilo, tema.plata),
+            floatArrayOf(0f, 0.3f, 0.7f, 1f), Shader.TileMode.CLAMP)
+        val vertical = LinearGradient(0f, r.top, 0f, r.bottom,
+            intArrayOf(conAlfa(Color.BLACK, 0.95f * alfaFilo), conAlfa(Color.BLACK, 0.5f * alfaFilo),
+                conAlfa(Color.BLACK, 0.18f * alfaFilo)),
             floatArrayOf(0f, 0.4f, 1f), Shader.TileMode.CLAMP)
+        t.shaderBorde = ComposeShader(horizontal, vertical, PorterDuff.Mode.DST_IN)
         // Reflejo arriba de la tecla: le da el efecto translúcido de vidrio
         t.shaderBrillo = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.5f,
             tema.brillo, tema.brillo and 0x00FFFFFF, Shader.TileMode.CLAMP)
@@ -924,8 +943,11 @@ class KeyboardView(
             val vidrio = !modoCursor && (Color.alpha(color) < 0xC0 || (t.tipo == Tipo.ENTER && enterAccion))
             if (vidrio) {
                 pintura.color = Color.BLACK
-                pintura.shader = t.shaderBrillo
-                c.drawPath(forma, pintura)
+                // Las teclas de función son de obsidiana: acabado mate, sin el brillo de arriba
+                if (!esObsidiana(t)) {
+                    pintura.shader = t.shaderBrillo
+                    c.drawPath(forma, pintura)
+                }
                 pintura.shader = t.shaderFondo
                 c.drawPath(forma, pintura)
                 pintura.shader = null
@@ -973,6 +995,8 @@ class KeyboardView(
         val contenido = conAparicion(when {
             t.tipo == Tipo.ENTER && enterAccion && !presionada -> tema.textoAcento
             t.tipo == Tipo.SHIFT && shift > 0 -> tema.textoActivo
+            // Obsidiana: el ícono o el texto de las teclas de función, en el color de la app
+            !presionada && esObsidiana(t) -> tema.textoFuncion
             else -> tema.texto
         })
         pinturaIcono.color = contenido
