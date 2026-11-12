@@ -205,25 +205,44 @@ class Diccionario(context: Context) {
      * de las palabras más usadas ("tranajo" → "trabajo", "nafie" → "nadie"). Solo los que no
      * se pueden confundir con otra palabra; se corrigen al instante, sin calcular nada.
      */
-    @Volatile private var tipeos: Tipeos = Tipeos(emptyArray(), emptyArray())
-    /**
-     * Los mismos errores de fábrica ordenados (para saber rápido si lo que vas escribiendo es el
-     * comienzo de un dedazo conocido: entonces es UNA palabra mal tocada y no se separa)
-     */
-    @Volatile private var tipeosOrden: Array<String> = emptyArray()
+    @Volatile private var tipeos: Tipeos = Tipeos.VACIO
 
     /**
-     * Más de medio millón de errores de fábrica guardados en dos listas ordenadas (el error y su
-     * corrección) en vez de una tabla: ocupan muchos megas menos de memoria y se buscan igual de
-     * rápido (búsqueda binaria: unas 20 comparaciones por palabra).
+     * Los errores de fábrica (720 mil) guardados de la forma más compacta: todos los errores
+     * pegados en UN solo bloque de bytes, en orden, con la posición donde empieza cada uno, y
+     * las correcciones como números que apuntan a una lista de palabras sin repetir. Antes
+     * cada error era un objeto aparte (más de 30 MB de memoria): así ocupa menos de la mitad,
+     * Android no tiene que cerrar el teclado por falta de memoria y se busca igual de rápido
+     * (búsqueda binaria: unas 20 comparaciones por palabra).
      */
-    private class Tipeos(val claves: Array<String>, val destinos: Array<String>) {
+    private class Tipeos(
+        private val bytes: ByteArray,
+        /** Dónde empieza cada error en [bytes] (el último marca el final) */
+        private val inicios: IntArray,
+        private val destinos: IntArray,
+        private val palabras: Array<String>,
+    ) {
+        val size get() = destinos.size
+
+        /** Compara el error [i] con [k] (bytes UTF-8), como el orden del archivo */
+        private fun comparar(i: Int, k: ByteArray, soloPrefijo: Boolean = false): Int {
+            val a = inicios[i]
+            val n = inicios[i + 1] - a
+            for (x in 0 until minOf(n, k.size)) {
+                val c = (bytes[a + x].toInt() and 0xFF) - (k[x].toInt() and 0xFF)
+                if (c != 0) return c
+            }
+            if (soloPrefijo && n >= k.size) return 0
+            return n - k.size
+        }
+
         private fun buscar(k: String): Int {
+            val kb = k.toByteArray(Charsets.UTF_8)
             var a = 0
-            var b = claves.size - 1
+            var b = size - 1
             while (a <= b) {
                 val m = (a + b) ushr 1
-                val c = claves[m].compareTo(k)
+                val c = comparar(m, kb)
                 if (c == 0) return m
                 if (c < 0) a = m + 1 else b = m - 1
             }
@@ -232,18 +251,38 @@ class Diccionario(context: Context) {
 
         operator fun get(k: String): String? {
             val i = buscar(k)
-            return if (i >= 0) destinos[i] else null
+            return if (i >= 0) palabras[destinos[i]] else null
         }
 
         fun containsKey(k: String) = buscar(k) >= 0
+
+        /** ¿Algún error empieza con [np]? */
+        fun hayConPrefijo(np: String): Boolean {
+            if (size == 0) return false
+            val kb = np.toByteArray(Charsets.UTF_8)
+            var a = 0
+            var b = size
+            while (a < b) {
+                val m = (a + b) ushr 1
+                if (comparar(m, kb) < 0) a = m + 1 else b = m
+            }
+            return a < size && comparar(a, kb, soloPrefijo = true) == 0
+        }
+
+        companion object {
+            val VACIO = Tipeos(ByteArray(0), IntArray(1), IntArray(0), emptyArray())
+        }
     }
 
     private fun leerTipeos(c: Context): Tipeos {
-        // Muchos errores llevan a la misma palabra: se guarda una sola copia de cada una
-        // (con medio millón de errores eso ahorra muchos megas de memoria)
-        val unicas = HashMap<String, String>(60_000)
-        val claves = ArrayList<String>(580_000)
-        val destinos = ArrayList<String>(580_000)
+        // Primero se juntan los pares (error, corrección); muchos errores llevan a la misma
+        // palabra y de cada una se guarda una sola copia
+        val unicas = HashMap<String, Int>(60_000)
+        val palabras = ArrayList<String>(60_000)
+        val claves = ArrayList<String>(740_000)
+        // Números sin "envolver" (una lista de Int crearía 700 mil objetos de más al cargar)
+        var destinos = IntArray(740_000)
+        var cuantos = 0
         try {
             c.assets.open("errores.txt").bufferedReader().useLines { lineas ->
                 for (linea in lineas) {
@@ -251,41 +290,43 @@ class Diccionario(context: Context) {
                     val i = linea.indexOf(':')
                     if (i <= 0 || i >= linea.length - 1) continue
                     val d = linea.substring(i + 1).trim().replace('_', ' ')
+                    val n = unicas.getOrPut(d) { palabras.add(d); palabras.size - 1 }
                     claves.add(linea.substring(0, i))
-                    destinos.add(unicas.getOrPut(d) { d })
+                    if (cuantos == destinos.size) destinos = destinos.copyOf(destinos.size * 2)
+                    destinos[cuantos++] = n
                 }
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { Registro.anotar("leer errores de fábrica", e) }
         unicas.clear()
-        var k = claves.toTypedArray()
-        var v = destinos.toTypedArray()
-        claves.clear()
-        destinos.clear()
-        // El archivo ya viene ordenado; si alguien lo editó a mano, se ordena aquí
+        // En orden de bytes (el archivo ya viene así; si alguien lo editó a mano, se ordena)
         var ordenado = true
-        for (x in 1 until k.size) if (k[x - 1] > k[x]) { ordenado = false; break }
-        if (!ordenado) {
-            val idx = k.indices.sortedBy { k[it] }
-            val k2 = Array(k.size) { k[idx[it]] }
-            val v2 = Array(v.size) { v[idx[it]] }
-            k = k2
-            v = v2
+        for (x in 1 until claves.size) if (claves[x - 1] > claves[x]) { ordenado = false; break }
+        val orden: IntArray? = if (ordenado) null else claves.indices.sortedBy { claves[it] }.toIntArray()
+        val n = claves.size
+        // Todo pegado en un solo bloque de bytes (se mide primero para no copiar de más)
+        var total = 0
+        for (x in 0 until n) total += claves[x].toByteArray(Charsets.UTF_8).size
+        val bytes = ByteArray(total)
+        val inicios = IntArray(n + 1)
+        val dest = IntArray(n)
+        var p = 0
+        for (pos in 0 until n) {
+            val idx = orden?.get(pos) ?: pos
+            val b = claves[idx].toByteArray(Charsets.UTF_8)
+            inicios[pos] = p
+            System.arraycopy(b, 0, bytes, p, b.size)
+            p += b.size
+            dest[pos] = destinos[idx]
         }
-        tipeosOrden = k
-        return Tipeos(k, v)
+        inicios[n] = p
+        claves.clear()
+        return Tipeos(bytes, inicios, dest, palabras.toTypedArray())
     }
 
     /** ¿[np] es el comienzo de un dedazo de fábrica? ("connsec" → "connsecuencia") */
     private fun comienzoDeTipeo(np: String): Boolean {
-        val t = tipeosOrden
-        if (t.isEmpty() || np.length < 3) return false
-        var a = 0
-        var b = t.size
-        while (a < b) {
-            val m = (a + b) ushr 1
-            if (t[m] < np) a = m + 1 else b = m
-        }
-        return a < t.size && t[a].startsWith(np)
+        if (np.length < 3) return false
+        return tipeos.hayConPrefijo(np)
     }
 
     /**

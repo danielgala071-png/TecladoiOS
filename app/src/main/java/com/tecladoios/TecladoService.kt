@@ -537,6 +537,16 @@ class TecladoService : InputMethodService(),
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        // Seguro contra cierres: una caja de texto rara (buscadores de Facebook, Instagram…)
+        // no puede tumbar el teclado; el error queda anotado para arreglarlo
+        try {
+            empezarCampo(info, restarting)
+        } catch (t: Throwable) {
+            Registro.anotar("abrir el teclado en " + (info.packageName ?: "?"), t)
+        }
+    }
+
+    private fun empezarCampo(info: EditorInfo, restarting: Boolean) {
         appActual = info.packageName
         // El cerebro aprende cómo escribes en cada app (WhatsApp, Instagram, correo...)
         diccionario.app = (info.packageName ?: "").filter { it.isLetterOrDigit() || it == '.' || it == '_' }
@@ -722,6 +732,15 @@ class TecladoService : InputMethodService(),
         candidatesStart: Int, candidatesEnd: Int,
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        try {
+            cambioSeleccion(newSelStart, newSelEnd)
+        } catch (t: Throwable) {
+            Registro.anotar("mover el cursor", t)
+            espejoValido = false
+        }
+    }
+
+    private fun cambioSeleccion(newSelStart: Int, newSelEnd: Int) {
         if (newSelStart == newSelEnd && pendientes.contains(newSelStart)) {
             // Es el resultado de algo que escribió el teclado: la copia local ya está al día
             while (pendientes.isNotEmpty()) if (pendientes.removeFirst() == newSelStart) break
@@ -970,6 +989,81 @@ class TecladoService : InputMethodService(),
     }
 
     /** La palabra antes de la anterior: "nos vemos " → "nos" (para predecir con dos palabras) */
+    /**
+     * Corregir tocando una palabra (como en el iPhone): pones el cursor en una palabra ya
+     * escrita y la barra muestra lo que escribiste, la corrección más probable al centro y
+     * otra opción. Al tocar una, se cambia la palabra entera (aunque el cursor esté en medio).
+     */
+    private fun mostrarPalabraTocada(antes: String, b: SuggestionBar): Boolean {
+        val ic = currentInputConnection ?: return false
+        var i = antes.length
+        while (i > 0 && antes[i - 1].isLetter()) i--
+        val parteAntes = antes.substring(i)
+        val luego = try { ic.getTextAfterCursor(40, 0)?.toString() } catch (_: Exception) { null } ?: ""
+        var j = 0
+        while (j < luego.length && luego[j].isLetter()) j++
+        val parteDespues = luego.substring(0, j)
+        val palabra = parteAntes + parteDespues
+        // Solo palabras de verdad (no un número, ni pegada a un @ o un enlace)
+        if (palabra.length < 2 || parteAntes.isEmpty() && parteDespues.isEmpty()) return false
+        if (i > 0 && antes[i - 1] in "@#/_.0123456789") return false
+        if (j < luego.length && luego[j] in "@#/_0123456789") return false
+        val (previa, _) = palabrasDe(antes.substring(0, i))
+        val previa2 = previa2De(antes.substring(0, i))
+        val sel = selIni
+        val lit = Sugerencia(palabra, literal = true, tocada = true, reemplaza = parteAntes.length,
+            despues = parteDespues.length, original = palabra)
+        b.mostrar(listOf(lit, null, null))
+        diccionario.interrumpir()
+        val t = diccionario.turno()
+        motor.post {
+            if (!diccionario.vigente(t)) return@post
+            val corr = try {
+                diccionario.corregir(palabra, previa, previa2, t, null, cortable = false)
+            } catch (e: Throwable) { Registro.anotar("corregir palabra tocada", e); null }
+            val todas: List<String> = try {
+                diccionario.sugerir(palabra, 3, previa, previa2, t, null)
+            } catch (e: Throwable) { Registro.anotar("sugerir palabra tocada", e); emptyList() }
+            val otras = todas.filter { it != corr && !it.equals(palabra, ignoreCase = true) }
+            manejador.post {
+                // Si ya moviste el cursor o volviste a escribir, esto ya no sirve
+                if (!diccionario.vigente(t) || selIni != sel || escribiendo) return@post
+                fun opcion(w: String, destacada: Boolean = false) = Sugerencia(w, destacada = destacada, tocada = true,
+                    reemplaza = parteAntes.length, despues = parteDespues.length, original = palabra)
+                val centro = (corr ?: otras.getOrNull(0))?.let { opcion(it, destacada = corr != null) }
+                val derecha = (if (corr != null) otras.getOrNull(0) else otras.getOrNull(1))?.let { opcion(it) }
+                b.mostrar(listOf(lit, centro, derecha))
+            }
+        }
+        return true
+    }
+
+    /** Cambia la palabra tocada por la que elegiste (sin agregar espacio) */
+    private fun elegirTocada(s: Sugerencia) {
+        val ic = currentInputConnection ?: return
+        retro(Tipo.LETRA)
+        val original = s.original ?: return
+        if (s.literal) {
+            // Dejaste la palabra como estaba: el cerebro la aprende como tuya
+            enMotor { diccionario.aprender(original, 2) }
+            return
+        }
+        ic.beginBatchEdit()
+        ic.deleteSurroundingText(s.reemplaza.coerceAtLeast(0), s.despues.coerceAtLeast(0))
+        ic.commitText(s.texto, 1)
+        ic.endBatchEdit()
+        olvidarEspejo()
+        toques.clear()
+        calculada = null
+        ultimaCorreccion = null
+        ultimaAprendida = null
+        // Que la barra siga como si acabaras de escribir la palabra (no la vuelve a "tocar")
+        escribiendo = true
+        ultimaEscritura = SystemClock.uptimeMillis()
+        // El cerebro aprende tu error: la próxima vez lo corrige solo
+        enMotor { diccionario.notarCorreccion(original, s.texto, 2f) }
+    }
+
     private fun previa2De(antes: String): String {
         fun palabraAntes(fin: Int): Pair<String, Int> {
             var j = fin
@@ -1116,6 +1210,8 @@ class TecladoService : InputMethodService(),
             return
         }
         b.visible(true)
+        // Tocaste una palabra que ya habías escrito: la barra muestra sus correcciones
+        if (!escribiendo && selIni >= 0 && selIni == selFin && mostrarPalabraTocada(antes, b)) return
         // Recién deslizaste una palabra: la barra muestra las otras opciones
         val ud = ultimoDeslizado
         if (ud != null) {
@@ -2412,6 +2508,18 @@ class TecladoService : InputMethodService(),
         return bmp
     }
 
+    override fun emojisRecientes(): List<String> {
+        val usados = EmojiPanel.recientes(this)
+        // Si todavía usaste pocos, se completa con los más populares
+        return (usados + listOf("\uD83D\uDE02", "\u2764\uFE0F", "\uD83D\uDE4F", "\uD83D\uDC4D", "\uD83D\uDD25"))
+            .distinct().take(5)
+    }
+
+    override fun escribirEmoji(e: String) {
+        if (currentInputConnection == null) return
+        elegirEmoji(e)
+    }
+
     override fun abrirEmojis() {
         buscandoEmoji = false
         consultaEmoji = ""
@@ -2525,6 +2633,10 @@ class TecladoService : InputMethodService(),
         if (currentInputConnection == null) return
         if (s.accion != 0) {
             editar(s.accion)
+            return
+        }
+        if (s.tocada) {
+            elegirTocada(s)
             return
         }
         toques.clear()

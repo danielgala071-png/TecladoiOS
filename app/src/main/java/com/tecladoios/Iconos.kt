@@ -76,6 +76,20 @@ object Iconos {
     }
 
     /** Flecha de "intro" (⏎) como en iOS 26/27 */
+    /** Avioncito de enviar (relleno), apuntando a la derecha */
+    fun enviar(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
+        p.style = Paint.Style.FILL
+        path.reset()
+        path.moveTo(cx - s * 0.46f, cy - s * 0.42f)
+        path.lineTo(cx + s * 0.50f, cy)
+        path.lineTo(cx - s * 0.46f, cy + s * 0.42f)
+        path.lineTo(cx - s * 0.30f, cy + s * 0.04f)
+        path.lineTo(cx + s * 0.06f, cy)
+        path.lineTo(cx - s * 0.30f, cy - s * 0.04f)
+        path.close()
+        c.drawPath(path, p)
+    }
+
     fun enter(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
         p.style = Paint.Style.STROKE
         val der = cx + s * 0.42f

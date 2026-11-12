@@ -74,8 +74,12 @@ class KeyboardView(
         fun espacio()
         fun enter()
         fun abrirEmojis()
-        /** Mantener presionada la tecla de emojis: abre los ajustes del teclado */
+        /** Abre los ajustes del teclado (desde el engranaje de los emojis recientes) */
         fun abrirAjustes()
+        /** Tus emojis más usados (para mantener presionada la tecla de emojis) */
+        fun emojisRecientes(): List<String> = emptyList()
+        /** Escribe un emoji elegido desde los recientes */
+        fun escribirEmoji(e: String) {}
         fun retro(tipo: Tipo)
         fun moverCursor(pasos: Int)
         /** Cursor con la barra espaciadora hacia arriba o abajo (solo en textos de varias líneas) */
@@ -182,13 +186,27 @@ class KeyboardView(
     // Mantener presionada la tecla de emojis abre los ajustes
     private var punteroEmoji = -1
     private var emojiLargo = false
+    /**
+     * Mantener la tecla de emojis: salen tus 5 emojis más usados (y un engranaje para los
+     * ajustes). Deslizas al que quieres y sueltas, como con los acentos.
+     */
     private val abrirAjustesTarea = Runnable {
         if (punteroEmoji != -1) {
+            val t = presionadas[punteroEmoji]
             emojiLargo = true
             acciones.retro(Tipo.EMOJI)
-            acciones.abrirAjustes()
+            val recientes = try { acciones.emojisRecientes() } catch (_: Throwable) { emptyList() }
+            if (t == null || recientes.isEmpty()) {
+                acciones.abrirAjustes()
+                return@Runnable
+            }
+            variantesEmoji = true
+            variantes.mostrar(t.rect, recientes.take(5) + ENGRANAJE, width.toFloat(), tema.oscuro, tema.azul)
+            punteroVariantes = punteroEmoji
         }
     }
+    /** El menú abierto es el de emojis recientes (no el de acentos) */
+    private var variantesEmoji = false
 
     // Para descartar toques involuntarios: el último toque de letra (rebote del dedo)
     private var ultimoToqueMs = 0L
@@ -366,12 +384,17 @@ class KeyboardView(
     private val pinturaTexto = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
     }.also { Fuentes.aplicar(it, 400) }
+    /** Letras de las teclas: peso medio, más firmes y nítidas */
+    private val pinturaLetra = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+    }.also { Fuentes.aplicar(it, 500) }
     private val pinturaSub = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         letterSpacing = 0.12f
     }.also { Fuentes.aplicar(it, 600) }
     private val pinturaIcono = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        strokeWidth = dp(1.5f)
+        // Íconos finos y uniformes: todos con el mismo trazo delgado
+        strokeWidth = dp(1.25f)
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
@@ -721,6 +744,7 @@ class KeyboardView(
         punteroEmoji = -1
         burbujas.limpiar()
         variantes.cerrar()
+        variantesEmoji = false
         punteroVariantes = -1
         punteroLargo = -1
         teclaLarga = null
@@ -799,6 +823,16 @@ class KeyboardView(
     }
 
     override fun onDraw(canvas: Canvas) {
+        try {
+            dibujarTeclado(canvas)
+        } catch (t: Throwable) {
+            Registro.anotar("dibujar el teclado", t)
+            // La capa fija se vuelve a grabar en el próximo cuadro
+            capaVersion = -1
+        }
+    }
+
+    private fun dibujarTeclado(canvas: Canvas) {
         if (canvas.isHardwareAccelerated && width > 0 && height > 0) {
             asegurarCapa()
             if (modoCursor) {
@@ -892,7 +926,7 @@ class KeyboardView(
     private fun dibujarEtiquetaIntro(c: Canvas, t: Tecla, cx: Float, cy: Float, color: Int) {
         val p = despegue
         if (p <= 0f || p >= 1f) {
-            texto(c, etiquetaEnter, cx, cy, tx(16f), color)
+            contenidoIntro(c, cx, cy, color)
             return
         }
         val dx: Float
@@ -917,8 +951,18 @@ class KeyboardView(
         c.save()
         c.clipRect(rectIntro)
         val a = (Color.alpha(color) * alfa).toInt().coerceIn(0, 255)
-        texto(c, etiquetaEnter, cx + dx, cy + dy, tx(16f), (color and 0x00FFFFFF) or (a shl 24))
+        contenidoIntro(c, cx + dx, cy + dy, (color and 0x00FFFFFF) or (a shl 24))
         c.restore()
+    }
+
+    /** Enviar con ícono: en apps de mensajes el intro muestra el avioncito en vez de "enviar" */
+    private fun contenidoIntro(c: Canvas, x: Float, y: Float, color: Int) {
+        if (etiquetaEnter == "enviar") {
+            pinturaIcono.color = color
+            Iconos.enviar(c, x + corrimientoEtiqueta(), y, tx(22f), pinturaIcono)
+        } else {
+            texto(c, etiquetaEnter, x, y, tx(16f), color)
+        }
     }
 
     /**
@@ -1107,14 +1151,14 @@ class KeyboardView(
         pinturaIcono.color = contenido
 
         when (t.tipo) {
-            Tipo.SHIFT -> Iconos.shift(c, cx, cy, tx(20f), pinturaIcono, shift > 0, shift == 2)
+            Tipo.SHIFT -> Iconos.shift(c, cx, cy, tx(21f), pinturaIcono, shift > 0, shift == 2)
             // Como en iPhone: al presionar borrar, el ícono se rellena (la X queda calada)
             Tipo.BORRAR -> Iconos.borrar(c, cx, cy, tx(if (pad) 26f else 22f), pinturaIcono,
                 lleno = toque > 0.5f, hueco = Tema.sobre(color, tema.fondo) or (0xFF shl 24))
             Tipo.EMOJI -> {
                 // Carita de línea fina (como iOS): antes era una bola blanca rellena que
                 // llamaba más la atención que las letras
-                Iconos.emoji(c, cx, cy, tx(23f), pinturaIcono)
+                Iconos.emoji(c, cx, cy, tx(22f), pinturaIcono)
             }
             Tipo.MIC -> {}
             Tipo.ENTER -> if (pad) Iconos.visto(c, cx, cy, tx(22f), pinturaIcono)
@@ -1151,8 +1195,9 @@ class KeyboardView(
                     // La letra crece con el teclado, pero sin salirse del ancho de la tecla
                     // Sin burbuja, la letra tocada crece un poquito: se siente el toque
                     val crece = if (!vistaPrevia) 1f + 0.12f * toque else 1f
-                    val tam = minOf(tx(if (minuscula) 25f else 23f), t.rect.width() * 0.78f) * crece
-                    texto(c, etiqueta(t), cx, if (minuscula) cy - tx(1.8f) else cy, tam, contenido)
+                    // Letras nítidas: un poco más grandes y en peso medio (se leen de un vistazo)
+                    val tam = minOf(tx(if (minuscula) 26.5f else 24.5f), t.rect.width() * 0.8f) * crece
+                    texto(c, etiqueta(t), cx, if (minuscula) cy - tx(1.8f) else cy, tam, contenido, pinturaLetra)
                 }
             }
             else -> texto(c, t.texto, cx, cy, minOf(tx(15.5f), t.rect.width() * 0.42f), contenido)
@@ -1163,15 +1208,21 @@ class KeyboardView(
     private val medidasLetra = Paint.FontMetrics()
     private var tamMedido = -1f
 
-    private fun texto(c: Canvas, s: String, cx: Float, cy: Float, tam: Float, color: Int) {
-        pinturaTexto.textSize = tam
-        pinturaTexto.color = color
+    private fun texto(c: Canvas, s: String, cx: Float, cy: Float, tam: Float, color: Int, p: Paint = pinturaTexto) {
+        p.textSize = tam
+        p.color = color
+        if (p !== pinturaTexto) {
+            p.getFontMetrics(medidasLetraMedia)
+            c.drawText(s, cx + corrimientoEtiqueta(), cy - (medidasLetraMedia.ascent + medidasLetraMedia.descent) / 2f, p)
+            return
+        }
         if (tam != tamMedido) {
-            pinturaTexto.getFontMetrics(medidasLetra)
+            p.getFontMetrics(medidasLetra)
             tamMedido = tam
         }
-        c.drawText(s, cx + corrimientoEtiqueta(), cy - (medidasLetra.ascent + medidasLetra.descent) / 2f, pinturaTexto)
+        c.drawText(s, cx + corrimientoEtiqueta(), cy - (medidasLetra.ascent + medidasLetra.descent) / 2f, p)
     }
+    private val medidasLetraMedia = Paint.FontMetrics()
 
     // ---------- Acentos ----------
 
@@ -1411,6 +1462,7 @@ class KeyboardView(
         when (id) {
             punteroVariantes -> {
                 variantes.cerrar()
+                variantesEmoji = false
                 punteroVariantes = -1
                 punteroLargo = -1
                 teclaLarga = null
@@ -1532,8 +1584,22 @@ class KeyboardView(
         if (visibility != VISIBLE && presionadas.isNotEmpty()) reiniciar()
     }
 
+    /**
+     * Seguro contra cierres: si algo falla al tocar una tecla (una app con una caja de texto
+     * rara, un caso que no se previó), el error se anota y el teclado se reacomoda, en vez de
+     * cerrarse en tu cara.
+     */
     @SuppressLint("ClickableViewAccessibility")
-    override fun onTouchEvent(e: MotionEvent): Boolean {
+    override fun onTouchEvent(e: MotionEvent): Boolean = try {
+        tocar(e)
+    } catch (t: Throwable) {
+        if (t is OutOfMemoryError) System.gc()
+        Registro.anotar("tocar una tecla", t)
+        try { reiniciar() } catch (_: Throwable) { }
+        true
+    }
+
+    private fun tocar(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 // Entrega los toques apenas llegan (sin agruparlos por cuadro): menos latencia
@@ -1560,6 +1626,7 @@ class KeyboardView(
                 if (punteroVariantes != -1) {
                     val baseTecla = teclaLarga
                     variantes.cerrar()
+                    variantesEmoji = false
                     presionadas.remove(punteroVariantes)
                     escritas.remove(punteroVariantes)
                     burbujas.soltar(punteroVariantes)
@@ -1775,7 +1842,16 @@ class KeyboardView(
                         punteroLargo = -1
                         teclaLarga = null
                         puntosToque.remove(id)
-                        if (elegido != null) {
+                        if (variantesEmoji) {
+                            variantesEmoji = false
+                            punteroEmoji = -1
+                            emojiLargo = false
+                            when (elegido) {
+                                null -> {}
+                                ENGRANAJE -> acciones.abrirAjustes()
+                                else -> acciones.escribirEmoji(elegido)
+                            }
+                        } else if (elegido != null) {
                             acciones.texto(elegido, -1f, -1f)
                             if (shift == 1 && modo == Modo.LETRAS) shift = 0
                         }
@@ -1820,6 +1896,12 @@ class KeyboardView(
             if (Math.hypot((x - x0Cambio).toDouble(), (y - y0Cambio).toDouble()) < unidad * 0.6f) return
             // Salió de la tecla: el teclado cambia ya, sin soltar
             cambioDeslizado = true
+            if (actual.tipo == Tipo.SHIFT) {
+                // Desde la mayúscula: la letra a la que llegues sale en mayúscula (y no cuenta
+                // como el primer toque de un doble toque)
+                if (shift == 0) shift = 1
+                ultimoShift = 0L
+            }
             modoAntesCambio = modo
             animPulsos.remove(actual)?.cancel()
             pulsos.remove(actual)
@@ -1928,6 +2010,14 @@ class KeyboardView(
                 ultimoShift = ahora
                 // Mayúsculas ↔ minúsculas con una transición corta, como en iPhone
                 if (modo == Modo.LETRAS) animarEtiquetas()
+                // Mayúscula deslizando: si sin soltar llevas el dedo a una letra, sale esa sola
+                // en mayúscula (lo maneja lo mismo que deslizar desde 123)
+                if (!esPad && modo == Modo.LETRAS && presionadas.size == 1) {
+                    punteroCambio = id
+                    cambioDeslizado = false
+                    x0Cambio = x
+                    y0Cambio = y
+                }
             }
             else -> {}
         }
@@ -2001,6 +2091,8 @@ class KeyboardView(
 
     companion object {
         private val FRENO_PULSO = Movimiento.SUAVE
+        /** Última opción del menú de emojis recientes: abre los ajustes */
+        private const val ENGRANAJE = "\u2699\uFE0F"
         /** La onda sale rápido y frena al alejarse */
         /** Un toque más corto que esto es "tocar y soltar": no cambia de tecla ni desliza */
         private const val TOQUE_RAPIDO_MS = 170L

@@ -41,6 +41,14 @@ data class Sugerencia(
     val accion: Int = 0,
     /** Oración completa que predijo el cerebro ("vemos mañana"): se escribe entera */
     val frase: Boolean = false,
+    /**
+     * Corrección de una palabra que tocaste en el texto (no la que estás escribiendo):
+     * [reemplaza] letras antes del cursor y [despues] letras después se cambian por [texto]
+     */
+    val tocada: Boolean = false,
+    val despues: Int = 0,
+    /** La palabra como estaba escrita (para que el cerebro aprenda el error) */
+    val original: String? = null,
 )
 
 /**
@@ -421,6 +429,14 @@ class SuggestionBar(
     }
 
     override fun onDraw(c: Canvas) {
+        try {
+            dibujarBarra(c)
+        } catch (t: Throwable) {
+            Registro.anotar("dibujar la barra", t)
+        }
+    }
+
+    private fun dibujarBarra(c: Canvas) {
         // Oculta: no se dibuja nada (es transparente y se ve la app de atrás)
         if (opacidad <= 0f && confirmar == null) return
         val o = if (confirmar != null) 1f else opacidad.coerceIn(0f, 1f)
@@ -631,7 +647,15 @@ class SuggestionBar(
             c.drawText(s.texto, x0 + ancho / 2f, cyE, pinturaEmoji)
             return
         }
-        grosor(if (s.destacada) 500 else 400)
+        // Tipografía refinada: la principal (al centro o la corrección) en peso medio y blanco;
+        // las de los lados un tono más suave; lo que escribiste (entre comillas), en gris
+        val principal = s.destacada || (i == 1 && !s.literal)
+        grosor(if (principal) 500 else 400)
+        val colorPalabra = when {
+            principal -> tema.texto
+            s.literal -> tema.textoSecundario
+            else -> 0xFFCDCDD3.toInt()
+        }
         val cy = centroY()
         val resto = s.resto
         if (resto != null) {
@@ -649,7 +673,7 @@ class SuggestionBar(
                 return
             }
         }
-        pinturaTexto.color = tema.texto
+        pinturaTexto.color = colorPalabra
         val crudo = if (s.literal) "\u201C${s.texto}\u201D" else s.texto
         // Palabras largas: primero se achica un poco la letra (hasta 13) y solo si aun así
         // no cabe se corta con "…" (como en iPhone, casi nunca se ve cortada)
@@ -664,7 +688,16 @@ class SuggestionBar(
     }
 
     @SuppressLint("ClickableViewAccessibility")
-    override fun onTouchEvent(e: MotionEvent): Boolean {
+    override fun onTouchEvent(e: MotionEvent): Boolean = try {
+        tocar(e)
+    } catch (t: Throwable) {
+        Registro.anotar("tocar la barra", t)
+        presionado = -1
+        invalidate()
+        true
+    }
+
+    private fun tocar(e: MotionEvent): Boolean {
         if (width == 0) return true
         // Sin sugerencias a la vista, tocar la barra no hace nada
         if (!mostrando && confirmar == null) return true
