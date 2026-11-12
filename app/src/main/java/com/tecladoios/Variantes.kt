@@ -64,6 +64,7 @@ class VariantesView(context: Context) : View(context) {
     /** Los degradados se arman una vez (no en cada cuadro) */
     private var fondoAlto = -1
     private var fondoOscuro = false
+    private val fmTmp = Paint.FontMetrics()
     private val marca = Paint(Paint.ANTI_ALIAS_FLAG)
     private val texto = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
@@ -91,7 +92,8 @@ class VariantesView(context: Context) : View(context) {
         c.drawRoundRect(rect, radio, radio, borde)
 
         texto.textSize = altoCelda * 0.5f
-        val fm = texto.fontMetrics
+        val fm = fmTmp
+        texto.getFontMetrics(fm)
         val izq = pad + margen
         val cy = pad + margen + altoCelda / 2f
         // La cápsula del color de la app, en su posición animada

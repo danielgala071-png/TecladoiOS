@@ -49,6 +49,14 @@ class TecladoService : InputMethodService(),
         private const val MAX_ESPEJO = 300
         /** Lo copiado se ofrece en la barra durante este tiempo (como en iPhone) */
         private const val VIGENCIA_COPIADO = 3 * 60 * 1000L
+        /** Largo máximo de una contraseña que se recuerda */
+        private const val MAX_CLAVE = 128
+        /** Dos letras a menos de esto (ms) son escritura rápida a dos dedos */
+        private const val RAFAGA_MS = 75L
+        /** Cuánto se ve "Contraseña guardada" en la barra */
+        private const val AVISO_GUARDADA = 2200L
+        /** El usuario escrito antes sirve de nombre de la cuenta durante 5 minutos */
+        private const val VIGENCIA_USUARIO = 5 * 60 * 1000L
         // Botones de la barra de edición
         private const val ED_TODO = 1
         private const val ED_SELECCIONAR = 2
@@ -143,6 +151,20 @@ class TecladoService : InputMethodService(),
     private var copiadoSensible = false
     /** Las contraseñas copiadas se borran solas del portapapeles */
     private var limpiarClaves = true
+
+    // ---------- Contraseñas recordadas (cifradas, solo en el celular) ----------
+    private var recordarClaves = true
+    /** Hasta cuándo la barra muestra "Contraseña guardada" */
+    private var claveGuardadaMs = 0L
+    /** Este campo parece de usuario o correo (lo escrito ahí será el nombre de la cuenta) */
+    private var campoUsuario = false
+    /**
+     * Lo último que escribiste en un campo de usuario o correo de la misma app (solo en
+     * memoria, unos minutos): así la contraseña se guarda con el nombre de su cuenta.
+     */
+    private var ultimoUsuario = ""
+    private var ultimoUsuarioApp: String? = null
+    private var ultimoUsuarioMs = 0L
     /** Hora (del portapapeles) de la contraseña copiada que se va a borrar */
     private var horaALimpiar = -1L
     private val tareaLimpiar = Runnable {
@@ -619,6 +641,15 @@ class TecladoService : InputMethodService(),
         borrarDeslizadoActivo = Ajustes.borrarDeslizado(this)
         mayusPermitida = Ajustes.mayusculas(this) && escribeTexto
         campoClave = esClave
+        recordarClaves = Ajustes.recordarClaves(this)
+        campoUsuario = esTexto && !esClave && !multilinea && variacion in setOf(
+            InputType.TYPE_TEXT_VARIATION_NORMAL,
+            InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
+            InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
+            InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT,
+        )
+        // Las contraseñas de esta app se descifran ya, fuera del hilo de la pantalla
+        if (esClave && recordarClaves) appActual?.let { app -> enMotor { Claves.de(this, app) } }
 
         // Solo números: PIN, códigos, teléfonos y campos numéricos (como el teclado numérico del iPhone)
         val esPin = clase == InputType.TYPE_CLASS_NUMBER || clase == InputType.TYPE_CLASS_PHONE
@@ -690,8 +721,29 @@ class TecladoService : InputMethodService(),
 
     override fun onWindowHidden() {
         super.onWindowHidden()
+        // Las contraseñas descifradas no se quedan en memoria con el teclado cerrado
+        Claves.soltarMemoria()
         barra?.visible(false, animar = false)
         teclado?.ocultarPreview()
+    }
+
+    /**
+     * Terminaste un campo: si era de usuario o correo, se recuerda (solo en memoria) lo que
+     * escribiste, para ponerle nombre a la contraseña que guardes a continuación.
+     */
+    override fun onFinishInput() {
+        try {
+            if (campoUsuario && recordarClaves) {
+                val ic = currentInputConnection
+                val t = ic?.getTextBeforeCursor(80, 0)?.toString()?.trim().orEmpty()
+                if (t.length in 3..64 && t.none { it.isWhitespace() }) {
+                    ultimoUsuario = t
+                    ultimoUsuarioApp = appActual
+                    ultimoUsuarioMs = SystemClock.uptimeMillis()
+                }
+            }
+        } catch (_: Throwable) { }
+        super.onFinishInput()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
@@ -1187,6 +1239,15 @@ class TecladoService : InputMethodService(),
             b.visible(true)
             b.mostrar(barraEdicion(conSeleccion))
             return
+        }
+        // Campo de contraseña: las guardadas para esta app (o "Guardar contraseña")
+        if (campoClave && recordarClaves && !enEmojis) {
+            val chips = try { sugerenciasClave() } catch (t: Throwable) { Registro.anotar("contraseñas en la barra", t); null }
+            if (chips != null) {
+                b.visible(true)
+                b.mostrar(chips)
+                return
+            }
         }
         // Lo que copiaste hace poco aparece en la barra para pegarlo con un toque (como en iPhone):
         // al abrir el teclado o con el campo vacío
@@ -2350,6 +2411,12 @@ class TecladoService : InputMethodService(),
             // emojis frecuentes o la predicción) y luego se esconde sola
             escribiendo = false
             ultimaEscritura = SystemClock.uptimeMillis()
+            // El toque propio: al enviar, el filo del teclado y de la barra destella
+            if (accion == EditorInfo.IME_ACTION_SEND || accion == EditorInfo.IME_ACTION_GO ||
+                accion == EditorInfo.IME_ACTION_SEARCH || accion == EditorInfo.IME_ACTION_DONE) {
+                (panel as? Panel)?.destellar()
+                barra?.destellar()
+            }
             ic.performEditorAction(accion)
             // Enviar/buscar suele limpiar el campo: se vuelve a leer cuando haga falta
             olvidarEspejo()
@@ -2627,8 +2694,79 @@ class TecladoService : InputMethodService(),
         reemplazar(0, s)
     }
 
+    // ---------- Contraseñas recordadas ----------
+
+    /** Todo lo escrito en el campo (antes y después del cursor), o null si la app no lo da */
+    private fun textoDelCampo(): String? {
+        val ic = currentInputConnection ?: return null
+        val a = ic.getTextBeforeCursor(MAX_CLAVE, 0)?.toString() ?: return null
+        val d = ic.getTextAfterCursor(MAX_CLAVE, 0)?.toString().orEmpty()
+        return a + d
+    }
+
+    private fun nombreApp(app: String): String = try {
+        packageManager.getApplicationLabel(packageManager.getApplicationInfo(app, 0)).toString()
+    } catch (_: Exception) { "esta app" }
+
+    /** Lo que muestra la barra en un campo de contraseña (null = nada especial) */
+    private fun sugerenciasClave(): List<Sugerencia?>? {
+        val app = appActual ?: return null
+        if (SystemClock.uptimeMillis() - claveGuardadaMs < AVISO_GUARDADA) {
+            return listOf(null, Sugerencia("Contraseña guardada", clave = 3), null)
+        }
+        val escrito = textoDelCampo() ?: return null
+        val guardadas = Claves.de(this, app)
+        if (escrito.isEmpty()) {
+            if (guardadas.isEmpty()) return null
+            val chips = guardadas.take(3).map {
+                Sugerencia(it.usuario.ifEmpty { "Contraseña de " + nombreApp(app) }, clave = 1, pegar = it.clave)
+            }
+            // Una sola: al centro, como en el iPhone
+            return if (chips.size == 1) listOf(null, chips[0], null) else List(3) { chips.getOrNull(it) }
+        }
+        if (escrito.length in 4..MAX_CLAVE && guardadas.none { it.clave == escrito }) {
+            return listOf(null, Sugerencia("Guardar contraseña", clave = 2, destacada = true), null)
+        }
+        return null
+    }
+
+    private fun elegirClave(s: Sugerencia) {
+        val app = appActual ?: return
+        when (s.clave) {
+            1 -> {
+                val clave = s.pegar ?: return
+                if (!textoDelCampo().isNullOrEmpty()) return
+                escribiendo = true
+                ultimaEscritura = SystemClock.uptimeMillis()
+                reemplazar(0, clave)
+                retro(Tipo.LETRA)
+            }
+            2 -> {
+                val clave = textoDelCampo() ?: return
+                if (clave.length < 4) return
+                val usuario = if (ultimoUsuarioApp == app &&
+                    SystemClock.uptimeMillis() - ultimoUsuarioMs < VIGENCIA_USUARIO) ultimoUsuario else ""
+                enMotor {
+                    val ok = Claves.guardar(this, app, usuario, clave)
+                    manejador.post {
+                        if (ok) {
+                            claveGuardadaMs = SystemClock.uptimeMillis()
+                            retro(Tipo.ENTER)
+                            actualizarBarra()
+                            manejador.postDelayed({ actualizar() }, AVISO_GUARDADA + 50L)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     override fun elegir(s: Sugerencia) {
         if (currentInputConnection == null) return
+        if (s.clave != 0) {
+            elegirClave(s)
+            return
+        }
         if (s.accion != 0) {
             editar(s.accion)
             return
@@ -2779,6 +2917,16 @@ class TecladoService : InputMethodService(),
     }
 
     override fun olvidar(s: Sugerencia) {
+        if (s.clave == 1) {
+            val app = appActual
+            val clave = s.pegar ?: return
+            enMotor {
+                Claves.quitar(this, app, clave)
+                manejador.post { actualizarBarra() }
+            }
+            retro(Tipo.BORRAR)
+            return
+        }
         if (s.portapapeles) {
             // Mantener presionado lo copiado: se quita de la barra
             copiadoUsado = maxOf(copiadoUsado, copiadoHora)
@@ -2846,7 +2994,7 @@ class TecladoService : InputMethodService(),
      * Los efectos de vibración se arman una sola vez: letras, espacio/intro/mayúsculas,
      * borrar, las demás teclas de función y el toquecito al elegir un acento.
      */
-    private val efectos = arrayOfNulls<VibrationEffect>(5)
+    private val efectos = arrayOfNulls<VibrationEffect>(6)
 
     private fun claseRetro(tipo: Tipo) = when (tipo) {
         Tipo.LETRA -> 0
@@ -2860,32 +3008,37 @@ class TecladoService : InputMethodService(),
     private var conAmplitud: Boolean? = null
 
     /**
-     * Vibración que SE SIENTE al escribir. Antes se usaban los "golpecitos finos" del sistema:
-     * en muchos celulares apenas se notaban. Ahora cada tecla es un golpe directo del motor,
-     * con fuerza y duración fijas, igual en cualquier celular:
-     *  - Letras: golpe firme.
-     *  - Espacio, intro y mayúsculas: más largo y al máximo (se sienten más pesados).
-     *  - Borrar: entre los dos. 123 y emojis: un poco más liviano.
-     *  - Elegir un acento: toquecito corto.
-     * Todo dura menos de 40 ms, así escribiendo rápido a dos dedos cada letra se siente
-     * aparte y no se vuelve un zumbido. "Suave", "media" y "fuerte" (en Ajustes) suben o
-     * bajan todo junto.
+     * Vibración DURA y FIRME, como un golpe seco (no un zumbido):
+     *  - Golpes cortos a fuerza máxima. Un golpe largo hace que el motor "zumbe" y se siente
+     *    blando; uno corto y al tope se siente como una tecla que choca contra su base.
+     *  - Letras: golpe seco. Espacio, intro y mayúsculas: el mismo golpe pero más largo (pesado).
+     *    Borrar: entre los dos. 123 y emojis: un poco más corto. Acentos: un toquecito.
+     *  - A dos dedos: si la tecla anterior vibró hace muy poco, la nueva usa un golpe todavía
+     *    más corto. Así cada letra se siente aparte (tac-tac-tac) y nunca se funden en un
+     *    zumbido, sin perder fuerza.
+     * "Suave", "media" y "fuerte" (en Ajustes) cambian la duración, no la firmeza.
      */
     private fun crearEfecto(clase: Int): VibrationEffect {
-        // [duración en ms, fuerza 1–255] para cada clase, según el nivel elegido
+        // [duración en ms, fuerza 1–255] para cada clase (0 letra, 1 pesada, 2 borrar,
+        // 3 función, 4 acento, 5 letra rápida a dos dedos)
         val tabla: Array<IntArray> = when (fuerzaVibracion) {
-            // Golpes a fuerza máxima: lo que cambia entre teclas es la duración (más larga =
-            // más pesada). Así cada letra se siente firme y el espacio, el intro y la
-            // mayúscula, todavía más.
-            "suave" -> arrayOf(intArrayOf(18, 210), intArrayOf(26, 255), intArrayOf(20, 230), intArrayOf(15, 190), intArrayOf(8, 120))
-            "fuerte" -> arrayOf(intArrayOf(30, 255), intArrayOf(45, 255), intArrayOf(34, 255), intArrayOf(24, 255), intArrayOf(12, 180))
-            else -> arrayOf(intArrayOf(25, 255), intArrayOf(36, 255), intArrayOf(28, 255), intArrayOf(20, 240), intArrayOf(10, 150))
+            "suave" -> arrayOf(intArrayOf(14, 225), intArrayOf(22, 255), intArrayOf(16, 240), intArrayOf(12, 210),
+                intArrayOf(7, 140), intArrayOf(11, 225))
+            "fuerte" -> arrayOf(intArrayOf(22, 255), intArrayOf(34, 255), intArrayOf(25, 255), intArrayOf(18, 255),
+                intArrayOf(11, 200), intArrayOf(16, 255))
+            else -> arrayOf(intArrayOf(18, 255), intArrayOf(28, 255), intArrayOf(20, 255), intArrayOf(15, 250),
+                intArrayOf(9, 170), intArrayOf(13, 255))
         }
         val valores = tabla[clase]
-        val ms = valores[0].toLong()
-        val fuerza = if (conAmplitud == true) valores[1] else VibrationEffect.DEFAULT_AMPLITUDE
+        val amplitud = conAmplitud == true
+        // Sin control de fuerza el motor necesita un pelito más para arrancar y sentirse
+        val ms = (if (amplitud) valores[0] else valores[0] + 4).toLong()
+        val fuerza = if (amplitud) valores[1] else VibrationEffect.DEFAULT_AMPLITUDE
         return VibrationEffect.createOneShot(ms, fuerza)
     }
+
+    /** Cuándo vibró la última tecla (para el golpe corto a dos dedos) */
+    private var ultimaVibracion = 0L
 
     override fun retro(tipo: Tipo) {
         val conVibrar = vibrar
@@ -2931,7 +3084,11 @@ class TecladoService : InputMethodService(),
             val v = vibrador ?: return
             // Golpe directo del motor, con la fuerza de cada tipo de tecla
             if (conAmplitud == null) conAmplitud = v.hasAmplitudeControl()
-            val clase = claseRetro(tipo)
+            val ahora = SystemClock.uptimeMillis()
+            var clase = claseRetro(tipo)
+            // Letra muy pegada a la anterior (dos dedos): golpe más corto, igual de firme
+            if (clase == 0 && ahora - ultimaVibracion < RAFAGA_MS) clase = 5
+            ultimaVibracion = ahora
             val efecto = efectos[clase] ?: crearEfecto(clase).also { efectos[clase] = it }
             v.vibrate(efecto)
         } catch (_: Exception) { }

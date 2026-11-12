@@ -400,6 +400,9 @@ class BarraCategorias(
         textAlign = Paint.Align.CENTER
     }.also { Fuentes.aplicar(it, 600) }
     private val circulo = Paint(Paint.ANTI_ALIAS_FLAG)
+    /** Medidas de letra reutilizadas (pedirlas en cada dibujo crea objetos nuevos) */
+    private val fmA = Paint.FontMetrics()
+    private val fmB = Paint.FontMetrics()
 
     override fun onDraw(c: Canvas) {
         val n = CATEGORIAS.size
@@ -409,8 +412,8 @@ class BarraCategorias(
         gris.textSize = 16.5f * d
         textoSimbolos.textSize = 13f * d
         textoSimbolos.color = tema.textoSecundario
-        val fm = gris.fontMetrics
-        val fm2 = textoSimbolos.fontMetrics
+        val fm = fmA.also { gris.getFontMetrics(it) }
+        val fm2 = fmB.also { textoSimbolos.getFontMetrics(it) }
         // Píldora deslizante del color de la app: relleno suave y filo intenso
         val px = ancho * posPildora + ancho / 2f
         val rx = minOf(ancho * 0.46f, height * 0.5f)
@@ -503,6 +506,9 @@ class EmojiGrid(
         letterSpacing = 0.04f
     }.also { Fuentes.aplicar(it, 600) }
     private val fondo = Paint(Paint.ANTI_ALIAS_FLAG)
+    /** Medidas de letra reutilizadas: la cuadrícula se dibuja en cada cuadro al desplazarla */
+    private val fmCelda = Paint.FontMetrics()
+    private val fmTitulo = Paint.FontMetrics()
     private var presionado: Pair<Int, Int>? = null
     private var x0 = 0f
     private var y0 = 0f
@@ -620,10 +626,10 @@ class EmojiGrid(
         val visDer = desplazamiento + anchoVisible + anchoCelda
         // Emoji grande, con el tamaño medido en onMeasure
         pintura.textSize = if (tamEmoji > 0f) tamEmoji else minOf(altoCelda * 0.80f, anchoCelda * 0.70f)
-        val fm = pintura.fontMetrics
+        val fm = fmCelda.also { pintura.getFontMetrics(it) }
         val centroY = -(fm.ascent + fm.descent) / 2f
         pinturaTitulo.color = tema.textoSecundario
-        val fmt = pinturaTitulo.fontMetrics
+        val fmt = fmTitulo.also { pinturaTitulo.getFontMetrics(it) }
         val yTitulo = altoTitulo * 0.5f - (fmt.ascent + fmt.descent) / 2f + 2f * d
         // Sin crear objetos por cada emoji dibujado (deslizar más fluido)
         val pi = presionado?.first ?: -1

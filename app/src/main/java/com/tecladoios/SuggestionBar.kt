@@ -49,6 +49,11 @@ data class Sugerencia(
     val despues: Int = 0,
     /** La palabra como estaba escrita (para que el cerebro aprenda el error) */
     val original: String? = null,
+    /**
+     * Contraseñas recordadas: 1 = usar una guardada ([pegar] es la contraseña), 2 = guardar la
+     * que escribiste, 3 = aviso de que ya se guardó. 0 = no es de contraseñas.
+     */
+    val clave: Int = 0,
 )
 
 /**
@@ -115,8 +120,8 @@ class SuggestionBar(
         invalidate()
     }
 
-    private fun sePuedeOlvidar(s: Sugerencia) =
-        s.accion == 0 && !s.portapapeles && !s.revertir && s.reemplaza < 0 && !s.texto.contains(' ') && s.texto.length >= 2 &&
+    private fun sePuedeOlvidar(s: Sugerencia) = s.clave == 1 ||
+        s.clave == 0 && s.accion == 0 && !s.portapapeles && !s.revertir && s.reemplaza < 0 && !s.texto.contains(' ') && s.texto.length >= 2 &&
                 s.texto.all { it.isLetter() }
 
     // Una pintura por grosor de letra: cambiar el grosor en cada dibujo es lento
@@ -145,6 +150,62 @@ class SuggestionBar(
     private val filo = Path()
     private val esquina = RectF()
     private val pinturaFondo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private var radioCurva = 0f
+
+    /** Medidas de letra reutilizadas: pedir fontMetrics crea un objeto nuevo en cada dibujo */
+    private val fmTmp = Paint.FontMetrics()
+
+    // ---------- Destello al enviar (el filo se enciende y se apaga) ----------
+    private var destello = 0f
+    private var animDestello: ValueAnimator? = null
+
+    fun destellar() {
+        if (!isShown || opacidad <= 0f) return
+        animDestello?.cancel()
+        animDestello = ValueAnimator.ofFloat(1f, 0f).apply {
+            duration = Movimiento.DESTELLO
+            interpolator = Movimiento.SUAVE
+            addUpdateListener {
+                destello = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    // ---------- Luz de la cápsula sobre el borde curvo ----------
+    /**
+     * Una luz corta del color de la app corre por el borde de arriba de la barra, justo encima
+     * de la corrección, y se desliza con ella. Es la firma del teclado: el borde "señala" la
+     * palabra que se pondrá sola. Un solo degradado armado una vez y movido con una matriz.
+     */
+    private val luzBorde: LinearGradient by lazy {
+        val c = tema.azul and 0x00FFFFFF
+        LinearGradient(-1f, 0f, 1f, 0f, intArrayOf(c, c or (0xFF shl 24), c), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+    }
+    private val matrizLuz = android.graphics.Matrix()
+    private val pinturaLuzBorde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+    }
+
+    private fun dibujarLuzBorde(c: Canvas, ancho: Float) {
+        if (alfaCapsula <= 0.02f || radioCurva <= 0f) return
+        val g = pinturaBorde.strokeWidth / 2f
+        val cx = ancho * (posCapsula + 0.5f)
+        val medio = ancho * 0.3f
+        // Solo sobre el tramo recto de arriba (no se mete en las curvas)
+        val izq = maxOf(radioCurva, cx - medio)
+        val der = minOf(width - radioCurva, cx + medio)
+        if (der <= izq) return
+        matrizLuz.setScale(medio, 1f)
+        matrizLuz.postTranslate(cx, 0f)
+        luzBorde.setLocalMatrix(matrizLuz)
+        pinturaLuzBorde.shader = luzBorde
+        pinturaLuzBorde.strokeWidth = pinturaBorde.strokeWidth * 2f
+        pinturaLuzBorde.alpha = (255 * alfaCapsula).toInt().coerceIn(0, 255)
+        c.drawLine(izq, g, der, g, pinturaLuzBorde)
+    }
 
     private var mostrando = false
     /** Qué tan visibles están las sugerencias (0 = apagadas, 1 = a la vista) */
@@ -178,7 +239,9 @@ class SuggestionBar(
         forma.reset()
         filo.reset()
         if (w <= 0f || h <= 0f) return
-        val r = minOf(18f * d, h / 2f)
+        // Curva de arriba más amplia y suave (sigue la forma de las esquinas del iPhone)
+        val r = minOf(22f * d, h / 2f)
+        radioCurva = r
         // Relleno negro: curvo arriba y recto abajo, hasta el borde del teclado
         forma.moveTo(0f, h)
         forma.lineTo(0f, r)
@@ -490,8 +553,8 @@ class SuggestionBar(
     }
 
     private fun centroY(): Float {
-        val fm = pinturaTexto.fontMetrics
-        return height / 2f - 1.5f * d - (fm.ascent + fm.descent) / 2f
+        pinturaTexto.getFontMetrics(fmTmp)
+        return height / 2f - 1.5f * d - (fmTmp.ascent + fmTmp.descent) / 2f
     }
 
     private fun dibujarConfirmar(c: Canvas, s: Sugerencia) {
@@ -511,7 +574,8 @@ class SuggestionBar(
         c.drawRoundRect(tercio + 4 * d, 5 * d, width - 4 * d, height - 9 * d, 10 * d, 10 * d, pintura)
         grosor(500)
         pinturaTexto.color = rojo
-        val txt = TextUtils.ellipsize("Borrar \u201C${s.texto}\u201D", pinturaTexto,
+        val pregunta = if (s.clave == 1) "Olvidar contraseña" else "Borrar \u201C${s.texto}\u201D"
+        val txt = TextUtils.ellipsize(pregunta, pinturaTexto,
             tercio * 2f - 24 * d, TextUtils.TruncateAt.END).toString()
         c.drawText(txt, tercio * 2f, cy, pinturaTexto)
     }
@@ -546,6 +610,16 @@ class SuggestionBar(
         // El borde del teclado: una línea limpia del color de la app
         pinturaBorde.color = tema.bordePanel
         c.drawPath(filo, pinturaBorde)
+        if (destello > 0f) {
+            pinturaBorde.color = (tema.bordePanel and 0x00FFFFFF) or ((0x55 * destello).toInt() shl 24)
+            pinturaBorde.strokeWidth = grosorFilo * 7f
+            c.drawPath(filo, pinturaBorde)
+            pinturaBorde.color = tema.bordePanel or (0xFF shl 24)
+            pinturaBorde.alpha = (255 * destello).toInt().coerceIn(0, 255)
+            pinturaBorde.strokeWidth = grosorFilo * 1.8f
+            c.drawPath(filo, pinturaBorde)
+            pinturaBorde.strokeWidth = grosorFilo
+        }
 
         val conf = confirmar
         if (conf != null) dibujarConfirmar(c, conf) else dibujarSugerencias(c)
@@ -602,8 +676,8 @@ class SuggestionBar(
         c.drawRoundRect(cx - w2 * 0.5f, cy - h2, cx + w2 * 0.5f, cy - h2 + 3f * d, 1.5f * d, 1.5f * d, pinturaClip)
         // El texto
         pinturaChica.color = tema.texto
-        val fm = pinturaChica.fontMetrics
-        c.drawText(clipLinea, izq + lados + icono + hueco, cy - (fm.ascent + fm.descent) / 2f, pinturaChica)
+        pinturaChica.getFontMetrics(fmTmp)
+        c.drawText(clipLinea, izq + lados + icono + hueco, cy - (fmTmp.ascent + fmTmp.descent) / 2f, pinturaChica)
     }
 
     private fun dibujarSugerencias(c: Canvas) {
@@ -612,6 +686,7 @@ class SuggestionBar(
         val ancho = width / 3f
         // La cápsula de la corrección va debajo de las palabras y se desliza entre casillas
         dibujarCapsula(c, ancho)
+        dibujarLuzBorde(c, ancho)
         for (i in 0 until 3) {
             val s = items[i] ?: continue
             val x0 = ancho * i
@@ -703,12 +778,16 @@ class SuggestionBar(
             c.drawRoundRect(x0 + 6 * d + hundir, 6 * d + hundir * 0.5f, x0 + ancho - 6 * d - hundir,
                 height - 10 * d - hundir * 0.5f, rp, rp, pintura)
         }
+        if (s.clave != 0) {
+            dibujarClave(c, s, x0, ancho)
+            return
+        }
         // Emoji sugerido: se dibuja grande y nítido (antes salía del tamaño de las letras)
         if (s.emoji) {
             pinturaEmoji.textSize = 24f * d
             pinturaEmoji.alpha = (255 * alfaCasilla).toInt().coerceIn(0, 255)
-            val fe = pinturaEmoji.fontMetrics
-            val cyE = (6 * d + height - 10 * d) / 2f - (fe.ascent + fe.descent) / 2f
+            pinturaEmoji.getFontMetrics(fmTmp)
+            val cyE = (6 * d + height - 10 * d) / 2f - (fmTmp.ascent + fmTmp.descent) / 2f
             c.drawText(s.texto, x0 + ancho / 2f, cyE, pinturaEmoji)
             pinturaEmoji.alpha = 255
             return
@@ -750,6 +829,39 @@ class SuggestionBar(
         }
         val txt = TextUtils.ellipsize(crudo, pinturaTexto, disponible, TextUtils.TruncateAt.END).toString()
         c.drawText(txt, x0 + ancho / 2f, cy, pinturaTexto)
+        pinturaTexto.textSize = 17f * d
+    }
+
+    /**
+     * Casilla de contraseña: una llavecita con el color de la app y, al lado, la cuenta
+     * (correo o usuario) o "Guardar contraseña". La contraseña nunca se muestra.
+     */
+    private fun dibujarClave(c: Canvas, s: Sugerencia, x0: Float, ancho: Float) {
+        grosor(if (s.clave == 1) 400 else 500)
+        pinturaTexto.textSize = 15.5f * d
+        val icono = 15f * d
+        val hueco = 7f * d
+        val disponible = ancho - 18f * d - icono - hueco
+        val txt = TextUtils.ellipsize(s.texto, pinturaTexto, disponible, TextUtils.TruncateAt.END).toString()
+        val anchoTxt = pinturaTexto.measureText(txt)
+        val izq = x0 + (ancho - (icono + hueco + anchoTxt)) / 2f
+        val cy = (6 * d + height - 10 * d) / 2f
+        // La llave: argolla redonda y un vástago con dos dientes
+        pinturaClip.color = conAlfaCasilla(if (s.clave == 3) tema.texto else tema.azul)
+        val rr = icono * 0.27f
+        val cxA = izq + rr + 1f * d
+        c.drawCircle(cxA, cy, rr, pinturaClip)
+        val x1 = cxA + rr
+        val x2 = izq + icono
+        c.drawLine(x1, cy, x2, cy, pinturaClip)
+        c.drawLine(x2 - 1.2f * d, cy, x2 - 1.2f * d, cy + icono * 0.24f, pinturaClip)
+        c.drawLine(x2 - 4.4f * d, cy, x2 - 4.4f * d, cy + icono * 0.18f, pinturaClip)
+        pinturaTexto.color = conAlfaCasilla(tema.texto)
+        val alin = pinturaTexto.textAlign
+        pinturaTexto.textAlign = Paint.Align.LEFT
+        pinturaTexto.getFontMetrics(fmTmp)
+        c.drawText(txt, izq + icono + hueco, cy - (fmTmp.ascent + fmTmp.descent) / 2f, pinturaTexto)
+        pinturaTexto.textAlign = alin
         pinturaTexto.textSize = 17f * d
     }
 
@@ -826,7 +938,7 @@ class SuggestionBar(
                 // Deslizar una sugerencia hacia abajo: se descarta (y no se vuelve a sugerir)
                 val bajo = presionado
                 val sb = if (bajo >= 0) items[bajo] else null
-                if (sb != null && !mantenido && e.y - y0Toque > height * 0.55f &&
+                if (sb != null && sb.clave == 0 && !mantenido && e.y - y0Toque > height * 0.55f &&
                     (sb.portapapeles || sePuedeOlvidar(sb))) {
                     manejador.removeCallbacks(alMantener)
                     mantenido = true

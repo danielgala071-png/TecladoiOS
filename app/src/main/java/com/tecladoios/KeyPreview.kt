@@ -77,11 +77,11 @@ class KeyPreviewOverlay(private val anchor: View) {
      * Muestra la burbuja del dedo [id] sobre la tecla [rect].
      * [deslizando]: el mismo dedo pasó a otra tecla (aparece casi completa, sin viajar).
      */
-    fun mostrar(id: Int, rect: RectF, etiqueta: String, tema: Tema, deslizando: Boolean = false) {
+    fun mostrar(id: Int, rect: RectF, etiqueta: String, tema: Tema, deslizando: Boolean = false, rapido: Boolean = false) {
         if (rect.width() <= 0f || !asegurar()) return
         vista.tema = tema
         vista.radioTecla = radioTecla
-        vista.mostrar(id, rect, etiqueta, deslizando)
+        vista.mostrar(id, rect, etiqueta, deslizando, rapido)
     }
 
     /**
@@ -171,18 +171,19 @@ class KeyPreviewOverlay(private val anchor: View) {
         }
         private val texto = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
             textAlign = Paint.Align.CENTER
-        }.also { Fuentes.aplicar(it, 400) }
+        }.also { Fuentes.aplicar(it, 500) }
         /**
          * Reflejo de vidrio arriba de la burbuja (igual que en las teclas). El degradado se arma
          * una sola vez y en cada cuadro solo se estira a la medida: no crea nada nuevo.
          */
         private val degradadoBrillo = LinearGradient(0f, 0f, 0f, 1f, 0x2EFFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
         private val matrizBrillo = Matrix()
+        private val fmTmp = Paint.FontMetrics()
         private val brillo = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = degradadoBrillo }
 
         private fun ahora() = SystemClock.uptimeMillis()
 
-        fun mostrar(id: Int, rect: RectF, etiqueta: String, deslizando: Boolean) {
+        fun mostrar(id: Int, rect: RectF, etiqueta: String, deslizando: Boolean, rapido: Boolean) {
             val t = ahora()
             activas.remove(id) // si el mismo dedo cambió de tecla, la anterior desaparece en su sitio
             val b = Burbuja(RectF(rect), etiqueta)
@@ -190,7 +191,13 @@ class KeyPreviewOverlay(private val anchor: View) {
             // Rebote marcado: la burbuja salta, se pasa un poquito de su tamaño y se acomoda
             // Nace con un resorte fino: se pasa un pelito de su tamaño y se asienta (premium,
             // sin parecer de goma). Si el dedo se deslizó a otra tecla, aparece casi completa.
-            if (deslizando) b.animar(0.9f, 1f, 80, true, t) else b.animar(0.55f, 1f, Movimiento.BURBUJA_ENTRA, true, t)
+            // Escribiendo rápido a dos dedos nace casi completa y en menos tiempo: la letra se
+            // ve al instante, sin quedarse atrás del dedo
+            when {
+                deslizando -> b.animar(0.9f, 1f, 80, true, t)
+                rapido -> b.animar(0.8f, 1f, Movimiento.BURBUJA_RAPIDA, true, t)
+                else -> b.animar(0.55f, 1f, Movimiento.BURBUJA_ENTRA, true, t)
+            }
             activas[id] = b
             postInvalidateOnAnimation()
         }
@@ -321,10 +328,10 @@ class KeyPreviewOverlay(private val anchor: View) {
             texto.color = colorLetra
             texto.alpha = (255 * alfaLetra * opaca).toInt()
             texto.textSize = kh * 0.74f
-            val fm = texto.fontMetrics
+            texto.getFontMetrics(fmTmp)
             val cx = (izq + der) / 2f
             val cy = top + bh * 0.5f
-            c.drawText(b.etiqueta, cx, cy - (fm.ascent + fm.descent) / 2f, texto)
+            c.drawText(b.etiqueta, cx, cy - (fmTmp.ascent + fmTmp.descent) / 2f, texto)
         }
     }
 

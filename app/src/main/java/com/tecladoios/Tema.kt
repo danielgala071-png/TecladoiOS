@@ -151,7 +151,10 @@ data class Tema(
             // Estilo iOS 27, simple: teclas grafito uniformes (letras y funciones iguales),
             // letras blancas, sin brillos de color. El color de la app queda donde importa: el
             // borde del teclado, el intro de enviar/buscar y lo que se elige (acentos, emojis).
-            val grafito = a(0x3A, BLANCO)
+            // Como el iPhone: las letras en un gris claro y las teclas de función (mayúscula,
+            // borrar, 123, emojis, intro) un tono más oscuro, así se distinguen de un vistazo
+            val grafito = a(0x42, BLANCO)
+            val grafitoFuncion = a(0x29, BLANCO)
             return Tema(
                 oscuro = true,
                 fondo = NEGRO,
@@ -163,9 +166,9 @@ data class Tema(
                 plata = 0xFFDDE1E8.toInt(),
                 textoFuncion = 0xFFF5F5F7.toInt(),
                 tecla = grafito,
-                teclaFuncion = grafito,
+                teclaFuncion = grafitoFuncion,
                 // Presionada: un gris más claro, como en el iPhone
-                teclaPresionada = a(0x6E, BLANCO),
+                teclaPresionada = a(0x74, BLANCO),
                 teclaActiva = 0xFFE9E9EE.toInt(),
                 textoActivo = 0xFF0A0A0B.toInt(),
                 // Base finita debajo de cada tecla (asoma 1-2 px): la tecla parece una pieza

@@ -42,7 +42,8 @@ object Movimiento {
     /** La cápsula de la sugerencia que elegiste brilla con el color de la app y se apaga */
     const val ELEGIDA = 320L
     const val LETRAS = 190L
-    const val LETRAS_DESLIZAR = 320L
+    /** Cambio de teclado (letras ↔ números): las filas caen en cascada */
+    const val LETRAS_DESLIZAR = 340L
     const val BARRA_APARECE = 240L
     const val BARRA_SE_VA = 180L
     const val CAMBIO = 280L
@@ -50,8 +51,12 @@ object Movimiento {
     /** Burbuja de la tecla: nace con un resorte cortito y se recoge en su tecla */
     const val BURBUJA_ENTRA = 125L
     const val BURBUJA_SALE = 130L
+    /** Burbuja escribiendo rápido a dos dedos: aparece en casi nada */
+    const val BURBUJA_RAPIDA = 70L
     /** La cápsula de la corrección se desliza de una casilla a otra (no salta) */
     const val CAPSULA = 230L
     /** Mayúsculas ↔ minúsculas: las letras se transforman con un fundido y un leve crecer */
     const val MAYUS = 160L
+    /** Destello del filo al enviar */
+    const val DESTELLO = 520L
 }

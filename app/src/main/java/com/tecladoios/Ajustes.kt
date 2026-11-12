@@ -32,6 +32,8 @@ object Ajustes {
     fun portapapeles(c: Context) = si(c, "portapapeles", true)
     /** Las contraseñas que copias se borran solas del portapapeles al minuto */
     fun limpiarClaves(c: Context) = si(c, "limpiar_claves", true)
+    /** Recordar contraseñas (cifradas, solo en el celular; se guardan cuando tú lo pides) */
+    fun recordarClaves(c: Context) = si(c, "recordar_claves", true)
     /** Al cerrar con ? o ! se pone el signo de apertura (¿ ¡) al inicio, como se escribe en español */
     fun apertura(c: Context) = si(c, "apertura", true)
     /** Emojis en la barra de sugerencias según lo que escribes ("jaja" → 😂) */

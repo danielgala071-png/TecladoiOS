@@ -3299,7 +3299,7 @@ class Diccionario(context: Context) {
             yevar:llevar yevas:llevas yeve:llevé yorar:llorar yoro:lloro yover:llover yovizna:llovizna
             zanpada:zampada zanpado:zampado zanpar:zampar zanparse:zamparse zanpon:zampón zanpona:zampona
             zapatiyas:zapatillas
-        """.plus(" ").plus(ERRORES_MAS).plus(" ").plus(ERRORES_V9).plus(" ").plus(ERRORES_V10).trim().split(ESPACIOS).mapNotNull { par ->
+        """.plus(" ").plus(ERRORES_MAS).plus(" ").plus(ERRORES_V9).plus(" ").plus(ERRORES_V10).plus(" ").plus(ERRORES_V11).trim().split(ESPACIOS).mapNotNull { par ->
             val i = par.indexOf(':')
             if (i <= 0) null else par.substring(0, i) to par.substring(i + 1).replace('_', ' ')
         }.toMap()
@@ -3502,6 +3502,71 @@ class Diccionario(context: Context) {
          * "reconosco"), ll/y ("cabayo", "gayetas"), la h que sobra ("hechando", "hiban") y
          * frases pegadas ("atraves", "nadamas", "alafirme").
          */
+        /**
+         * Errores v11: abreviaturas del chat (xq, tmb, dsp, msj), adverbios en -mente y palabras en
+         * -ente mal escritas (realmete, suficente, urjente, pendinte), y palabras de trámites y del
+         * sector público (expedinte, presupueto, licitasion). Cada una con su forma correcta.
+         */
+        private const val ERRORES_V11 = """
+            xq:porque xk:porque pq:porque pk:porque porq:porque prq:porque pork:porque tmb:también tb:también
+            tmbn:también tbn:también tambie:también tambein:también xfa:por_favor xfavor:por_favor pfv:por_favor
+            xfis:por_favor dnd:donde dnde:donde cdo:cuando cnd:cuando kndo:cuando qndo:cuando cuado:cuando
+            salu2:saludos slds:saludos sldos:saludos grcs:gracias grs:gracias  bno:bueno bn:bien
+            bnos:buenos bnas:buenas mñn:mañana mñna:mañana mñana:mañana msj:mensaje msje:mensaje msjs:mensajes
+            mjs:mensajes ntp:no_te_preocupes dsp:después dps:después despue:después despuse:después
+            depues:después hno:hermano hna:hermana hnos:hermanos tqm:te_quiero_mucho tkm:te_quiero_mucho
+                aunq:aunque aunk:aunque nesesariamente:necesariamente
+            necesariamnete:necesariamente rapidamnete:rápidamente rapidamete:rápidamente realmnete:realmente
+            realmete:realmente realmentee:realmente solamnete:solamente solamete:solamente
+            basicamnete:básicamente basicamete:básicamente literalmnete:literalmente literalmete:literalmente
+            exactamnete:exactamente exactamete:exactamente totalmnete:totalmente totalmete:totalmente
+            obviamnete:obviamente obviamete:obviamente finalmnete:finalmente finalmete:finalmente
+            generalmnete:generalmente generalmete:generalmente normalmnete:normalmente normalmete:normalmente
+            actualmnete:actualmente actualmete:actualmente simplemnete:simplemente simplemete:simplemente
+            seguramnete:seguramente seguramete:seguramente claramnete:claramente claramete:claramente
+            completamnete:completamente completamete:completamente sinceramnete:sinceramente
+            sinceramete:sinceramente atentamnete:atentamente atentamete:atentamente personalmnete:personalmente
+            personalmete:personalmente unicamnete:únicamente unicamete:únicamente igualmnete:igualmente
+            igualmete:igualmente perfectamnete:perfectamente perfectamete:perfectamente
+            practicamnete:prácticamente practicamete:prácticamente probablemnete:probablemente
+            probablemete:probablemente inmediatamnete:inmediatamente inmediatamete:inmediatamente
+            nuevamnete:nuevamente nuevamete:nuevamente directamnete:directamente directamete:directamente
+            especialmnete:especialmente especialmete:especialmente efectivamnete:efectivamente
+            efectivamete:efectivamente posiblemnete:posiblemente posiblemete:posiblemente
+            anteriormnete:anteriormente anteriormete:anteriormente previamnete:previamente
+            previamete:previamente oportunamnete:oportunamente oportunamete:oportunamente
+            cordialmnete:cordialmente cordialmete:cordialmente felismente:felizmente felizmete:felizmente
+            afortunadamnete:afortunadamente lamentablemnete:lamentablemente lamentablemete:lamentablemente
+            esistente:existente esistentes:existentes exsistente:existente ecsistente:existente
+            eficente:eficiente eficasmente:eficazmente suficente:suficiente suficentes:suficientes
+            sufciente:suficiente diferiente:diferente diferientes:diferentes difernte:diferente
+            diferntes:diferentes excelnte:excelente intelignte:inteligente intelijentes:inteligentes
+            urjente:urgente urjentes:urgentes urgnte:urgente pacinte:paciente pasiente:paciente
+            pasientes:pacientes paciensia:paciencia concientes:conscientes pendinte:pendiente pendente:pendiente
+            pendientee:pendiente cliete:cliente clientess:clientes presidnte:presidente precidente:presidente
+            gerentee:gerente jerente:gerente independiete:independiente independente:independiente
+            recientemnete:recientemente resientemente:recientemente frecuentemnete:frecuentemente
+            frecuentemete:frecuentemente frequente:frecuente frecuentementee:frecuentemente
+            constantemnete:constantemente constantemete:constantemente evidentemnete:evidentemente
+            evidentemete:evidentemente aparentemnete:aparentemente aparentemete:aparentemente siguinte:siguiente
+            sigientes:siguientes concenso:consenso excento:exento excenta:exenta exhuberante:exuberante
+            inflingir:infligir diabetis:diabetes mounstruo:monstruo mostruo:monstruo vertir:verter
+            cocreta:croqueta sicologo:psicólogo sicologa:psicóloga ambulacia:ambulancia ambulansia:ambulancia
+            aiga:haya ases:haces asemos:hacemos aremos:haremos aras:harás ara:hará expedinte:expediente
+            resolusion:resolución licitasion:licitación contratasion:contratación adquisision:adquisición
+            requerimento:requerimiento requerimentos:requerimientos presupueto:presupuesto
+            presupesto:presupuesto certificasion:certificación certifcado:certificado
+            documentasion:documentación ducumento:documento docuemnto:documento municipalidd:municipalidad
+            munisipalidad:municipalidad memorandun:memorando memorandum:memorando dirijente:dirigente
+            dirijentes:dirigentes contribullente:contribuyente contribullentes:contribuyentes
+            correspondiete:correspondiente corespondiente:correspondiente corespondientes:correspondientes
+            seguromente:seguramente rapidomente:rápidamente claromente:claramente obviomente:obviamente
+            exactomente:exactamente completomente:completamente directomente:directamente nuevomente:nuevamente
+            unicomente:únicamente lus:luz exceliente:excelente urgiente:urgente inteligiente:inteligente
+            vinienos:vinimos fuinos:fuimos tuvinos:tuvimos hicinos:hicimos dijinos:dijimos pudinos:pudimos
+            estuvinos:estuvimos quisinos:quisimos
+        """
+
         private const val ERRORES_V10 = """
             hechando:echando hechó:echó atraves:a_través porsiaca:por_si_acaso hiban:iban beo:veo bibir:vivir
             nuebo:nuevo nueba:nueva llebas:llevas estubimos:estuvimos obio:obvio obia:obvia obiamente:obviamente

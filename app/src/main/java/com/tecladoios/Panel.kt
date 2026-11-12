@@ -36,6 +36,27 @@ class Panel(context: Context) : LinearLayout(context) {
         set(value) { if (field != value) { field = value; armar(width, height) } }
 
     private val pintura = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+
+    /**
+     * Destello al enviar (el toque propio del teclado): el filo del color de la app se enciende
+     * y se apaga suave, como si el mensaje saliera por el borde. Solo repinta el filo.
+     */
+    private var destello = 0f
+    private var animDestello: android.animation.ValueAnimator? = null
+
+    fun destellar() {
+        if (!isShown || Color.alpha(colorBorde) == 0) return
+        animDestello?.cancel()
+        animDestello = android.animation.ValueAnimator.ofFloat(1f, 0f).apply {
+            duration = Movimiento.DESTELLO
+            interpolator = Movimiento.SUAVE
+            addUpdateListener {
+                destello = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
     private val borde = Path()
     private val esquina = RectF()
 
@@ -101,6 +122,17 @@ class Panel(context: Context) : LinearLayout(context) {
         } else pintura.color = colorBorde
         pintura.strokeWidth = grosor
         canvas.drawPath(borde, pintura)
+        if (destello > 0f) {
+            // Luz ancha y tenue por dentro del filo + el filo a toda intensidad
+            pintura.shader = null
+            pintura.color = (colorBorde and 0x00FFFFFF) or ((0x55 * destello).toInt() shl 24)
+            pintura.strokeWidth = grosor * 7f
+            canvas.drawPath(borde, pintura)
+            pintura.color = colorBorde or (0xFF shl 24)
+            pintura.alpha = (255 * destello).toInt().coerceIn(0, 255)
+            pintura.strokeWidth = grosor * 1.8f
+            canvas.drawPath(borde, pintura)
+        }
         pintura.shader = null
     }
 

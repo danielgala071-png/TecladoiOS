@@ -136,8 +136,9 @@ class KeyboardView(
     private val margenAbajo = dp(6f)
     // Proporciones del teclado de iOS 26: huecos de ~6 de lado y ~11 entre filas
     // Huecos un poquito más finos: las teclas se ven más grandes y es más fácil atinarles
-    private val sepH = dp(2.2f)
-    private val sepV = dp(4.4f)
+    // Separación más fina: las teclas crecen y es más fácil atinarles (como el iPhone)
+    private val sepH = dp(1.6f)
+    private val sepV = dp(3.6f)
     // Esquinas como las teclas de iOS 26 (redondas pero sin parecer pastillas)
     // Un poco más redondas: el teclado se ve más suave
     private val radio = dp(8.4f)
@@ -271,9 +272,22 @@ class KeyboardView(
      * Al cambiar a números o símbolos (y de vuelta), los caracteres aparecen con un fundido y
      * un pequeño acercamiento (crecen de 86 % a 100 %), sin deslizarse de lado
      */
+    /**
+     * Cascada: al cambiar de teclado las filas aparecen una tras otra, de arriba hacia abajo
+     * (cada fila arranca un poquito después que la de arriba). Es el toque propio del teclado.
+     */
+    private var filaDibujo = 0
+
+    private fun avance(): Float {
+        if (aparicion >= 1f) return 1f
+        val base = ((aparicion - 0.15f) / 0.85f).coerceIn(0f, 1f)
+        val retraso = if (dirAparicion == 0) 0f else filaDibujo * 0.08f
+        return ((base - retraso) / (1f - 0.08f * 3f)).coerceIn(0f, 1f)
+    }
+
     private fun escalaEtiqueta(): Float {
         if (aparicion >= 1f) return 1f
-        val p = ((aparicion - 0.15f) / 0.85f).coerceIn(0f, 1f)
+        val p = avance()
         // Mayúsculas ↔ minúsculas: las letras crecen apenas (94 % → 100 %) mientras aparecen,
         // como si se transformaran; al cambiar de teclado el acercamiento es más notorio
         return if (dirAparicion == 0) 0.94f + 0.06f * p else 0.86f + 0.14f * p
@@ -302,11 +316,22 @@ class KeyboardView(
     /** El color con la transparencia de la transición aplicada */
     private fun conAparicion(color: Int): Int {
         if (aparicion >= 1f) return color
-        val a = (Color.alpha(color) * aparicion).toInt().coerceIn(0, 255)
+        val a = (Color.alpha(color) * (0.15f + 0.85f * avance())).toInt().coerceIn(0, 255)
         return (color and 0x00FFFFFF) or (a shl 24)
     }
 
     private val esPad get() = modo == Modo.PIN || modo == Modo.TELEFONO_SIMBOLOS
+
+    /**
+     * Mayúscula activada: tecla blanca como en el iPhone, pero la flecha va con el color de la
+     * app (verde en WhatsApp, rosado en Instagram...). Si ese color casi no se ve sobre blanco
+     * (amarillos, celestes muy claros), la flecha queda oscura.
+     */
+    private val flechaActiva: Int = run {
+        val c = tema.azul
+        val lum = (0.299 * Color.red(c) + 0.587 * Color.green(c) + 0.114 * Color.blue(c)) / 255.0
+        if (lum > 0.62) tema.textoActivo else (c or (0xFF shl 24))
+    }
 
     fun configurar(mano: String, deslizar: Boolean) {
         unaMano = mano
@@ -598,7 +623,7 @@ class KeyboardView(
         areaAncho = if (mano) width * 0.86f else width.toFloat()
         areaX = if (mano && unaMano == "der") width - areaAncho else 0f
         unidad = if (pad) areaAncho / 3f else areaAncho / 10f
-        val sep = if (pad) dp(3.5f) else sepH
+        val sep = if (pad) dp(2.6f) else sepH
         filas.forEachIndexed { i, fila ->
             val top = margenArriba + i * altoFila
             val ladoIzq = fila.first()
@@ -1000,6 +1025,7 @@ class KeyboardView(
     /** Dibuja una tecla. [presionada] y [f] (animación del toque) vienen de afuera: en la capa fija van en reposo. */
     private fun dibujar(c: Canvas, t: Tecla, presionada: Boolean, f: Float) {
         if (t.tipo == Tipo.VACIO) return
+        filaDibujo = if (altoFila > 0f) ((t.rect.centerY() - margenArriba) / altoFila).toInt().coerceAtLeast(0) else 0
         val pad = esPad
         // En el teclado numérico, borrar no tiene fondo (como en iPhone)
         val sinFondo = pad && t.tipo == Tipo.BORRAR
@@ -1018,6 +1044,11 @@ class KeyboardView(
             t.tipo == Tipo.ESPACIO && presionada -> tema.teclaPresionada
             f > 0f -> mezclarConAlfa(base, tema.teclaPresionada, f)
             else -> base
+        }
+        // Teclado numérico: el número que tocas se enciende con un toque del color de la app
+        if (pad && t.tipo == Tipo.LETRA && (presionada || f > 0f) && !modoCursor) {
+            val k = if (presionada) 1f else f
+            color = mezclarConAlfa(color, (tema.azul and 0x00FFFFFF) or (0x8C shl 24), 0.5f * k)
         }
         // Borrar con ritmo: cada letra que se va, la tecla late (un gris más claro, sin color)
         if (t.tipo == Tipo.BORRAR && latidoBorrar > 0f && !modoCursor) {
@@ -1112,7 +1143,7 @@ class KeyboardView(
         val cy = r.centerY()
         val contenido = conAparicion(when {
             t.tipo == Tipo.ENTER && enterAccion && !presionada -> tema.textoAcento
-            t.tipo == Tipo.SHIFT && shift > 0 -> tema.textoActivo
+            t.tipo == Tipo.SHIFT && shift > 0 -> flechaActiva
             else -> tema.texto
         })
         pinturaIcono.color = contenido
@@ -1930,7 +1961,8 @@ class KeyboardView(
                 puntosToque[id] = floatArrayOf(x, y)
                 anticiparLetra(t, x, y)
                 if (!esPad) {
-                    if (vistaPrevia) burbujas.mostrar(id, t.rect, etiqueta(t), tema)
+                    if (vistaPrevia) burbujas.mostrar(id, t.rect, etiqueta(t), tema,
+                        rapido = (ritmoDedo[id] ?: -1L) in 0L..RAPIDO_MS)
                     programarVariantes(t, id)
                     // Deslizar para escribir: solo con un dedo y en las letras
                     if (deslizarActivo && modo == Modo.LETRAS && presionadas.size == 1 && t.letra >= 0) {
@@ -2027,6 +2059,8 @@ class KeyboardView(
                 if ((modo == Modo.NUMEROS || modo == Modo.SIMBOLOS) && !soloNumeros) modo = Modo.LETRAS
             }
             Tipo.ENTER -> {
+                // Enviar, buscar, ir: la etiqueta del intro despega y vuelve
+                if (enterAccion && !esPad) lanzarDespegue(t)
                 acciones.enter()
             }
             Tipo.A_NUMEROS -> modo = if (modo == Modo.TELEFONO_SIMBOLOS) Modo.PIN else Modo.NUMEROS

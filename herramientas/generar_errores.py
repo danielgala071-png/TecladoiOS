@@ -102,6 +102,14 @@ TIPO = {
     "fila_arriba": 0.2,      # el pulgar se estira de más y cae una fila más arriba ("yodo" → "todo")
     "vocal_oido": 0.3,       # e/i y o/u que se confunden al hablar ("siguir", "dispues", "polecia")
     "fin_d": 0.5,            # la d del final que no se pronuncia ("verda", "ciuda", "uste")
+    # Nuevos
+    "mente_o": 0.6,          # el adverbio con la o del masculino ("seguromente" → "seguramente")
+    "mente_corta": 0.5,      # se come la "men" o la "te" al ir rápido ("realmete", "totalente")
+    "iente": 0.45,           # -ente / -iente cruzados ("pendente", "exceliente", "suficente")
+    "doble_letra": 0.4,      # la letra doble se pierde o aparece donde no va ("acion", "proffesor")
+    "mos_nos": 0.3,          # -mos dicho -nos ("vinienos", "fuinos")
+    "seseo_final": 0.55,     # z final dicha s ("felis", "capas", "lus", "ves")
+    "u_muda": 0.5,           # la u muda de gue/gui/que/qui que no salió ("gerra", "seguir" → "segir")
 }
 
 OIDO = [
@@ -116,6 +124,10 @@ OIDO = [
     ("ns", "s"), ("bs", "s"), ("mn", "n"), ("pt", "t"), ("ct", "t"), ("cc", "cs"),
     ("mb", "nv"), ("nv", "mb"), ("ll", "lly"), ("gu", "g"), ("ex", "es"), ("aho", "ao"),
     ("cion", "cio"), ("mente", "mete"), ("ado", "dao"), ("ido", "dio"),
+    # Seseo y confusiones de oído que faltaban ("ciencia" → "siensia", "cuando" → "quando")
+    ("cia", "sia"), ("cio", "sio"), ("ce", "ze"), ("ci", "zi"), ("cua", "qua"),
+    ("cuo", "quo"), ("cie", "sie"), ("sc", "c"), ("xi", "si"), ("exp", "esp"),
+    ("exc", "esc"), ("ext", "est"), ("bs", "vs"), ("bv", "v"), ("nm", "m"),
 ]
 
 # Letras de cada mano al escribir con dos pulgares (mitad izquierda / derecha del teclado)
@@ -218,6 +230,43 @@ def errores_de(w):
     # d final que no suena: "verdad" → "verda", "usted" → "uste"
     if n >= 4 and w.endswith("d"):
         poner(w[:-1], TIPO["fin_d"])
+    # Adverbios en -mente: con la o del masculino, o se come un pedacito al ir rápido
+    if n >= 8 and w.endswith("amente"):
+        poner(w[:-6] + "omente", TIPO["mente_o"])
+    if n >= 8 and w.endswith("mente"):
+        poner(w[:-5] + "mete", TIPO["mente_corta"])
+        poner(w[:-5] + "ente", TIPO["mente_corta"] * 0.8)
+        poner(w[:-5] + "ment", TIPO["mente_corta"])
+        poner(w[:-5] + "mnte", TIPO["mente_corta"])
+    # -ente / -iente cruzados
+    if n >= 6:
+        if w.endswith("iente") and n >= 7:
+            poner(w[:-5] + "ente", TIPO["iente"])
+            poner(w[:-4] + "nte", TIPO["iente"] * 0.6)  # "pendinte"
+        elif w.endswith("ente"):
+            poner(w[:-4] + "iente", TIPO["iente"])
+        if w.endswith("ientes"):
+            poner(w[:-6] + "entes", TIPO["iente"])
+        k = w.find("cien")
+        if k > 0:
+            poner(w[:k] + "cen" + w[k + 4:], TIPO["iente"])  # "suficente", "eficente"
+    # Letra doble: se pierde ("acion", "aroz") o sale doble donde no va ("proffesor")
+    for i in range(1, n):
+        if w[i] == w[i - 1] and w[i] in "crln":
+            poner(w[:i] + w[i + 1:], TIPO["doble_letra"])
+    for i in range(1, n - 1):
+        if w[i] in "fmptsl" and w[i - 1] in "aeiou" and w[i + 1] in "aeiou":
+            poner(w[:i] + w[i] + w[i:], TIPO["doble_letra"] * 0.5)
+    # -mos dicho -nos (pretérito y presente de nosotros)
+    if n >= 5 and w.endswith("mos"):
+        poner(w[:-3] + "nos", TIPO["mos_nos"])
+    # z final dicha s ("feliz" → "felis", "luz" → "lus")
+    if n >= 3 and w.endswith("z"):
+        poner(w[:-1] + "s", TIPO["seseo_final"])
+    # u muda que no salió ("guerra" → "gerra", "quiero" → "qiero" ya está)
+    for k in range(n - 2):
+        if w[k] == "g" and w[k + 1] == "u" and w[k + 2] in "ei":
+            poner(w[:k + 1] + w[k + 2:], TIPO["u_muda"])
     # Palabras largas: dos letras que no salieron (no seguidas)
     if n >= 8:
         for i in range(1, n - 2):

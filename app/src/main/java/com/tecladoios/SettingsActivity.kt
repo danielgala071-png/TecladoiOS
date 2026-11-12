@@ -498,6 +498,27 @@ class SettingsActivity : Activity() {
                 "si las pegas con el teclado, se borran solas del portapapeles al minuto. El historial " +
                 "guarda lo último que copiaste (botón 📋 en el panel de emojis); las contraseñas nunca se guardan.")
 
+        grupo("Contraseñas", listOf(
+            filaInterruptor("Recordar contraseñas", "recordar_claves", true),
+            filaAccion("Borrar contraseñas guardadas", rojo, derecha = null) {
+                val n = Claves.cuantasApps(this)
+                AlertDialog.Builder(this)
+                    .setMessage(if (n == 0) "No hay contraseñas guardadas." else
+                        "Se borrarán las contraseñas guardadas de $n " + (if (n == 1) "app." else "apps."))
+                    .setPositiveButton(if (n == 0) "OK" else "Borrar") { _, _ ->
+                        if (n > 0) {
+                            Claves.borrarTodo(this)
+                            Toast.makeText(this, "Contraseñas borradas", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    .setNegativeButton("Cancelar", null)
+                    .show()
+            },
+        ), pie = "En un campo de contraseña, toca “Guardar contraseña” en la barra. La próxima vez " +
+                "aparece arriba con el nombre de tu cuenta: tócala y se escribe sola. Se guardan solo " +
+                "en este celular, cifradas con la llave de seguridad de Android (nunca salen del " +
+                "teclado ni van a internet). Mantén presionada una para olvidarla.")
+
         val fuerza = when (Ajustes.vibracion(this)) { "suave" -> "Suave"; "fuerte" -> "Fuerte"; else -> "Media" }
         grupo("Respuesta del teclado", listOf(
             filaInterruptor("Sonido", "sonido", false),
@@ -837,11 +858,32 @@ class SettingsActivity : Activity() {
         tituloGrande("Intensidad de la háptica")
         val actual = Ajustes.vibracion(this)
         grupo(null, listOf(
-            filaCheck("Suave", actual == "suave") { elegir("vibracion", "suave") },
-            filaCheck("Media", actual == "media") { elegir("vibracion", "media") },
-            filaCheck("Fuerte", actual == "fuerte") { elegir("vibracion", "fuerte") },
-        ), pie = "Cambia qué tan fuerte se siente cada tecla. El espacio y el intro siempre se sienten " +
-                "un poco más firmes que las letras, como en el iPhone.")
+            filaCheck("Suave", actual == "suave") { elegir("vibracion", "suave"); probarVibracion("suave") },
+            filaCheck("Media", actual == "media") { elegir("vibracion", "media"); probarVibracion("media") },
+            filaCheck("Fuerte", actual == "fuerte") { elegir("vibracion", "fuerte"); probarVibracion("fuerte") },
+        ), pie = "Cada tecla es un golpe seco y firme (no un zumbido). El espacio, el intro y la " +
+                "mayúscula se sienten más pesados que las letras. Al tocar una opción la sientes al " +
+                "instante: dos letras y un espacio.")
+    }
+
+    /** Prueba en vivo: "tac, tac, TAC" (dos letras y un espacio) con la fuerza elegida */
+    private fun probarVibracion(nivel: String) {
+        try {
+            val v = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+            } else {
+                getSystemService(android.os.Vibrator::class.java)
+            } ?: return
+            val (letra, pesada) = when (nivel) {
+                "suave" -> 14L to 22L
+                "fuerte" -> 22L to 34L
+                else -> 18L to 28L
+            }
+            val fuerza = if (v.hasAmplitudeControl()) 255 else android.os.VibrationEffect.DEFAULT_AMPLITUDE
+            v.vibrate(android.os.VibrationEffect.createWaveform(
+                longArrayOf(0, letra, 140, letra, 140, pesada),
+                intArrayOf(0, fuerza, 0, fuerza, 0, fuerza), -1))
+        } catch (_: Exception) { }
     }
 
     // ---------- Filo de color de las teclas ----------
