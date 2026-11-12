@@ -444,14 +444,11 @@ class TecladoService : InputMethodService(),
         zona.addView(k, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
         zona.addView(e, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, k.alto()))
 
-        // El teclado: vidrio líquido teñido con la app, recto, con el filo del color de la app
+        // El teclado: negro AMOLED, recto (sin esquinas curvas) con el filo del color de la app
         val p = Panel(this).apply {
             orientation = LinearLayout.VERTICAL
-            // Lámina de vidrio líquido teñida con el color de la app (la dibuja el Panel)
-            setBackgroundColor(Color.TRANSPARENT)
-            vidrioArriba = t.fondo
-            vidrioAbajo = t.fondoAbajo
-            luz = t.luzAmbiente
+            // Negro AMOLED puro (ahorra batería en pantallas OLED)
+            setBackgroundColor(t.fondo)
             radio = 0f
             // Filo fino y sedoso (antes era más grueso y se veía duro)
             grosor = maxOf(1f, resources.displayMetrics.density * 0.7f)
@@ -661,7 +658,11 @@ class TecladoService : InputMethodService(),
         cargarContactosSiHaceFalta()
         espacioAutomatico = false
         escribiendo = false
-        barra?.visible(false, animar = false)
+        // La barra NO se esconde al cambiar de campo o al enviar un mensaje (muchas apps
+        // reinician la caja de texto al enviar): antes se apagaba y volvía a aparecer, y se
+        // veía un parpadeo. Ahora se queda quieta y solo cambia lo que muestra. Solo arranca
+        // escondida cuando el teclado recién se abre (para aparecer con su animación).
+        if (!isInputViewShown) barra?.visible(false, animar = false)
         volverABC()
         actualizar()
         // La vista previa de las teclas se prepara antes del primer toque (así la primera

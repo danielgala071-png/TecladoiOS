@@ -3,18 +3,13 @@ package com.tecladoios
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.RadialGradient
 import android.graphics.RectF
-import android.graphics.Shader
 import android.widget.LinearLayout
 
 /**
- * Contenedor del teclado: la lámina de vidrio líquido del fondo (degradado teñido con el
- * color de la app y una luz suave de ese color arriba) y el borde del color de la app.
- * Los degradados se arman solo cuando cambia el tamaño o el color: dibujarlos no cuesta nada.
+ * Contenedor del teclado: dibuja el borde con el color de la app que estás usando.
  * Con [radio] = 0 el teclado es recto arriba. Abajo queda recto y sin borde.
  */
 class Panel(context: Context) : LinearLayout(context) {
@@ -32,18 +27,6 @@ class Panel(context: Context) : LinearLayout(context) {
     var lineaArriba = true
         set(value) { if (field != value) { field = value; armar(width, height) } }
 
-    /** Vidrio del fondo arriba y abajo, y la luz del color de la app (0 = sin vidrio) */
-    var vidrioArriba = 0
-        set(value) { field = value; armarVidrio() }
-    var vidrioAbajo = 0
-        set(value) { field = value; armarVidrio() }
-    var luz = 0
-        set(value) { field = value; armarVidrio() }
-
-    private val pinturaVidrio = Paint()
-    private val pinturaLuz = Paint()
-    private val pinturaLuz2 = Paint()
-
     private val pintura = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val borde = Path()
     private val esquina = RectF()
@@ -55,35 +38,6 @@ class Panel(context: Context) : LinearLayout(context) {
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         armar(w, h)
-        armarVidrio()
-    }
-
-    private fun armarVidrio() {
-        val w = width.toFloat()
-        val h = height.toFloat()
-        if (w <= 0f || h <= 0f) return
-        pinturaVidrio.shader = if (Color.alpha(vidrioArriba) == 0) null else
-            LinearGradient(0f, 0f, 0f, h, vidrioArriba, vidrioAbajo, Shader.TileMode.CLAMP)
-        val transparente = luz and 0x00FFFFFF
-        // Luz del color de la app que baja desde arriba al centro (como el reflejo del cielo
-        // en un vidrio) y otra, más tenue, que sube desde abajo a la izquierda
-        pinturaLuz.shader = if (Color.alpha(luz) == 0) null else luzArriba(w, -w * LUZ_ARRIBA, luz)
-        pinturaLuz2.shader = if (Color.alpha(luz) == 0) null else
-            RadialGradient(w * 0.12f, h * 1.05f, maxOf(w * 0.45f, 1f),
-                (luz and 0x00FFFFFF) or ((Color.alpha(luz) / 2) shl 24), transparente, Shader.TileMode.CLAMP)
-        invalidate()
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        if (pinturaVidrio.shader == null) return
-        val w = width.toFloat()
-        val h = height.toFloat()
-        canvas.drawRect(0f, 0f, w, h, pinturaVidrio)
-        if (pinturaLuz.shader != null) {
-            canvas.drawRect(0f, 0f, w, h, pinturaLuz)
-            canvas.drawRect(0f, 0f, w, h, pinturaLuz2)
-        }
     }
 
     private fun armar(w: Int, h: Int) {
@@ -129,21 +83,5 @@ class Panel(context: Context) : LinearLayout(context) {
         pintura.color = colorBorde
         pintura.strokeWidth = grosor
         canvas.drawPath(borde, pintura)
-    }
-
-    companion object {
-        /**
-         * Dónde está la luz de arriba y qué tan grande es (en proporción al ancho). La barra
-         * de sugerencias dibuja la misma luz en el mismo lugar: así barra y teclado son una
-         * sola pieza de vidrio, sin corte entre las dos.
-         */
-        const val LUZ_ARRIBA = 0.03f
-        const val LUZ_RADIO = 0.62f
-
-        /** La luz de arriba con el centro en [cy] (en coordenadas de quien la dibuja) */
-        fun luzArriba(w: Float, cy: Float, luz: Int): Shader = RadialGradient(
-            w * 0.5f, cy, maxOf(w * LUZ_RADIO, 1f),
-            intArrayOf(luz, (luz and 0x00FFFFFF) or ((Color.alpha(luz) / 3) shl 24), luz and 0x00FFFFFF),
-            floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
     }
 }

@@ -373,6 +373,11 @@ class KeyboardView(
         style = Paint.Style.STROKE
         strokeWidth = maxOf(0.6f, dp(0.5f))
     }
+    /** Halo del color de la app alrededor de la tecla que tocas (se apaga junto con ella) */
+    private val pinturaHalo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeJoin = Paint.Join.ROUND
+    }
 
     // ---------- Capa fija (rendimiento) ----------
     /**
@@ -885,6 +890,20 @@ class KeyboardView(
             Formas.suave(formaPulso, r.left, r.top, r.right, r.bottom, radio, 0f, t.curvaDer, t.curvaIzq)
             formaPulso
         } else t.forma
+
+        // Halo premium: al tocar, la tecla suelta un resplandor del color de la app justo
+        // alrededor de su borde (sin salirse hacia las teclas vecinas) y se apaga suave con ella
+        val brilloHalo = if (presionada) 1f else f
+        if (brilloHalo > 0f && !modoCursor && !sinFondo && Color.alpha(tema.halo) > 0 &&
+            !(t.tipo == Tipo.SHIFT && shift > 0)) {
+            val alfaHalo = Color.alpha(tema.halo)
+            pinturaHalo.color = (tema.halo and 0x00FFFFFF) or ((alfaHalo * 0.32f * brilloHalo).toInt().coerceIn(0, 255) shl 24)
+            pinturaHalo.strokeWidth = dp(5f)
+            c.drawPath(forma, pinturaHalo)
+            pinturaHalo.color = (tema.halo and 0x00FFFFFF) or ((alfaHalo * 0.75f * brilloHalo).toInt().coerceIn(0, 255) shl 24)
+            pinturaHalo.strokeWidth = dp(2.2f)
+            c.drawPath(forma, pinturaHalo)
+        }
 
         if (Color.alpha(color) > 0) {
             if (Color.alpha(tema.sombra) > 0 && !sinFondo && !modoCursor) {

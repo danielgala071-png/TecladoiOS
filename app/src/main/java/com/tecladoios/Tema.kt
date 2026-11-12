@@ -4,28 +4,25 @@ import android.content.Context
 import android.graphics.Color
 
 /**
- * Diseño "vidrio líquido" (como iOS): el teclado es una lámina de vidrio oscuro teñida con
- * el color de la app que estás usando (verde en WhatsApp, rosado en Instagram, rojo en
- * YouTube…), con una luz suave de ese color arriba. Cada tecla es una pieza de vidrio:
- * translúcida, con un filo de luz arriba, el filo del color de la app y el color de la app
- * que se asoma por dentro, abajo, como luz que atraviesa el vidrio.
+ * Diseño negro AMOLED premium: fondo negro puro (ahorra batería en pantallas OLED) y teclas
+ * de grafito profundo, como piezas pulidas. Cada tecla tiene un filo de luz blanca finita
+ * arriba, el filo del color de la app que estás usando (verde en WhatsApp, rosado en
+ * Instagram, rojo en YouTube…) y ese mismo color brillando apenas por dentro, abajo.
+ * Al tocarla, la tecla se enciende y suelta un halo del color de la app.
  *
- * Todo son degradados que se arman una sola vez (sin desenfoque en vivo): se ve lujoso
- * sin calentar el celular ni hacerlo lento.
+ * Siempre es oscuro, aunque el celular esté en modo claro.
  */
 data class Tema(
     val oscuro: Boolean,
-    /** Vidrio del fondo, arriba (también es el color de la barra de sugerencias) */
+    /** Fondo del teclado: negro puro */
     val fondo: Int,
     val fondoArriba: Int,
-    /** Vidrio del fondo, abajo (más profundo) */
-    val fondoAbajo: Int,
-    /** Luz del color de la app que se refleja en la lámina de vidrio, arriba */
-    val luzAmbiente: Int,
-    /** Filo de luz blanca en el borde de arriba de cada tecla (el brillo del vidrio) */
+    /** Filo de luz blanca en el borde de arriba de cada tecla (brillo de pieza pulida) */
     val filoLuz: Int,
-    /** Color de la app que se asoma por dentro del vidrio, abajo de cada tecla */
+    /** Color de la app que brilla apenas por dentro, abajo de cada tecla */
     val tinteInterior: Int,
+    /** Halo del color de la app que rodea la tecla al tocarla (se apaga con la tecla) */
+    val halo: Int,
     /** Teclas de letras: vidrio translúcido apenas teñido con el color de la app */
     val tecla: Int,
     val teclaFuncion: Int,
@@ -107,50 +104,45 @@ data class Tema(
             // Filo de las teclas elegido en Ajustes (apagado, sutil, normal o vivo)
             val alfaBorde = when (Ajustes.bordeTeclas(context)) {
                 "apagado" -> 0x00
-                "sutil" -> 0x22
-                "vivo" -> 0xB0
-                else -> 0x36
+                "sutil" -> 0x2A
+                "vivo" -> 0xB8
+                else -> 0x48
             }
-            // Vidrio oscuro teñido con la app: arriba un grafito con un toque de color, abajo
-            // más profundo. Nunca negro puro: así el vidrio de las teclas se nota.
-            val vidrioArriba = mezclar(0xFF1D1E23.toInt(), color, 0.16f)
-            val vidrioAbajo = mezclar(0xFF0F1013.toInt(), color, 0.07f)
             return Tema(
                 oscuro = true,
-                fondo = vidrioArriba,
-                fondoArriba = vidrioArriba,
-                fondoAbajo = vidrioAbajo,
-                luzAmbiente = a(0x2E, mezclar(color, BLANCO, 0.10f)),
-                filoLuz = a(0x8C, BLANCO),
-                tinteInterior = a(0x30, color),
-                // Vidrio: blanco translúcido apenas teñido. Las letras más claras que las de
-                // función (como en iPhone)
-                tecla = a(0x30, mezclar(BLANCO, color, 0.10f)),
-                teclaFuncion = a(0x17, mezclar(BLANCO, color, 0.14f)),
-                // Presionada: el vidrio se llena de luz con el color de la app
-                teclaPresionada = a(0x5C, mezclar(BLANCO, color, 0.28f)),
-                // Mayúsculas activadas: vidrio blanco lechoso, no encandila
-                teclaActiva = 0xFFE8E8ED.toInt(),
+                fondo = NEGRO,
+                fondoArriba = NEGRO,
+                filoLuz = a(0x58, BLANCO),
+                tinteInterior = a(0x1E, color),
+                halo = a(0x5A, mezclar(color, BLANCO, 0.12f)),
+                // Grafito profundo, apenas teñido: las letras se distinguen claramente de las
+                // teclas de función (más oscuras), como en el teclado oscuro del iPhone
+                tecla = a(0x2E, mezclar(BLANCO, color, 0.06f)),
+                teclaFuncion = a(0x17, mezclar(BLANCO, color, 0.10f)),
+                // Tecla presionada: se enciende en gris claro con un toque del color de la app
+                teclaPresionada = a(0x5A, mezclar(BLANCO, color, 0.26f)),
+                // Mayúsculas activadas: blanco suave, no encandila sobre el negro
+                teclaActiva = 0xFFE6E6EB.toInt(),
                 textoActivo = 0xFF0A0A0B.toInt(),
-                // Sombra suave debajo de cada pieza de vidrio (le da peso sobre la lámina)
-                sombra = a(0x4A, mezclar(NEGRO, color, 0.08f)),
-                texto = 0xFFF7F7F9.toInt(),
-                textoSecundario = 0xFF9A9AA2.toInt(),
+                // Sin canto: sobre el negro puro no se vería; el peso lo da el hundido al tocar
+                sombra = 0,
+                texto = 0xFFF5F5F7.toInt(),
+                textoSecundario = 0xFF8E8E93.toInt(),
                 azul = color,
-                // Filo con el color de la app y algo de luz
-                borde = a(alfaBorde, mezclar(color, BLANCO, 0.30f)),
-                bordePanel = a(0x66, mezclar(color, BLANCO, 0.15f)),
-                barra = a(0xF0, vidrioArriba),
+                // Filo del color de la app con algo de luz: se nota sin "gritar"
+                borde = a(alfaBorde, mezclar(color, BLANCO, 0.25f)),
+                bordePanel = a(0x70, mezclar(color, BLANCO, 0.12f)),
+                barra = a(0xF0, 0x0B0B0D),
                 enterAccion = a(0xE6, color),
                 textoAcento = textoSobre(color),
-                burbuja = a(0xF5, mezclar(0xFF2E2F36.toInt(), color, 0.16f)),
-                bordeBurbuja = a(0xC0, mezclar(color, BLANCO, 0.25f)),
+                burbuja = a(0xFA, mezclar(0xFF27272B.toInt(), color, 0.12f)),
+                bordeBurbuja = a(0xC0, mezclar(color, BLANCO, 0.20f)),
                 desenfoque = 0,
                 // Se dibujan con opacidad propia (no dependen de la transparencia de la tecla)
-                brillo = a(0x22, BLANCO),
-                profundidad = a(0x18, NEGRO),
+                brillo = a(0x18, BLANCO),
+                profundidad = a(0x20, NEGRO),
                 reflejo = a(0x24, BLANCO),
-                resplandor = a(0x1E, color),
+                resplandor = a(0x22, color),
             )
         }
     }
