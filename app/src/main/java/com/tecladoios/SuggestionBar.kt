@@ -137,6 +137,9 @@ class SuggestionBar(
     private val filo = Path()
     private val esquina = RectF()
     private val pinturaFondo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    /** La luz del color de la app (la misma del teclado, sigue sin corte) y el brillo del vidrio */
+    private val pinturaLuzVidrio = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val pinturaBrilloVidrio = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private var mostrando = false
     /** Qué tan visibles están las sugerencias (0 = apagadas, 1 = a la vista) */
     private var opacidad = 0f
@@ -169,8 +172,14 @@ class SuggestionBar(
         forma.reset()
         filo.reset()
         if (w <= 0f || h <= 0f) return
+        // Vidrio líquido: la luz de arriba del teclado empieza aquí mismo (mismo centro y
+        // tamaño), y arriba un brillo blanco suave como el borde de un vidrio grueso
+        pinturaLuzVidrio.shader = if (Color.alpha(tema.luzAmbiente) == 0) null else
+            Panel.luzArriba(w, h - w * Panel.LUZ_ARRIBA, tema.luzAmbiente)
+        pinturaBrilloVidrio.shader = LinearGradient(0f, 0f, 0f, h * 0.55f,
+            (tema.filoLuz and 0x00FFFFFF) or (0x16 shl 24), tema.filoLuz and 0x00FFFFFF, Shader.TileMode.CLAMP)
         val r = minOf(18f * d, h / 2f)
-        // Relleno negro: curvo arriba y recto abajo, hasta el borde del teclado
+        // Relleno de vidrio: curvo arriba y recto abajo, hasta el borde del teclado
         forma.moveTo(0f, h)
         forma.lineTo(0f, r)
         esquina.set(0f, 0f, r * 2f, r * 2f)
@@ -410,9 +419,11 @@ class SuggestionBar(
         // Toda la barra (fondo, filo y sugerencias) se enciende y apaga junta, subiendo apenas
         val capa = if (o < 1f) c.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), (o * 255).toInt()) else -1
         if (o < 1f) c.translate(0f, (1f - o) * 6f * d)
-        // Fondo negro como el teclado (curvo arriba) y el filo del color de la app
+        // Vidrio como el teclado (curvo arriba) y el filo del color de la app
         pinturaFondo.color = tema.fondo
         c.drawPath(forma, pinturaFondo)
+        if (pinturaLuzVidrio.shader != null) c.drawPath(forma, pinturaLuzVidrio)
+        c.drawPath(forma, pinturaBrilloVidrio)
         // Halo suave del color de la app por dentro del filo (igual que en el teclado)
         val grosorFilo = pinturaBorde.strokeWidth
         pinturaBorde.color = tema.resplandor

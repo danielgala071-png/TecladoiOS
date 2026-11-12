@@ -158,7 +158,6 @@ class TecladoService : InputMethodService(),
     }
     private val tareaGuardar = Runnable { try { diccionario.guardar() } catch (e: Throwable) { Registro.anotar("guardar", e) } }
 
-    private var toqueFino: Boolean? = null
     private var ultimaCorreccion: Pair<String, String>? = null
     /** La misma de arriba cuando fue una autocorrección (para que el cerebro se calibre al deshacerla) */
     private var ultimaCorreccionAuto: Pair<String, String>? = null
@@ -445,10 +444,14 @@ class TecladoService : InputMethodService(),
         zona.addView(k, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
         zona.addView(e, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, k.alto()))
 
-        // El teclado: negro AMOLED, recto (sin esquinas curvas) con el filo del color de la app
+        // El teclado: vidrio líquido teñido con la app, recto, con el filo del color de la app
         val p = Panel(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(t.fondo)
+            // Lámina de vidrio líquido teñida con el color de la app (la dibuja el Panel)
+            setBackgroundColor(Color.TRANSPARENT)
+            vidrioArriba = t.fondo
+            vidrioAbajo = t.fondoAbajo
+            luz = t.luzAmbiente
             radio = 0f
             // Filo fino y sedoso (antes era más grueso y se veía duro)
             grosor = maxOf(1f, resources.displayMetrics.density * 0.7f)
@@ -2698,49 +2701,47 @@ class TecladoService : InputMethodService(),
 
     // ---------- Respuesta del teclado (vibración y sonido) ----------
 
-    /** Los efectos de vibración se arman una sola vez: letra, espacio/intro, borrar y teclas de función */
-    private val efectos = arrayOfNulls<VibrationEffect>(4)
+    /**
+     * Los efectos de vibración se arman una sola vez: letras, espacio/intro/mayúsculas,
+     * borrar, las demás teclas de función y el toquecito al elegir un acento.
+     */
+    private val efectos = arrayOfNulls<VibrationEffect>(5)
 
     private fun claseRetro(tipo: Tipo) = when (tipo) {
-        Tipo.LETRA, Tipo.VACIO -> 0
-        Tipo.ESPACIO, Tipo.ENTER -> 1
+        Tipo.LETRA -> 0
+        Tipo.ESPACIO, Tipo.ENTER, Tipo.SHIFT -> 1
         Tipo.BORRAR -> 2
+        Tipo.VACIO -> 4
         else -> 3
     }
 
+    /** ¿El motor de vibración deja elegir la fuerza? Se pregunta una sola vez */
+    private var conAmplitud: Boolean? = null
+
     /**
-     * Toque PESADO, como una tecla de verdad que baja y toca fondo: un golpe firme (CLICK) y,
-     * pegadito detrás, un golpe grave y corto (LOW_TICK) que da la sensación de peso. Todo
-     * dura menos de 20 ms, así escribiendo rápido a dos dedos cada toque se siente separado
-     * y no se vuelve un zumbido. El espacio y el intro van más firmes; las de función, más
-     * livianas. Si el celular no tiene esos golpes finos, se usa el clic fuerte del sistema.
+     * Vibración que SE SIENTE al escribir. Antes se usaban los "golpecitos finos" del sistema:
+     * en muchos celulares apenas se notaban. Ahora cada tecla es un golpe directo del motor,
+     * con fuerza y duración fijas, igual en cualquier celular:
+     *  - Letras: golpe firme.
+     *  - Espacio, intro y mayúsculas: más largo y al máximo (se sienten más pesados).
+     *  - Borrar: entre los dos. 123 y emojis: un poco más liviano.
+     *  - Elegir un acento: toquecito corto.
+     * Todo dura menos de 40 ms, así escribiendo rápido a dos dedos cada letra se siente
+     * aparte y no se vuelve un zumbido. "Suave", "media" y "fuerte" (en Ajustes) suben o
+     * bajan todo junto.
      */
     private fun crearEfecto(clase: Int): VibrationEffect {
-        val nivel = fuerzaVibracion
-        return if (toqueFino == true) {
-            val base = when (clase) { 1 -> 1f; 2 -> 0.85f; 3 -> 0.65f; else -> 0.9f }
-            val por = when (nivel) { "suave" -> 0.6f; "fuerte" -> 1.3f; else -> 1f }
-            val fuerza = (base * por).coerceIn(0.1f, 1f)
-            val comp = VibrationEffect.startComposition()
-                .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, fuerza)
-            // El golpe grave de "peso" (no en suave ni en las teclas de función)
-            if (golpeGrave == true && nivel != "suave" && clase != 3) {
-                val grave = ((if (nivel == "fuerte") 1f else 0.75f) * (if (clase == 1) 1f else 0.85f)).coerceIn(0.1f, 1f)
-                comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_LOW_TICK, grave, 6)
-            }
-            comp.compose()
-        } else {
-            val efecto = when (nivel) {
-                "suave" -> VibrationEffect.EFFECT_CLICK
-                "fuerte" -> VibrationEffect.EFFECT_HEAVY_CLICK
-                else -> if (clase == 3) VibrationEffect.EFFECT_CLICK else VibrationEffect.EFFECT_HEAVY_CLICK
-            }
-            VibrationEffect.createPredefined(efecto)
+        // [duración en ms, fuerza 1–255] para cada clase, según el nivel elegido
+        val tabla: Array<IntArray> = when (fuerzaVibracion) {
+            "suave" -> arrayOf(intArrayOf(14, 170), intArrayOf(22, 225), intArrayOf(16, 190), intArrayOf(13, 160), intArrayOf(8, 110))
+            "fuerte" -> arrayOf(intArrayOf(26, 255), intArrayOf(40, 255), intArrayOf(30, 255), intArrayOf(22, 240), intArrayOf(12, 170))
+            else -> arrayOf(intArrayOf(20, 230), intArrayOf(32, 255), intArrayOf(24, 245), intArrayOf(17, 210), intArrayOf(10, 140))
         }
+        val valores = tabla[clase]
+        val ms = valores[0].toLong()
+        val fuerza = if (conAmplitud == true) valores[1] else VibrationEffect.DEFAULT_AMPLITUDE
+        return VibrationEffect.createOneShot(ms, fuerza)
     }
-
-    /** ¿El motor de vibración tiene el golpe grave (LOW_TICK)? Se pregunta una sola vez */
-    private var golpeGrave: Boolean? = null
 
     override fun retro(tipo: Tipo) {
         val conVibrar = vibrar
@@ -2784,13 +2785,8 @@ class TecladoService : InputMethodService(),
     private fun vibrarAhora(tipo: Tipo) {
         try {
             val v = vibrador ?: return
-            // Toque corto y seco, como el Taptic Engine del iPhone (si el celular lo soporta)
-            if (toqueFino == null) {
-                toqueFino = v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_TICK,
-                    VibrationEffect.Composition.PRIMITIVE_CLICK)
-                golpeGrave = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                    v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_LOW_TICK)
-            }
+            // Golpe directo del motor, con la fuerza de cada tipo de tecla
+            if (conAmplitud == null) conAmplitud = v.hasAmplitudeControl()
             val clase = claseRetro(tipo)
             val efecto = efectos[clase] ?: crearEfecto(clase).also { efectos[clase] = it }
             v.vibrate(efecto)

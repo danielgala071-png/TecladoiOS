@@ -3254,7 +3254,7 @@ class Diccionario(context: Context) {
             yevar:llevar yevas:llevas yeve:llevé yorar:llorar yoro:lloro yover:llover yovizna:llovizna
             zanpada:zampada zanpado:zampado zanpar:zampar zanparse:zamparse zanpon:zampón zanpona:zampona
             zapatiyas:zapatillas
-        """.plus(" ").plus(ERRORES_MAS).trim().split(ESPACIOS).mapNotNull { par ->
+        """.plus(" ").plus(ERRORES_MAS).plus(" ").plus(ERRORES_V9).trim().split(ESPACIOS).mapNotNull { par ->
             val i = par.indexOf(':')
             if (i <= 0) null else par.substring(0, i) to par.substring(i + 1).replace('_', ' ')
         }.toMap()
@@ -3314,7 +3314,7 @@ class Diccionario(context: Context) {
             se que|sé que; no se|no sé; yo se|yo sé; ya se|ya sé; solo se|solo sé;
             tambien te|también te; tambien me|también me; tambien yo|también yo; yo tambien|yo también;
             despues te|después te; despues de|después de
-        """.let { leerPares(it) } + leerPares(CONFUSIONES) + leerPares(CONFUSIONES_MAS)
+        """.let { leerPares(it) } + leerPares(CONFUSIONES) + leerPares(CONFUSIONES_MAS) + leerPares(CONFUSIONES_V9)
 
         /**
          * "a|b": la palabra anterior y la actual escritas como "a" se cambian por "b". Si "b"
@@ -3447,6 +3447,45 @@ class Diccionario(context: Context) {
          * "haya sido", "haz visto" → "has visto", "te valla bien" → "te vaya bien",
          * "aver si" → "a ver si", "debe aver" → "debe haber", "hay dios" → "ay Dios".
          */
+        /**
+         * Más errores del día a día (v9): palabras pegadas ("asique", "porlomenos"), verbos mal
+         * conjugados ("ponido", "detení", "quedría", "cabió"), escritura de chat ("ke", "ai",
+         * "grax") y palabras peruanas mal escritas ("chebere", "guachafo", "chivolo", "aji").
+         */
+        private const val ERRORES_V9 = """
+            porfa_vor:por_favor asique:así_que asiq:así_que porfin:por_fin osino:o_si_no enverdad:en_verdad alrrato:al_rato
+            deveras:de_veras alfinal:al_final enfin:en_fin porlomenos:por_lo_menos porloque:por_lo_que porejemplo:por_ejemplo
+            amenudo:a_menudo alavez:a_la_vez noma:nomás nomá:nomás ponido:puesto hacido:hecho volvido:vuelto morido:muerto
+            veniste:viniste andé:anduve andó:anduvo andaron:anduvieron detení:detuve detenió:detuvo traducí:traduje
+            tradució:tradujo producí:produje produció:produjo conducí:conduje condució:condujo satisfació:satisfizo
+            preveer:prever preveyendo:previendo quedré:querré quedría:querría quedrías:querrías cabió:cupo cabí:cupe
+            sabí:supe sabió:supo cocinastes:cocinaste pasastes:pasaste exselente:excelente ijas:hijas paresce:parece
+            paresida:parecida bale:vale vuenas:buenas vuenos:buenos yamo:llamo ke:que ai:ahí alli:allí chebere:chévere
+            guachafo:huachafo wachafo:huachafo guachafa:huachafa wachafa:huachafa guayno:huayno chivolo:chibolo
+            chivola:chibola chivolos:chibolos pitucco:pituco picarrones:picarones aji:ají cauza:causa kausa:causa
+            cachuello:cachuelo chamuyo:chamullo chancon:chancón grax:gracias graciaz:gracias muchisimas:muchísimas
+            muchisimo:muchísimo muchisima:muchísima felisidades:felicidades cumpleaño:cumpleaños disculpame:discúlpame
+            disculpeme:discúlpeme perdoname:perdóname perdon:perdón dejame:déjame
+        """
+
+        /**
+         * Más errores de gramática (v9) que se ven con la palabra de al lado: "sino puedes" →
+         * "si no puedes", "te baya bien" → "te vaya bien", "tu quieres" → "tú quieres",
+         * "el sabe" → "él sabe", "a mi me" → "a mí me", "ojala que" → "ojalá que".
+         */
+        private const val CONFUSIONES_V9 = """
+            sino puedo|si no+puedo; sino puedes|si no+puedes; sino puede|si no+puede; sino quieres|si no+quieres;
+            sino quiere|si no+quiere; sino vienes|si no+vienes; sino viene|si no+viene; sino hay|si no+hay;
+            sino tienes|si no+tienes; sino tiene|si no+tiene; sino sabes|si no+sabes; sino llegas|si no+llegas;
+            sino contestas|si no+contestas; haz salido|has salido; te baya|te vaya; que baya|que vaya;
+            me baya|me vaya; se baya|se vaya; no baya|no vaya; les baya|les vaya; le baya|le vaya;
+            tu quieres|tú quieres; tu puedes|tú puedes; tu vas|tú vas; tu dices|tú dices; tu has|tú has;
+            el tiene|él tiene; el quiere|él quiere; el sabe|él sabe; el fue|él fue; el estaba|él estaba;
+            mi me|mí me; que bonita|qué bonita; que buena|qué buena; que gusto|qué gusto; que horror|qué horror;
+            que lata|qué lata; yo valla|yo vaya; tu valla|tú vayas; ojala que|ojalá que; ojala te|ojalá te;
+            ojala no|ojalá no; ojala se|ojalá se
+        """
+
         private const val CONFUSIONES_MAS = """
             tubo que|tuvo que; tube que|tuve que; se callo|se cayó; halla sido|haya sido; halla hecho|haya hecho;
             halla llegado|haya llegado; halla pasado|haya pasado; halla venido|haya venido;

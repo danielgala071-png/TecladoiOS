@@ -364,14 +364,15 @@ class KeyboardView(
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
-    /** Línea de luz finita en el filo de arriba de cada tecla */
+    /**
+     * Filo de luz del vidrio: una línea blanca finita, más delgada que el filo de color, que
+     * brilla arriba de cada tecla y se apaga hacia los costados (como el canto de un vidrio
+     * grueso cuando le pega la luz)
+     */
     private val pinturaReflejo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-        strokeWidth = maxOf(1f, dp(0.75f))
+        strokeWidth = maxOf(0.6f, dp(0.5f))
     }
-    /** Para tapar una tecla de la capa fija antes de dibujarla presionada (el fondo es negro) */
-    private val pinturaTapar = Paint().apply { color = tema.fondo or (0xFF shl 24) }
 
     // ---------- Capa fija (rendimiento) ----------
     /**
@@ -508,13 +509,15 @@ class KeyboardView(
         // Reflejo arriba de la tecla: le da el efecto translúcido de vidrio
         t.shaderBrillo = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.5f,
             tema.brillo, tema.brillo and 0x00FFFFFF, Shader.TileMode.CLAMP)
-        // Sombra interior abajo: el vidrio se ve con volumen, no plano
-        t.shaderFondo = LinearGradient(0f, r.top + r.height() * 0.45f, 0f, r.bottom,
-            tema.profundidad and 0x00FFFFFF, tema.profundidad, Shader.TileMode.CLAMP)
-        // Línea de luz en el filo de arriba: brilla al centro y se apaga hacia las esquinas
-        t.shaderReflejo = LinearGradient(r.left, 0f, r.right, 0f,
-            intArrayOf(tema.reflejo and 0x00FFFFFF, tema.reflejo, tema.reflejo and 0x00FFFFFF),
-            null, Shader.TileMode.CLAMP)
+        // Abajo, por dentro del vidrio, se asoma el color de la app (como luz que lo atraviesa)
+        t.shaderFondo = LinearGradient(0f, r.top + r.height() * 0.42f, 0f, r.bottom,
+            tema.tinteInterior and 0x00FFFFFF, tema.tinteInterior, Shader.TileMode.CLAMP)
+        // Filo de luz: fuerte en el borde de arriba, se apaga a la mitad y vuelve apenas abajo
+        // (la luz que rebota dentro del vidrio)
+        val luz = tema.filoLuz
+        t.shaderReflejo = LinearGradient(0f, r.top, 0f, r.bottom,
+            intArrayOf(luz, conAlfa(luz, 0.35f), luz and 0x00FFFFFF, luz and 0x00FFFFFF, conAlfa(luz, 0.18f)),
+            floatArrayOf(0f, 0.16f, 0.4f, 0.8f, 1f), Shader.TileMode.CLAMP)
     }
 
     /**
@@ -745,19 +748,33 @@ class KeyboardView(
     override fun onDraw(canvas: Canvas) {
         if (canvas.isHardwareAccelerated && width > 0 && height > 0) {
             asegurarCapa()
-            canvas.drawRenderNode(capaFija)
-            // Encima, solo las teclas que están cambiando (presionadas o terminando su animación)
-            if (!modoCursor) {
+            if (modoCursor) {
+                canvas.drawRenderNode(capaFija)
+            } else {
+                // Las teclas que están cambiando (presionadas o terminando su animación) se
+                // recortan de la capa fija: debajo se ve la lámina de vidrio, y encima se
+                // dibujan solo ellas. Nada se tapa con un color fijo.
                 val m = dp(1.5f)
                 val mAbajo = cantoTecla + dp(1f)
+                var cambiando = 0
+                canvas.save()
                 for (fila in filas) for (t in fila) {
                     if (t.tipo == Tipo.VACIO) continue
-                    val presionada = estaPresionada(t)
-                    val f = pulsos[t] ?: 0f
-                    if (!presionada && f <= 0f) continue
+                    if (!estaPresionada(t) && (pulsos[t] ?: 0f) <= 0f) continue
                     val r = t.rect
-                    canvas.drawRect(r.left - m, r.top - m, r.right + m, r.bottom + mAbajo, pinturaTapar)
-                    dibujar(canvas, t, presionada, f)
+                    canvas.clipOutRect(r.left - m, r.top - m, r.right + m, r.bottom + mAbajo)
+                    cambiando++
+                }
+                canvas.drawRenderNode(capaFija)
+                canvas.restore()
+                if (cambiando > 0) {
+                    for (fila in filas) for (t in fila) {
+                        if (t.tipo == Tipo.VACIO) continue
+                        val presionada = estaPresionada(t)
+                        val f = pulsos[t] ?: 0f
+                        if (!presionada && f <= 0f) continue
+                        dibujar(canvas, t, presionada, f)
+                    }
                 }
             }
         } else {
@@ -909,6 +926,12 @@ class KeyboardView(
                 pinturaBorde.shader = t.shaderBorde
                 c.drawPath(forma, pinturaBorde)
                 pinturaBorde.shader = null
+                // Filo de luz blanca del vidrio, encima del de color (más fino)
+                if (!sinFondo) {
+                    pinturaReflejo.shader = t.shaderReflejo
+                    c.drawPath(forma, pinturaReflejo)
+                    pinturaReflejo.shader = null
+                }
                 // Al presionar, el filo se enciende con el color de la app y se apaga suave
                 // (la línea de luz de arriba se quitó: se veía como un rayón en cada tecla)
                 val brilloFilo = if (presionada && t.tipo != Tipo.LETRA) 1f else f
@@ -939,7 +962,7 @@ class KeyboardView(
             Tipo.SHIFT -> Iconos.shift(c, cx, cy, tx(20f), pinturaIcono, shift > 0, shift == 2)
             // Como en iPhone: al presionar borrar, el ícono se rellena (la X queda calada)
             Tipo.BORRAR -> Iconos.borrar(c, cx, cy, tx(if (pad) 26f else 22f), pinturaIcono,
-                lleno = toque > 0.5f, hueco = Tema.sobreNegro(color) or (0xFF shl 24))
+                lleno = toque > 0.5f, hueco = Tema.sobre(color, tema.fondo) or (0xFF shl 24))
             Tipo.EMOJI -> {
                 // Carita de línea fina (como iOS): antes era una bola blanca rellena que
                 // llamaba más la atención que las letras

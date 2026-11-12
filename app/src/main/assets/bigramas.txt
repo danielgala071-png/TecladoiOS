@@ -963,3 +963,58 @@ más rato: te, nos, hablamos, llego
 más tarde: te, nos, hablamos, paso
 te llamo: en, más, mañana, luego, ahorita, apenas
 te escribo: en, más, mañana, luego, apenas
+# --- Más frases (v9): chat peruano, casa, familia y trabajo ---
+qué tal: tu, el, la, todo, estás, te, causa, amigo, amiga
+todo tranqui: por, y, aquí, acá
+tranqui: nomás, causa, no, ya, todo
+nomás: dime, avísame, llámame, causa, pe, ya, te, me
+ahí nomás: está, quedó, nos, te
+acá: estoy, en, nomás, tranqui, esperando, también
+aquí: estoy, en, nomás, esperando, tranquilo, tranquila, también
+estoy: bien, en, aquí, acá, llegando, saliendo, yendo, esperando, cansado, cansada, ocupado, ocupada, trabajando
+llegando: a, al, en, ya
+saliendo: de, del, ya, para, en
+ya voy: para, a, en, saliendo, llegando
+espérame: un, que, en, ahí, ahorita
+un ratito: más, nomás, y, que
+un toque: nomás, y, te, me, ya
+de una: causa, vamos, nomás, pe
+qué chévere: que, causa, está, todo
+qué roche: causa, que, me
+qué palta: que, causa, me
+la chamba: está, de, me, en
+en la: chamba, casa, oficina, mañana, tarde, noche, calle, combi
+la combi: está, me, se, de
+mi mamá: me, está, dice, dijo, quiere, te
+mi papá: me, está, dice, dijo, quiere, te
+mi hermano: me, está, dice, dijo, y
+mi hermana: me, está, dice, dijo, y
+mi amor: te, cómo, ya, buenos, buenas
+amor: te, ya, cómo, buenos, buenas, estoy, mañana
+te quiero: mucho, amor, mi, demasiado
+te extraño: mucho, amor, mi
+buenos días: a, amor, mi, señor, señora, estimado, estimada, con, que
+buenas tardes: a, señor, señora, estimado, estimada, con
+buenas noches: a, amor, mi, descansa, que
+descansa: amor, mi, bien, mucho
+cuídate: mucho, amor, mi
+feliz: cumpleaños, día, año, navidad, fin
+feliz cumpleaños: a, mi, amigo, amiga, te, que
+que tengas: un, una, buen, buena, lindo, linda
+un buen: día, fin, viaje, descanso
+una linda: tarde, noche, semana
+muchas gracias: por, a, de, señor, señora
+de nada: amigo, amiga, causa, para
+con mucho: gusto, cariño, amor
+estimado: señor, colega, ingeniero, licenciado, doctor
+estimada: señora, colega, ingeniera, licenciada, doctora
+cordial: saludo, saludos
+cordiales: saludos
+saludos: cordiales, a, desde, para
+por favor: me, te, confirmar, enviar, avisar, revisar, su, no
+quedo atento: a, para
+quedo atenta: a, para
+quedo a: la, su
+la espera: de, del
+su respuesta: para, a, y
+su atención: y, a
