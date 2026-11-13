@@ -58,6 +58,29 @@ jobs:
           fi
           rm -f frecuencias.txt
 
+      - name: Compilar los errores de fábrica (arranque instantáneo y casi sin memoria)
+        run: |
+          # El teclado usa errores.bin directo desde el APK; el .txt queda solo en el repositorio
+          python3 herramientas/compilar_errores.py app/src/main/assets/errores.txt app/src/main/assets/errores.bin
+          rm -f app/src/main/assets/errores.txt
+
+      - name: Armar los otros idiomas (inglés y portugués) para escribir mezclado
+        run: |
+          # Las 50 000 palabras más usadas de cada idioma (misma fuente que el español). Sin
+          # internet se quedan las listas base que vienen en el repositorio.
+          BASE=https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018
+          if curl -fsSL -o en.txt "$BASE/en/en_50k.txt"; then
+            python3 herramientas/armar_idioma.py en.txt app/src/main/assets/ingles.txt en 50000
+          else
+            echo "::warning::No se pudo descargar el inglés: se usa la lista base"
+          fi
+          if curl -fsSL -o pt.txt "$BASE/pt_br/pt_br_50k.txt"; then
+            python3 herramientas/armar_idioma.py pt.txt app/src/main/assets/portugues.txt pt 50000
+          else
+            echo "::warning::No se pudo descargar el portugués: se usa la lista base"
+          fi
+          rm -f en.txt pt.txt
+
       - name: Poner la llave de firma (desde los secretos de GitHub)
         env:
           FIRMA_BASE64: ${{ secrets.FIRMA_BASE64 }}
