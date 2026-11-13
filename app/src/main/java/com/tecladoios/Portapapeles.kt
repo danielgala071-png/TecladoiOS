@@ -1,82 +1,101 @@
 package com.tecladoios
 
-/**
- * Historial del portapapeles: lo último que copiaste (hasta [MAX_RECIENTES]) y lo que fijaste
- * (tu correo, tu número, tu dirección...), que se queda siempre. Todo vive solo en el celular.
- *
- * Es lógica pura (sin Android) para poder probarla sola. Se guarda como texto simple:
- * cada elemento es "f|hora|texto" (f = 1 si está fijado), separados por un carácter invisible.
- */
-class Portapapeles(texto: String?) {
+import java.io.File
 
-    class Elemento(val texto: String, val hora: Long, val fijado: Boolean)
+/**
+ * Historial del portapapeles: lo que copias queda una hora; lo que fijas, para siempre.
+ * Solo texto, guardado en la carpeta privada de la app.
+ */
+class Portapapeles(private val archivo: File) {
+
+    class Elemento(val texto: String, val ms: Long, var fijo: Boolean)
 
     private val lista = ArrayList<Elemento>()
 
-    init {
-        if (!texto.isNullOrEmpty()) {
-            for (crudo in texto.split(SEP_ELEMENTO)) {
-                val partes = crudo.split(SEP_CAMPO, limit = 3)
-                if (partes.size != 3 || partes[2].isEmpty()) continue
-                val hora = partes[1].toLongOrNull() ?: continue
-                lista.add(Elemento(partes[2], hora, partes[0] == "1"))
-            }
-        }
-    }
-
-    /** Fijados primero; después lo más reciente. Lo no fijado y viejo ya no aparece. */
-    fun elementos(ahora: Long = System.currentTimeMillis()): List<Elemento> =
-        lista.filter { it.fijado || ahora - it.hora <= VIGENCIA }
-            .sortedWith(compareByDescending<Elemento> { it.fijado }.thenByDescending { it.hora })
-
-    /** Copiaste [t]: va arriba (si ya estaba, se mueve sin perder si estaba fijado) */
-    fun agregar(t: String, ahora: Long = System.currentTimeMillis()): Boolean {
-        val limpio = limpiar(t)
-        if (limpio.isBlank() || limpio.length > MAX_LARGO) return false
-        val previo = lista.firstOrNull { it.texto == limpio }
-        lista.removeAll { it.texto == limpio }
-        lista.add(Elemento(limpio, ahora, previo?.fijado == true))
-        recortar(ahora)
-        return true
-    }
-
-    /** Fija o suelta [t]. Devuelve cómo quedó (true = fijado). */
-    fun alternarFijado(t: String): Boolean {
-        val i = lista.indexOfFirst { it.texto == t }
-        if (i < 0) return false
-        val e = lista[i]
-        val nuevo = !e.fijado
-        if (nuevo && lista.count { it.fijado } >= MAX_FIJADOS) return false
-        lista[i] = Elemento(e.texto, e.hora, nuevo)
-        return nuevo
-    }
-
-    fun quitar(t: String) {
-        lista.removeAll { it.texto == t }
-    }
-
-    private fun recortar(ahora: Long) {
-        lista.removeAll { !it.fijado && ahora - it.hora > VIGENCIA }
-        val sueltos = lista.filter { !it.fijado }.sortedByDescending { it.hora }
-        if (sueltos.size > MAX_RECIENTES) {
-            val sobran = sueltos.drop(MAX_RECIENTES).toSet()
-            lista.removeAll { it in sobran }
-        }
-    }
-
-    fun comoTexto(): String = lista.joinToString(SEP_ELEMENTO) {
-        (if (it.fijado) "1" else "0") + SEP_CAMPO + it.hora + SEP_CAMPO + it.texto
-    }
-
     companion object {
-        const val MAX_RECIENTES = 10
-        const val MAX_FIJADOS = 10
-        const val MAX_LARGO = 2000
-        /** Lo que no fijaste se va solo después de un día */
-        const val VIGENCIA = 24L * 60 * 60 * 1000
-        private const val SEP_ELEMENTO = "\u0002"
-        private const val SEP_CAMPO = "\u0001"
+        const val DURACION_MS = 60 * 60 * 1000L
+        const val MAX = 40
+    }
 
-        private fun limpiar(t: String) = t.replace(SEP_ELEMENTO, " ").replace(SEP_CAMPO, " ").trim()
+    @Synchronized
+    fun elementos(): List<Elemento> {
+        limpiar()
+        return lista.sortedWith(compareByDescending<Elemento> { it.fijo }.thenByDescending { it.ms })
+    }
+
+    @Synchronized
+    fun ultimo(): Elemento? { limpiar(); return lista.maxByOrNull { it.ms } }
+
+    @Synchronized
+    fun agregar(texto: String) {
+        val t = texto.take(5000)
+        if (t.isBlank()) return
+        val previo = lista.firstOrNull { it.texto == t }
+        val fijo = previo?.fijo ?: false
+        if (previo != null) lista.remove(previo)
+        lista.add(Elemento(t, System.currentTimeMillis(), fijo))
+        limpiar()
+        guardar()
+    }
+
+    @Synchronized
+    fun fijar(texto: String, si: Boolean) {
+        lista.firstOrNull { it.texto == texto }?.fijo = si
+        guardar()
+    }
+
+    @Synchronized
+    fun quitar(texto: String) {
+        lista.removeAll { it.texto == texto }
+        guardar()
+    }
+
+    @Synchronized
+    fun borrarNoFijos() {
+        lista.removeAll { !it.fijo }
+        guardar()
+    }
+
+    private fun limpiar() {
+        val ahora = System.currentTimeMillis()
+        lista.removeAll { !it.fijo && ahora - it.ms > DURACION_MS }
+        while (lista.count { !it.fijo } > MAX) lista.remove(lista.filter { !it.fijo }.minByOrNull { it.ms })
+    }
+
+    private fun guardar() {
+        try {
+            archivo.bufferedWriter(Charsets.UTF_8).use { w ->
+                for (e in lista) {
+                    w.write("${e.ms}\t${if (e.fijo) 1 else 0}\t")
+                    w.write(e.texto.replace("\\", "\\\\").replace("\n", "\\n").replace("\t", "\\t"))
+                    w.write("\n")
+                }
+            }
+        } catch (e: Throwable) { Registro.anotar("guardar portapapeles", e) }
+    }
+
+    @Synchronized
+    fun cargar() {
+        if (!archivo.exists()) return
+        try {
+            archivo.bufferedReader(Charsets.UTF_8).useLines { ls ->
+                for (l in ls) {
+                    val p = l.split('\t', limit = 3)
+                    if (p.size < 3) continue
+                    val sb = StringBuilder()
+                    var i = 0
+                    val s = p[2]
+                    while (i < s.length) {
+                        val ch = s[i]
+                        if (ch == '\\' && i + 1 < s.length) {
+                            when (s[i + 1]) { 'n' -> sb.append('\n'); 't' -> sb.append('\t'); else -> sb.append(s[i + 1]) }
+                            i += 2
+                        } else { sb.append(ch); i++ }
+                    }
+                    lista.add(Elemento(sb.toString(), p[0].toLongOrNull() ?: 0L, p[1] == "1"))
+                }
+            }
+            limpiar()
+        } catch (e: Throwable) { Registro.anotar("leer portapapeles", e) }
     }
 }

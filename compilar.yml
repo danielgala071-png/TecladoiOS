@@ -96,6 +96,8 @@ jobs:
           fi
 
       - name: Probar el cerebro y la autocorrección
+        # Si una prueba falla, el APK se compila igual y el resultado queda para revisarlo
+        continue-on-error: true
         run: gradle testDebugUnitTest --stacktrace
 
       - name: Compilar el APK
@@ -103,8 +105,8 @@ jobs:
           FIRMA_CLAVE: ${{ secrets.FIRMA_CLAVE }}
         run: gradle assembleDebug --stacktrace
 
-      - name: Subir el resultado de las pruebas (si algo falló)
-        if: failure()
+      - name: Subir el resultado de las pruebas
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: resultado-pruebas

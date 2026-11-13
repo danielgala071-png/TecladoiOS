@@ -3,7 +3,7 @@ package com.tecladoios
 import android.app.Application
 import android.util.Log
 
-/** Guarda el último error para poder verlo en la app y arreglarlo. */
+/** Arranque de la app: letra propia, registro de errores y el último cierre inesperado */
 class App : Application() {
     override fun onCreate() {
         super.onCreate()

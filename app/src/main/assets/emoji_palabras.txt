@@ -1,0 +1,132 @@
+# palabras, separadas por coma: emoji
+risa, jaja, jeje, jiji, lol, xd, muerto de risa, carcajada: 😂
+jajaja, jsjs: 🤣
+feliz, contento, contenta, alegre, alegria: 😊
+sonrisa, sonriendo: 😁
+amor, te amo, amo, enamorado, enamorada, corazon, querido, querida: ❤️
+te quiero, cariño, carino: 🥰
+beso, besos, muak, mua: 😘
+lindo, linda, hermoso, hermosa, precioso, preciosa, bello, bella: 😍
+triste, pena, tristeza, sad: 😢
+llorar, llorando, lloro: 😭
+enojado, enojada, molesto, molesta, colera, furioso, furiosa, rabia, cólera: 😡
+miedo, susto, asustado, asustada, terror: 😱
+sorpresa, sorprendido, sorprendida, wow, guau: 😮
+pensar, pensando, hmm, duda, dudas: 🤔
+cansado, cansada, sueño, sueno, dormir, durmiendo, zzz: 😴
+aburrido, aburrida: 😑
+nervioso, nerviosa: 😬
+verguenza, roche, vergüenza: 😳
+loco, loca, locura: 🤪
+genial, bacan, chevere, paja, buenazo, cool: 😎
+ok, okey, listo, dale, perfecto, excelente: 👍
+pesimo, horrible: 👎
+gracias, porfa, por favor, amen, ojala, rezar, bendiciones, bendicion: 🙏
+aplausos, bravo, felicidades, felicitaciones: 👏
+fuerza, animo: 💪
+hola, chau, chao, adios, bye: 👋
+fuego, caliente, calor, candela: 🔥
+frio, congelado: 🥶
+fiesta, juerga, tono, celebrar, celebracion: 🎉
+cumpleaños, cumple, torta, pastel: 🎂
+regalo, regalos, sorpresita: 🎁
+musica, cancion, cantar: 🎶
+baile, bailar, bailando: 💃
+estrella, estrellas, brillo: ✨
+sol, soleado, verano: ☀️
+luna, noche, buenas noches: 🌙
+lluvia, llueve, lloviendo: 🌧️
+flor, flores, rosa: 🌹
+planta, plantas: 🌱
+arbol: 🌳
+navidad: 🎄
+año nuevo, ano nuevo: 🎆
+perro, perrito, firulais, can: 🐶
+gato, gatito, michi, miau: 🐱
+pollito: 🐥
+pez, pescado: 🐟
+mono: 🐒
+caballo: 🐴
+vaca: 🐮
+cerdo, chancho: 🐷
+leon: 🦁
+oso: 🐻
+mariposa: 🦋
+cafe, cafecito, desayuno: ☕
+cerveza, chela, chelas, cervezas: 🍺
+vino: 🍷
+pisco, trago, tragos, coctel: 🍸
+comida, comer, hambre, almuerzo, almorzar, cena, cenar: 🍽️
+pizza: 🍕
+hamburguesa: 🍔
+pan: 🍞
+pollo, brasa: 🍗
+ceviche: 🐟
+helado, heladito: 🍦
+chocolate: 🍫
+fruta, manzana: 🍎
+platano: 🍌
+agua: 💧
+dinero, plata, sencillo, billete, lucas, soles, pago, pagar, sueldo: 💰
+trabajo, chamba, oficina, trabajar, chambear: 💼
+estudiar, estudio, tarea, tareas, examen, clase, clases, universidad, colegio: 📚
+libro, leer: 📖
+escribir, nota, notas: 📝
+idea: 💡
+casa, hogar, jato: 🏠
+carro, auto, coche: 🚗
+bus, combi, micro: 🚌
+taxi: 🚕
+moto: 🏍️
+bicicleta, bici: 🚲
+avion, viaje, viajar, vuelo: ✈️
+playa, mar: 🏖️
+montaña, montana, cerro: ⛰️
+peru, peruano, peruana: 🇵🇪
+futbol, pelota, partido, gol: ⚽
+juego, jugar, gamer: 🎮
+pelicula, peliculas, cine: 🎬
+foto, fotos, selfie: 📸
+telefono, celular, llamar, llamada: 📱
+computadora, laptop, compu: 💻
+mensaje, correo, email: ✉️
+apurate, alarma, despertador: ⏰
+calendario, fecha: 📅
+dormido: 😴
+enfermo, enferma, gripe, resfriado: 🤒
+doctor, medico, hospital: 🏥
+medicina, pastilla: 💊
+bebe, bebito, bebita: 👶
+mama, mami, madre: 👩
+papa, papi, padre: 👨
+familia: 👨‍👩‍👧
+amigo, amiga, broder, hermano, hermana: 🤝
+boda, matrimonio, casarse: 💍
+diablo, malvado: 😈
+angel: 😇
+fantasma, miedito: 👻
+calavera, muerto, muerta, me muero, morir: 💀
+caca: 💩
+cien, 100, perfecto: 💯
+ojo, ojos, mirar, viendo: 👀
+silencio, secreto, shh: 🤫
+abrazo, abrazos: 🤗
+guiño, guino: 😉
+llamas, alpaca: 🦙
+palta, paltazo, palteado, palteada: 😬
+yape, yapeo, yapear, yapéame, plin, plinear, transferencia: 📲
+chamba, chambear, chambeando, trabajo: 💼
+causa, pata, bro, broder, yunta, choche, compadre: 🤝
+bacán, bacan, chévere, chevere, mostro, bravazo, firme: 😎
+misio, misia: 🥲
+pisco, chilcano, sour: 🍸
+pollada, broaster, brasa: 🍗
+peña, jarana, juerga, tono: 🎉
+combi, micro, colectivo: 🚌
+mototaxi: 🛺
+tombo, tombos, comisaría: 🚓
+huevón, huevon, cojudo, carajo, csm, ctm: 😤
+trámite, trámites, expediente, oficio, informe, documento: 📄
+sunat, impuesto, impuestos: 🧾
+dni, pasaporte, brevete: 🪪
+reunión, sesión, comité: 🗓️

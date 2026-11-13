@@ -1018,3 +1018,224 @@ quedo a: la, su
 la espera: de, del
 su respuesta: para, a, y
 su atención: y, a
+# Del código anterior
+que: tal, es, no, te, haces, pasó, me, se, hay, bueno
+qué: tal, haces, pasó, es, bien, fue, hora, dices, onda, rico, roche, palta
+de: la, que, los, nada, verdad, mi, tu, las, una, ahí
+te: quiero, amo, extraño, llamo, aviso, escribo, digo, mando, paso, espero
+buenos: días
+buenas: noches, tardes
+muchas: gracias, veces, cosas
+muchos: saludos, besos, años
+por: favor, qué, eso, fin, la, el, mi, aquí, ahí, si
+estoy: bien, en, yendo, llegando, cansado, cansada, saliendo, trabajando, en casa, aquí
+hola: cómo, qué, amor, causa, buenos, buenas, bebé, mi
+como: estás, está, te, así, que, se, vas, va
+cómo: estás, está, te, así, que, se, vas, va
+nos: vemos, vamos, hablamos, vemos mañana, avisas
+a: la, las, qué, ver, mí, el, los, que, tu
+en: la, el, casa, serio, un, una, mi, la noche, el trabajo
+no: sé, te, hay, puedo, pasa, me, es, tengo, quiero, importa
+yo: también, te, no, estoy, sé, tampoco, voy, creo, quiero, igual
+ya: voy, llegué, está, pe, nos, salgo, estoy, sé, me, fue
+voy: a, en, para, saliendo, llegando, con
+vamos: a, al, a la, mañana, pe, juntos
+gracias: por, amor, causa, a ti, igualmente, de verdad
+todo: bien, el, lo, está, tranquilo, ok
+está: bien, en, con, muy, rico, aquí
+estás: bien, en, haciendo, ahí, con, ocupado, ocupada
+dónde: estás, está, vives, queda, nos
+donde: estás, está, vives, queda
+mi: amor, mamá, papá, casa, vida, hermano, hermana, celular, cielo, bebé
+tu: casa, mamá, papá, celular, número, hermano, vida
+tal: vez, cual
+lo: siento, que, sé, mismo, voy, hago, tengo, vi
+un: momento, rato, poco, ratito, día, beso, abrazo, toque
+una: vez, pregunta, cosa, foto, semana, hora
+me: avisas, gusta, voy, parece, encanta, dices, pasas, llamas, mandas, escribes
+le: dije, digo, voy, aviso, mando, pregunto
+se: me, te, fue, va, puede, lo, que, siente
+es: que, un, una, el, la, muy, mi, verdad
+muy: bien, bueno, buena, rico, lindo, linda, tarde, temprano, cansado
+bien: y tú, gracias, y, pe, ahí
+y: tú, tu, que, yo, el, la, me, ya, no, ahora
+pero: no, ya, si, que, bueno, igual
+para: que, ti, mí, el, la, mañana, ir, qué
+con: mi, el, la, los, mis, quién, tu, todo
+el: lunes, sábado, domingo, viernes, fin, otro, día, que
+la: verdad, próxima, otra, casa, noche, misma
+los: chicos, demás, quiero, amo
+tengo: que, una, un, sueño, hambre, frío, miedo, clases, que ir
+tienes: que, razón, algo, tiempo
+quiero: que, verte, ir, saber, comer, dormir, decirte
+puedo: ir, llamarte, pasar, hablar
+puedes: venir, llamarme, pasarme, mandarme, ayudarme
+hay: que, algo, clases, chamba, tiempo
+hoy: no, es, día, en la noche, voy, tengo
+mañana: te, nos, es, voy, temprano, en la mañana, hablamos
+ahorita: te, voy, no, vuelvo, salgo, llego, regreso
+después: te, de, hablamos, nos, vemos
+luego: te, hablamos, nos, vemos, regreso
+feliz: cumpleaños, día, año, navidad, fin
+hasta: mañana, luego, pronto, la, el
+dale: pe, ya, gracias, nos vemos
+ok: gracias, ya, perfecto, dale, nos vemos
+okey: gracias, ya, dale
+sí: claro, pe, ya, te, me, mañana
+claro: que, pe, ya, sí, no hay problema
+disculpa: la, por, que
+perdón: por, la, amor
+cuídate: mucho, bastante, amor
+besos: y, abrazos
+amor: te, mío, cómo, ya, mi
+causa: qué, ya, vamos, cómo
+bro: qué, ya, vamos, cómo
+oe: causa, qué, ya, bro, mano
+pucha: qué, ya, no, mare
+jaja: ya, no, sí, qué, pe
+jajaja: ya, no, sí, qué
+cuánto: es, cuesta, te, falta, tiempo
+cuándo: vienes, nos, es, llegas, sales
+quién: es, eres, te, sabe, fue
+cuál: es, te, era
+porque: no, te, me, yo, ya, es, estoy
+entonces: ya, nos, qué, vamos, mañana
+igual: te, no, ya, vamos
+también: te, me, yo, está
+tampoco: yo, me, te
+nada: más, que, pe, mal
+algo: así, más, para, de
+todos: los, ustedes, están
+espero: que, estés, verte
+ojalá: que, puedas, mañana
+avísame: cuando, si, para
+llámame: cuando, cuando puedas, mañana
+escríbeme: cuando, mañana
+pásame: la, el, tu, la foto, el número
+mándame: la, el, foto, tu, audio
+dime: qué, si, cuando, dónde
+sabes: qué, que, si, dónde
+sé: que, si, dónde
+creo: que, no, sí
+parece: que, bien, bonito
+ya llegué: a, amor
+estamos: en, yendo, llegando, bien
+están: en, bien, todos
+vas: a, al, a la, mañana
+va: a, al, a la, bien
+tenemos: que, clases, examen
+fue: muy, un, una, a, el
+era: un, una, el, la, para, que
+sale: el, la, a, mañana
+salgo: a, del, de, ahorita
+llego: a, en, tarde
+llegué: a, bien, tarde, a casa
+pasa: algo, que, nada, por
+pasó: algo, nada, con, que
+vengo: de, del, a, mañana
+ven: a, mañana, rápido, pe
+mira: lo, la, esto, eso
+oye: causa, amor, qué, una
+hola amor: cómo, buenos
+buen: día, provecho, viaje, fin
+mucho: gusto, trabajo, tiempo, más, floro, roche
+poco: a, más, tiempo
+más: tarde, o, rato, que, bien, de
+otra: vez, cosa
+otro: día, lado
+ahí: está, te, nos, vamos, voy
+aquí: estoy, en, te, está
+acá: en, estoy, te
+tan: bonito, linda, lindo, rico, temprano, tarde
+así: es, que, nomás, como
+gran: día, idea
+al: toque, final, menos, fin, rato, costado
+del: trabajo, colegio, día
+les: aviso, escribo, mando, digo
+nunca: más, te, me
+siempre: te, me, que
+primero: que, voy
+vale: la, pe, gracias
+chévere: pe, causa, gracias
+bacán: pe, causa
+listo: ya, pe, nos vemos
+habla: causa, bro, mano, pe, ps
+firme: pe, causa, nomás, que
+ponte: mosca, las, pilas, trucha
+asu: mare, qué, causa
+mare: qué, mía
+manyas: causa, pe, que
+tremendo: roche, floro, jale, tono
+full: chamba, roche, tráfico, gente
+pura: paja, floro, vida
+puro: floro, cuento, roche
+nomás: pe, causa, ya, es
+yara: con, que, causa
+ni: hablar, modo, idea, siquiera
+sin: roche, palta, problema, miedo
+yapéame: porfa, cuando, la, el, ahorita
+yapea: al, a, nomás, la
+yapeé: a, ya, la, el
+plinéame: porfa, cuando, ahorita
+cuánta: plata, gente
+estuvo: bien, bacán, buenazo, rico, chévere, mal
+estaba: en, durmiendo, trabajando, viendo, pensando
+tenía: que, un, una, razón
+puede: ser, que, ir, venir
+podemos: ir, vernos, hablar, salir, quedar
+quieres: ir, que, algo, salir, comer, venir
+vienes: a, mañana, hoy, o
+vengan: a, mañana, temprano
+salimos: a, mañana, hoy, el
+vemos: mañana, luego, el, en
+hablamos: mañana, luego, más tarde, después
+avisa: cuando, si, para
+espérame: un, ahí, en, que
+ayúdame: con, a, porfa
+manda: la, el, foto, audio
+llama: a, cuando, me
+escribe: cuando, me
+ojo: que, con, pe
+normal: nomás, pe, no, ya
+seguro: que, pe, sí, no
+obvio: que, sí, no, pe
+exacto: eso, pe, así
+demasiado: bueno, rico, tarde, temprano, caro
+bastante: bien, tarde, tiempo, gente
+súper: bien, bueno, rico, lindo, linda, tarde, temprano
+recién: llego, estoy, salgo, me, termino, acabo
+acabo: de, que
+acaba: de
+ando: en, con, bien, cansado, cansada
+andas: en, con, bien, haciendo
+necesito: que, un, una, tu, hablar, ayuda
+felicidades: por, amor, causa
+bendiciones: para, a, amor
+saludos: a, para, cordiales
+atentamente: el, la
+estimado: señor, cliente
+estimada: señora, clienta
+hace: un, una, rato, frío, calor, tiempo, días
+hice: un, una, la, el
+hizo: un, una, la, el
+dijo: que, a, la
+dije: que, a
+sabías: que
+cualquier: cosa, día, momento
+cada: vez, día, uno
+ningún: problema
+fin: de
+pase: lo, a, por
+pasé: por, a, la
+pasaste: la, el, por
+entré: a, al, en
+muchísimas: gracias
+jajajaja: ya, no, sí, qué
+xd: ya, no
+lunes: a, en, por
+martes: a, en
+miércoles: a, en
+jueves: a, en
+viernes: a, en, por
+sábado: a, en, por
+domingo: a, en, por
