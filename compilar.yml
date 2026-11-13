@@ -13,6 +13,14 @@ jobs:
       - name: Descargar el código
         uses: actions/checkout@v4
 
+      - name: Quitar archivos del teclado anterior
+        run: |
+          # Archivos de la versión vieja que ya no existen en la nueva (si quedaron en el repo)
+          cd app/src/main/java/com/tecladoios
+          rm -fv Claves.kt EmojiPalabras.kt EmojiPanel.kt Formas.kt Idiomas.kt KeyPreview.kt \
+            KeyboardCorners.kt Medidas.kt ModeloToque.kt Movimiento.kt Panel.kt SuggestionBar.kt Variantes.kt
+          rm -fv ../../../../test/java/com/tecladoios/PortapapelesYEmojisTest.kt
+
       - name: Instalar Java 17
         uses: actions/setup-java@v4
         with:
