@@ -163,7 +163,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         val pe = PanelEmoji(c).apply { oyente = this@TecladoService; visibility = View.GONE }
         val ed = PanelEdicion(c).apply { oyente = this@TecladoService; visibility = View.GONE; alResponder = { respuesta.tocar(it) } }
         val pc = PanelPortapapeles(c).apply { oyente = this@TecladoService; visibility = View.GONE; alResponder = { respuesta.tocar(it) } }
-        val cuerpo = FrameLayout(c).apply {
+        val cuerpo = Cuerpo(c).apply {
             addView(kb, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             for (v in listOf(pe, ed, pc)) addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
@@ -1115,6 +1115,22 @@ class Marco(c: Context) : FrameLayout(c) {
 
     init { setWillNotDraw(false) }
 
+    /**
+     * El alto lo pone solo la barra con el teclado (el primer hijo). La capa de globos se ajusta
+     * a ese mismo tamaño: si se midiera sola, ocuparía toda la pantalla.
+     */
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val contenido = getChildAt(0) ?: return super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        val w = MeasureSpec.getSize(widthMeasureSpec)
+        contenido.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+        val h = contenido.measuredHeight + paddingTop + paddingBottom
+        for (i in 1 until childCount) {
+            getChildAt(i).measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(contenido.measuredHeight, MeasureSpec.EXACTLY))
+        }
+        setMeasuredDimension(w, h)
+    }
+
     override fun onDraw(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
         val rad = 16 * d
@@ -1128,6 +1144,22 @@ class Marco(c: Context) : FrameLayout(c) {
             borde.color = tema.bordePanel; borde.strokeWidth = 1.5f * d
             c.drawPath(forma, borde)
         }
+    }
+}
+
+/** Donde van el teclado y los paneles: todos con el alto exacto del teclado */
+class Cuerpo(c: Context) : FrameLayout(c) {
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val teclado = getChildAt(0) ?: return super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        val w = MeasureSpec.getSize(widthMeasureSpec)
+        val exactoW = MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY)
+        teclado.measure(exactoW, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+        val h = teclado.measuredHeight
+        for (i in 1 until childCount) {
+            val v = getChildAt(i)
+            if (v.visibility != View.GONE) v.measure(exactoW, MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
+        }
+        setMeasuredDimension(w, h)
     }
 }
 
