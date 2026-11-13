@@ -55,6 +55,20 @@ object Cerebro {
     } catch (e: Throwable) { Registro.anotar("leer $archivo", e); emptyList() }
 
     private fun armar(c: Context): Motor {
+        // Rápido: el diccionario ya armado de la vez anterior (mientras no se actualice la app)
+        val marca = try { c.packageManager.getPackageInfo(c.packageName, 0).lastUpdateTime } catch (_: Throwable) { 0L }
+        val guardado = File(c.filesDir, "diccionario.bin")
+        val dic = Diccionario.leer(guardado, marca) ?: armarDiccionario(c).also { d ->
+            hilo.execute { try { d.guardar(guardado, marca) } catch (e: Throwable) { Registro.anotar("guardar diccionario", e) } }
+        }
+        val big = HashMap<String, Array<String>>(4096)
+        try { c.assets.open("bigramas.txt").bufferedReader().useLines { Motor.leerBigramas(it, big) } } catch (e: Throwable) { Registro.anotar("bigramas", e) }
+        val aprendido = Aprendizaje(File(c.filesDir, "aprendido.tsv"))
+        aprendido.cargar()
+        return Motor(dic, Errores.cargar(c), aprendido, big, geo)
+    }
+
+    private fun armarDiccionario(c: Context): Diccionario {
         val frecuentes = lineas(c, "frecuentes.txt")
         val peru = lineas(c, "peruano.txt")
         val corte = peru.indexOf("@medio")
@@ -73,12 +87,7 @@ object Cerebro {
         if (!conMedio) principal.addAll(medio)
         val ingles = lineas(c, "ingles.txt")
         val portugues = lineas(c, "portugues.txt")
-        val dic = Diccionario.armar(principal, listOf(ingles to 1.4f, portugues to 1.9f))
-        val big = HashMap<String, Array<String>>(4096)
-        try { c.assets.open("bigramas.txt").bufferedReader().useLines { Motor.leerBigramas(it, big) } } catch (e: Throwable) { Registro.anotar("bigramas", e) }
-        val aprendido = Aprendizaje(File(c.filesDir, "aprendido.tsv"))
-        aprendido.cargar()
-        return Motor(dic, Errores.cargar(c), aprendido, big, geo)
+        return Diccionario.armar(principal, listOf(ingles to 1.4f, portugues to 1.9f))
     }
 
     fun cargarContactos(c: Context) {

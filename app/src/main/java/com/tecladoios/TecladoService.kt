@@ -299,7 +299,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         tema = t
         marco?.tema = t; teclado?.tema = t; barra?.tema = t; capa?.tema = t
         panelEmoji?.tema = t; panelEdicion?.tema = t; panelCopiado?.tema = t; ajusteTamano?.tema = t
-        marco?.conBorde = cfg.bordesApp
+        marco?.conBorde = false   // negro puro: sin filo de color
     }
 
     // ---------- Ayudas de texto ----------
@@ -929,6 +929,15 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         teclado?.requestLayout()
     }
 
+    override fun menuTeclado(opcion: Int) {
+        when (opcion) {
+            0 -> prefs.edit().putInt(Ajustes.UNA_MANO, 1).apply()
+            1 -> prefs.edit().putInt(Ajustes.UNA_MANO, 0).apply()
+            2 -> prefs.edit().putInt(Ajustes.UNA_MANO, 2).apply()
+            3 -> abrirTamano()
+        }
+    }
+
     override fun unaMano(accion: Int) {
         if (accion == 0) prefs.edit().putInt(Ajustes.UNA_MANO, 0).apply()
         else prefs.edit().putInt(Ajustes.UNA_MANO, if (cfg.unaMano == 1) 2 else 1).apply()
@@ -1144,7 +1153,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 /** Fondo del teclado: negro, esquinas de arriba curvas y filo del color de la app */
 class Marco(c: Context) : FrameLayout(c) {
     var tema = Tema(Tema.AZUL); set(v) { field = v; invalidate() }
-    var conBorde = true; set(v) { field = v; invalidate() }
+    var conBorde = false; set(v) { field = v; invalidate() }
     private val d = resources.displayMetrics.density
     private val fondo = Paint(Paint.ANTI_ALIAS_FLAG)
     private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
@@ -1156,14 +1165,14 @@ class Marco(c: Context) : FrameLayout(c) {
     /** Espacio extra abajo que elige el usuario al ajustar el tamaño (en px) */
     var margenAbajo = 0; set(v) { field = v; aplicarRelleno() }
 
-    private val lado = (4 * d).toInt()
+    private val lado = 0
 
     init {
         setWillNotDraw(false)
         aplicarRelleno()
     }
 
-    private fun aplicarRelleno() = setPadding(lado, (4 * d).toInt(), lado, abajoSistema + margenAbajo)
+    private fun aplicarRelleno() = setPadding(lado, (2 * d).toInt(), lado, abajoSistema + margenAbajo)
 
     /**
      * El alto lo pone solo la barra con el teclado (el primer hijo). Las demás capas (globos,
@@ -1183,21 +1192,9 @@ class Marco(c: Context) : FrameLayout(c) {
         setMeasuredDimension(w, h)
     }
 
-    /** Tarjeta con esquinas grandes (abajo siguen la curva de la pantalla) y leve degradado */
+    /** Negro puro de borde a borde, sin líneas ni esquinas: AMOLED total */
     override fun onDraw(c: Canvas) {
-        val w = width.toFloat(); val h = height.toFloat()
-        val arriba = 26 * d
-        val abajo = 40 * d
-        val med = 0.6f * d
-        forma.reset()
-        r.set(med, med, w - med, h - med)
-        forma.addRoundRect(r, floatArrayOf(arriba, arriba, arriba, arriba, abajo, abajo, abajo, abajo), Path.Direction.CW)
-        fondo.shader = android.graphics.LinearGradient(0f, 0f, 0f, h, tema.fondo, tema.fondoAbajo, android.graphics.Shader.TileMode.CLAMP)
-        c.drawPath(forma, fondo)
-        if (conBorde) {
-            borde.color = Tema.mezclar(tema.bordePanel, 0x00000000, 0.75f); borde.strokeWidth = 1.2f * d
-            c.drawPath(forma, borde)
-        }
+        c.drawColor(tema.fondo)
     }
 }
 

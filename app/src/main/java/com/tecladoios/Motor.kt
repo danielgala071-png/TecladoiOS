@@ -1,6 +1,5 @@
 package com.tecladoios
 
-import kotlin.math.hypot
 import kotlin.math.ln
 
 /**
@@ -25,7 +24,7 @@ class Geometria {
         if (i < 0 || !hay[i]) return 3f
         val dx = (px - x[i]) / ancho
         val dy = (py - y[i]) / alto * 0.85f
-        return hypot(dx, dy)
+        return kotlin.math.sqrt(dx * dx + dy * dy)
     }
 
     fun centroX(ch: Char) = Texto.indice(ch).let { if (it >= 0) x[it] else Float.NaN }
@@ -72,7 +71,20 @@ class Motor(
     private var ty = FloatArray(0)
     private var conToque = BooleanArray(0)
 
+    /** Costos ya calculados: [posición * 27 + letra] (se arma una vez por palabra, no en cada nodo) */
+    private var tabla = FloatArray(0)
+
+    private fun armarTabla(n: Int) {
+        if (tabla.size < n * 27) tabla = FloatArray(maxOf(n * 27, 27 * 40))
+        for (i in 0 until n) for (k in 0 until 27) tabla[i * 27 + k] = costoCalculado(i, LETRAS[k])
+    }
+
     private fun costoCambio(i: Int, c: Char): Float {
+        val k = Texto.indice(c)
+        return if (k >= 0) tabla[i * 27 + k] else costoCalculado(i, c)
+    }
+
+    private fun costoCalculado(i: Int, c: Char): Float {
         val e = entrada[i]
         if (e == c) {
             // La letra escrita: casi gratis (un poco más si el toque fue muy al borde)
@@ -112,6 +124,7 @@ class Motor(
         if (xs != null && ys != null) for (i in 0 until n) if (i < xs.size && !xs[i].isNaN()) {
             tx[i] = xs[i]; ty[i] = ys[i]; conToque[i] = true
         }
+        armarTabla(n)
         val res = HashMap<Int, Cand>(64)
         val tope = presupuesto(n)
         val f0 = filas[0]
@@ -173,17 +186,13 @@ class Motor(
 
     // ---------- Puntaje ----------
 
-    private fun bonoContexto(palabra: String, contexto: List<String>): Float {
-        if (contexto.isEmpty()) return 0f
-        var bono = 0f
-        val ant = Texto.normal(contexto.last())
-        val pred = aprendido.predecir(contexto)
-        for ((w, v) in pred) if (w == palabra) { bono += 0.6f + 0.25f * ln(1f + v); break }
-        bigramas[ant]?.let { lista ->
-            val i = lista.indexOf(palabra)
-            if (i >= 0) bono += 0.9f - i * 0.06f
-        }
-        return bono
+    /** Bono de cada palabra que suele ir después de [contexto] (se calcula una vez por palabra escrita) */
+    private fun mapaContexto(contexto: List<String>): Map<String, Float> {
+        if (contexto.isEmpty()) return emptyMap()
+        val m = HashMap<String, Float>()
+        for ((w, v) in aprendido.predecir(contexto)) m[w] = 0.6f + 0.25f * ln(1f + v)
+        bigramas[Texto.normal(contexto.last())]?.forEachIndexed { i, w -> m[w] = (m[w] ?: 0f) + 0.9f - i * 0.06f }
+        return m
     }
 
     private fun bonoUso(clave: String): Float {
@@ -209,6 +218,7 @@ class Motor(
         val contacto = contactos[clave]
         val valida = formasExactas.isNotEmpty() || propia != null || contacto != null
 
+        val ctxBono = mapaContexto(contexto)
         val lista = ArrayList<Opcion>(12)
         val vistos = HashSet<String>()
         fun meter(t: String, p: Float, corr: Boolean, comp: Boolean) {
@@ -221,7 +231,7 @@ class Motor(
             for (c in cands.values) {
                 val w = dic.palabras[c.id]
                 val k = dic.claves[c.id]
-                val p = puntaje(c.costo, dic.penal(c.id), bonoContexto(w.lowercase(), contexto), bonoUso(k))
+                val p = puntaje(c.costo, dic.penal(c.id), (ctxBono[w.lowercase()] ?: 0f), bonoUso(k))
                 meter(w, p, k != clave, c.completa)
             }
             // Las más usadas que empiezan exactamente así ("ho" → hola, hoy, hora)
@@ -231,7 +241,7 @@ class Motor(
                     val k = dic.claves[id]
                     if (k != clave) {
                         val costo = 0.55f + 0.08f * (k.length - clave.length)
-                        meter(dic.palabras[id], puntaje(costo, dic.penal(id), bonoContexto(dic.palabras[id].lowercase(), contexto), bonoUso(k)), false, true)
+                        meter(dic.palabras[id], puntaje(costo, dic.penal(id), (ctxBono[dic.palabras[id].lowercase()] ?: 0f), bonoUso(k)), false, true)
                     }
                 }
             }
@@ -239,10 +249,12 @@ class Motor(
             val propias = synchronized(aprendido) { aprendido.propias.values.filter { it.veces >= 2 || it.fija }.toList() }
             for (pp in propias) {
                 val k = Texto.normal(pp.texto)
+                if (!candidataRapida(clave, k)) continue
                 val costo = parecido(clave, k, xs, ys) ?: continue
-                meter(pp.texto, puntaje(costo, 1.5f, bonoContexto(pp.texto, contexto), 0.35f * ln(1f + pp.veces)), k != clave, k.length > clave.length && k.startsWith(clave))
+                meter(pp.texto, puntaje(costo, 1.5f, (ctxBono[pp.texto.lowercase()] ?: 0f), 0.35f * ln(1f + pp.veces)), k != clave, k.length > clave.length && k.startsWith(clave))
             }
             for ((k, nombre) in contactos) {
+                if (!candidataRapida(clave, k)) continue
                 val costo = parecido(clave, k, xs, ys) ?: continue
                 meter(nombre, puntaje(costo, 2.0f, 0f, 0f), k != clave, k.length > clave.length)
             }
@@ -285,6 +297,12 @@ class Motor(
         return Propuesta(lista.take(8), auto, valida)
     }
 
+    /** Descarte barato antes de la comparación completa: largo parecido y mismo comienzo */
+    private fun candidataRapida(clave: String, k: String): Boolean {
+        if (k.isEmpty() || kotlin.math.abs(k.length - clave.length) > 3 && !(k.length > clave.length && k.startsWith(clave))) return false
+        return k[0] == clave[0] || (k.length > 1 && clave.length > 1 && (k[1] == clave[1] || k[0] == clave[1]))
+    }
+
     private fun costoDe(palabra: String, clave: String, xs: FloatArray?, ys: FloatArray?): Float =
         parecido(clave, Texto.normal(palabra), xs, ys) ?: 9f
 
@@ -296,6 +314,7 @@ class Motor(
         entrada = clave.toCharArray(0, n)
         tx = FloatArray(n); ty = FloatArray(n); conToque = BooleanArray(n)
         if (xs != null && ys != null) for (i in 0 until n) if (i < xs.size && !xs[i].isNaN()) { tx[i] = xs[i]; ty[i] = ys[i]; conToque[i] = true }
+        armarTabla(n)
         val m = objetivo.length
         var prev2: FloatArray? = null
         var prev = FloatArray(n + 1)
@@ -358,6 +377,9 @@ class Motor(
         return orden.map { if (inicioDeFrase) Texto.capitalizar(it) else it }.distinct().take(3)
     }
 
+    /** Igual que [confianzaDe] pero con el número de la palabra (más rápido al deslizar) */
+    fun confianzaId(id: Int): Float = dic.penal(id) - bonoUso(dic.claves[id])
+
     /** Palabras para deslizar: lo usa el decodificador de gestos */
     fun confianzaDe(palabra: String): Float {
         val id = dic.id(palabra)
@@ -366,6 +388,7 @@ class Motor(
     }
 
     companion object {
+        private val LETRAS = CharArray(27) { i -> if (i < 14) 'a' + i else if (i == 14) 'ñ' else 'o' + (i - 15) }
         val INICIO = listOf("hola", "ya", "gracias", "buenos", "sí", "no", "estimado", "ok", "qué", "te", "yo", "bueno")
         val GENERALES = listOf("de", "que", "y", "la", "el", "en", "a", "no", "con", "para", "por", "me")
 

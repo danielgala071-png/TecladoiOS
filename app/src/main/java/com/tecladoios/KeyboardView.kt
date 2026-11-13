@@ -3,6 +3,7 @@ package com.tecladoios
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -10,7 +11,7 @@ import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import kotlin.math.abs
-import kotlin.math.hypot
+import kotlin.math.sqrt
 
 /**
  * El teclado en sí: dibuja las teclas con el aspecto del iPhone y maneja los toques.
@@ -35,6 +36,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         fun deslizado(xs: FloatArray, ys: FloatArray, n: Int)
         fun volverLetras()
         fun unaMano(accion: Int)
+        /** Menú de tamaño (mantener la tecla de emojis): 0 izquierda, 1 centro, 2 derecha, 3 ajustar tamaño */
+        fun menuTeclado(opcion: Int)
         fun respuesta(tipo: Respuesta.Tipo)
     }
 
@@ -180,7 +183,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             val dv = desvio[c.tecla.texto[0]]
             val cx = c.dibujo.centerX() + (dv?.get(0) ?: 0f)
             val cy = c.dibujo.centerY() + (dv?.get(1) ?: 0f)
-            val dd = hypot(x - cx, (y - cy) * 0.6f)
+            val ex = x - cx; val ey = (y - cy) * 0.6f
+            val dd = ex * ex + ey * ey
             if (dd < md) { md = dd; mejor = c }
         }
         return mejor
@@ -201,6 +205,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         var acumX = 0f; var acumY = 0f
         var borrados = 0
         var palabras = 0
+        /** Opciones del menú de tamaño, si este dedo lo abrió */
+        var menu: List<String>? = null
         val larga = Runnable { pulsacionLarga(this) }
         val repetir = object : Runnable {
             override fun run() {
@@ -220,19 +226,22 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     private val dedos = HashMap<Int, Dedo>()
+    private val MENU_TAMANO = listOf("⇤", "↔", "⇥", "↕")
     private var presionadas = HashSet<Colocada>()
     private var modoTrackpad = false; set(v) { if (field != v) { field = v; ensuciar() } }
 
+    // Arreglos reutilizados (sin crear objetos nuevos en cada movimiento del dedo)
+    private val posA = IntArray(2)
+    private val posB = IntArray(2)
+
     private fun desplazamientoCapa(): Float {
-        val a = IntArray(2); val b = IntArray(2)
-        getLocationInWindow(a); capa.getLocationInWindow(b)
-        return (a[1] - b[1]).toFloat()
+        getLocationInWindow(posA); capa.getLocationInWindow(posB)
+        return (posA[1] - posB[1]).toFloat()
     }
 
     private fun desplazamientoCapaX(): Float {
-        val a = IntArray(2); val b = IntArray(2)
-        getLocationInWindow(a); capa.getLocationInWindow(b)
-        return (a[0] - b[0]).toFloat()
+        getLocationInWindow(posA); capa.getLocationInWindow(posB)
+        return (posA[0] - posB[0]).toFloat()
     }
 
     private fun rectEnCapa(r: RectF): RectF {
@@ -322,6 +331,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 presionadas.clear()
             }
             K.ESPACIO -> postDelayed(dd.larga, retardo + 180L)
+            K.EMOJI -> postDelayed(dd.larga, retardo)
         }
         invalidate()
     }
@@ -335,7 +345,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 when (t.tipo) {
                     K.TEXTO -> {
                         if (t.esLetra) dd.punto(x, y)
-                        val lejos = hypot(dx, dy) > anchoTecla * 0.75f
+                        val lejos = dx * dx + dy * dy > anchoTecla * anchoTecla * 0.5625f
                         if (lejos && t.esLetra && cuantos == 1 && cfg?.deslizar != false && distribucion.nombre == "abc") {
                             dd.modo = Modo.DESLIZAR
                             removeCallbacks(dd.larga)
@@ -397,7 +407,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             }
             Modo.CAMBIO_123 -> {
                 val c = buscar(x, y)
-                if (c != dd.tecla && hypot(dx, dy) > anchoTecla * 0.4f) {
+                if (c != dd.tecla && dx * dx + dy * dy > anchoTecla * anchoTecla * 0.16f) {
                     dd.tecla?.let { presionadas.remove(it) }
                     dd.tecla = c
                     if (c != null && c.tecla.tipo == K.TEXTO) { presionadas.add(c); mostrarGlobo(c) } else capa.ocultarGlobo()
@@ -418,6 +428,15 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 capa.ocultarGlobo()
                 val lista = if (shift > 0) t.variantes.map { if (it.length == 1) it.uppercase() else it } else t.variantes
                 capa.mostrarOpciones(rectEnCapa(c.dibujo), lista, 0)
+                oyente?.respuesta(Respuesta.Tipo.FUNCION)
+            }
+            K.EMOJI -> {
+                // Como en el iPhone: teclado a la izquierda, al centro o a la derecha (y ajustar tamaño)
+                val lista = MENU_TAMANO
+                dd.menu = lista
+                dd.modo = Modo.OPCIONES
+                capa.ocultarGlobo()
+                capa.mostrarOpciones(rectEnCapa(c.dibujo), lista, when (unaMano) { 1 -> 0; 2 -> 2; else -> 1 })
                 oyente?.respuesta(Respuesta.Tipo.FUNCION)
             }
             K.ESPACIO -> {
@@ -458,7 +477,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             Modo.OPCIONES -> {
                 val elegida = capa.elegida()
                 capa.ocultarOpciones()
-                if (elegida != null) oyente?.tecla(elegida, dd.x0, dd.y0, false)
+                val menu = dd.menu
+                if (menu != null) { if (elegida != null) oyente?.menuTeclado(menu.indexOf(elegida)) }
+                else if (elegida != null) oyente?.tecla(elegida, dd.x0, dd.y0, false)
             }
             Modo.BORRAR_SEL -> oyente?.terminarSeleccionBorrar(dd.palabras > 0)
             Modo.CAMBIO_123 -> if (c != null && c.tecla.tipo == K.TEXTO) {
@@ -522,7 +543,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         borde.strokeWidth = dp(0.6f)
         borde.color = tema.bordeTecla
         brillo.strokeWidth = dp(1f)
-        sombra.color = 0x40000000
+        sombra.color = 0xFF000000.toInt()
         letra.textSize = altoFila * 0.46f
         chica.textSize = minOf(altoFila * 0.29f, dp(16f))
         pista.textSize = altoFila * 0.19f
@@ -545,13 +566,13 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val t = k.tecla
         val r = k.dibujo
         // Esquinas bien redondeadas, como las teclas de vidrio
-        val radio = minOf(dp(12.5f), r.height() * 0.27f)
+        val radio = minOf(dp(7.5f), r.height() * 0.17f)
         if (!apretada) c.drawRoundRect(r.left, r.top + dp(0.7f), r.right, r.bottom + dp(0.7f), radio, radio, sombra)
         relleno.color = colorTecla(t, apretada)
         relleno.alpha = (relleno.alpha * fondo).toInt().coerceIn(0, 255)
         c.drawRoundRect(r, radio, radio, relleno)
         // Reflejo fino en el borde de arriba (efecto vidrio)
-        if (!(t.tipo == K.SHIFT && shift > 0) && !(t.tipo == K.INTRO && introDestacado)) {
+        if (Color.alpha(tema.brillo) > 0 && !(t.tipo == K.SHIFT && shift > 0) && !(t.tipo == K.INTRO && introDestacado)) {
             brillo.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.5f,
                 tema.brillo, 0x00FFFFFF, android.graphics.Shader.TileMode.CLAMP)
             brillo.alpha = (255 * fondo).toInt().coerceIn(0, 255)

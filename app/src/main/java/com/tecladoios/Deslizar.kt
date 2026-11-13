@@ -1,6 +1,5 @@
 package com.tecladoios
 
-import kotlin.math.hypot
 import kotlin.math.sqrt
 
 /**
@@ -38,7 +37,7 @@ class Deslizar(private val motor: Motor) {
     private fun remuestrear(xs: FloatArray, ys: FloatArray, cuantos: Int, n: Int): FloatArray {
         val out = FloatArray(n * 2)
         var largo = 0f
-        for (i in 1 until cuantos) largo += hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1])
+        for (i in 1 until cuantos) { val dx = xs[i] - xs[i - 1]; val dy = ys[i] - ys[i - 1]; largo += sqrt(dx * dx + dy * dy) }
         if (largo <= 0f || cuantos < 2) {
             for (i in 0 until n) { out[2 * i] = xs[0]; out[2 * i + 1] = ys[0] }
             return out
@@ -51,7 +50,7 @@ class Deslizar(private val motor: Motor) {
         var i = 1
         while (i < cuantos && k < n) {
             val dx = xs[i] - px; val dy = ys[i] - py
-            val d = hypot(dx, dy)
+            val d = sqrt(dx * dx + dy * dy)
             if (acum + d >= paso && d > 0f) {
                 val t = (paso - acum) / d
                 px += dx * t; py += dy * t
@@ -70,7 +69,11 @@ class Deslizar(private val motor: Motor) {
 
     private fun letrasCerca(x: Float, y: Float, radio: Float): List<Int> {
         val r = ArrayList<Int>(4)
-        for (i in 0 until 27) if (geo.hay[i] && hypot((x - geo.x[i]) / geo.ancho, (y - geo.y[i]) / geo.alto) <= radio) r.add(i)
+        for (i in 0 until 27) {
+            if (!geo.hay[i]) continue
+            val dx = (x - geo.x[i]) / geo.ancho; val dy = (y - geo.y[i]) / geo.alto
+            if (dx * dx + dy * dy <= radio * radio) r.add(i)
+        }
         return r
     }
 
@@ -87,6 +90,8 @@ class Deslizar(private val motor: Motor) {
         if (inicios.isEmpty() || finales.isEmpty()) return emptyList()
 
         val mejores = ArrayList<Pair<String, Float>>(32)
+        val invAncho = 1f / geo.ancho
+        val invAlto = 1f / geo.alto
         val ideal = FloatArray(N * 2)
         val cx = FloatArray(64); val cy = FloatArray(64)
 
@@ -105,8 +110,9 @@ class Deslizar(private val motor: Motor) {
             for (j in 0 until m) {
                 var ok = false
                 while (p < 96) {
-                    val d = hypot((denso[2 * p] - cx[j]) / geo.ancho, (denso[2 * p + 1] - cy[j]) / geo.alto)
-                    if (d <= 0.95f) { ok = true; break }
+                    val dx = (denso[2 * p] - cx[j]) * invAncho
+                    val dy = (denso[2 * p + 1] - cy[j]) * invAlto
+                    if (dx * dx + dy * dy <= 0.9025f) { ok = true; break }
                     p++
                 }
                 if (!ok) return
@@ -126,7 +132,7 @@ class Deslizar(private val motor: Motor) {
         }
 
         for (a in inicios) for (b in finales) for (id in grupos[a * 27 + b]) {
-            evaluar(dic.claves[id], dic.palabras[id], motor.confianzaDe(dic.palabras[id]))
+            evaluar(dic.claves[id], dic.palabras[id], motor.confianzaId(id))
         }
         // Tus palabras propias también se pueden deslizar
         val propias = synchronized(motor.aprendido) { motor.aprendido.propias.values.filter { it.veces >= 2 || it.fija }.toList() }

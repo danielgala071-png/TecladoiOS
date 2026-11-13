@@ -73,7 +73,60 @@ class Diccionario private constructor(
         }
     }
 
+    /**
+     * Guarda el diccionario ya armado en un archivo binario: la próxima vez se carga en una
+     * fracción del tiempo (arranque casi instantáneo). [marca] identifica la versión del APK.
+     */
+    fun guardar(archivo: java.io.File, marca: Long) {
+        val tmp = java.io.File(archivo.parentFile, archivo.name + ".tmp")
+        java.io.DataOutputStream(java.io.BufferedOutputStream(java.io.FileOutputStream(tmp), 1 shl 16)).use { o ->
+            o.writeInt(MAGIA); o.writeLong(marca)
+            o.writeInt(palabras.size); o.writeInt(letra.size)
+            val texto = palabras.joinToString("\n").toByteArray(Charsets.UTF_8)
+            o.writeInt(texto.size); o.write(texto)
+            val bp = java.nio.ByteBuffer.allocate(penal.size * 4); bp.asFloatBuffer().put(penal); o.write(bp.array())
+            val bl = java.nio.ByteBuffer.allocate(letra.size * 2); bl.asCharBuffer().put(letra); o.write(bl.array())
+            for (arr in arrayOf(hijo, hermano, terminal, mejor)) {
+                val b = java.nio.ByteBuffer.allocate(arr.size * 4); b.asIntBuffer().put(arr); o.write(b.array())
+            }
+            o.writeInt(otras.size)
+            for ((k, ids) in otras) { o.writeUTF(k); o.writeInt(ids.size); for (i in ids) o.writeInt(i) }
+        }
+        if (!tmp.renameTo(archivo)) { archivo.delete(); tmp.renameTo(archivo) }
+    }
+
     companion object {
+        private const val MAGIA = 0x54504431  // "TPD1"
+
+        /** Lee el diccionario guardado; null si no existe, está dañado o es de otra versión */
+        fun leer(archivo: java.io.File, marca: Long): Diccionario? {
+            if (!archivo.exists()) return null
+            return try {
+                java.io.DataInputStream(java.io.BufferedInputStream(java.io.FileInputStream(archivo), 1 shl 16)).use { e ->
+                    if (e.readInt() != MAGIA || e.readLong() != marca) return null
+                    val n = e.readInt(); val nodos = e.readInt()
+                    val texto = ByteArray(e.readInt()); e.readFully(texto)
+                    val palabras = String(texto, Charsets.UTF_8).split('\n').toTypedArray()
+                    if (palabras.size != n) return null
+                    fun bytes(k: Int) = ByteArray(k).also { e.readFully(it) }
+                    val penal = FloatArray(n).also { java.nio.ByteBuffer.wrap(bytes(n * 4)).asFloatBuffer().get(it) }
+                    val letra = CharArray(nodos).also { java.nio.ByteBuffer.wrap(bytes(nodos * 2)).asCharBuffer().get(it) }
+                    fun enteros() = IntArray(nodos).also { java.nio.ByteBuffer.wrap(bytes(nodos * 4)).asIntBuffer().get(it) }
+                    val hijo = enteros(); val hermano = enteros(); val terminal = enteros(); val mejor = enteros()
+                    val otras = HashMap<String, IntArray>()
+                    repeat(e.readInt()) {
+                        val k = e.readUTF()
+                        otras[k] = IntArray(e.readInt()) { e.readInt() }
+                    }
+                    val claves = Array(n) { val p = palabras[it]; val c = Texto.normal(p); if (c == p) p else c }
+                    Diccionario(palabras, claves, penal, letra, hijo, hermano, terminal, mejor, otras)
+                }
+            } catch (ex: Throwable) {
+                Registro.anotar("leer diccionario guardado", ex)
+                null
+            }
+        }
+
         private val RAIZ_BASE = Math.log(30.0).toFloat()
 
         class Fuente(val lector: () -> BufferedReader?, val extraPenal: Float, val multiplica: Int)

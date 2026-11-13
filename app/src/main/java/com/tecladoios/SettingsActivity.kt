@@ -210,9 +210,9 @@ class SettingsActivity : Activity() {
 
         val tec = seccion("Teclado")
         interruptor(tec, "Fila de números", Ajustes.FILA_NUMEROS, false)
-        interruptor(tec, "Símbolos en las teclas", Ajustes.PISTAS, true, "Mantén una letra para escribir su símbolo o tilde")
+        interruptor(tec, "Símbolos en las teclas", Ajustes.PISTAS, false, "Mantén una letra para escribir su símbolo o tilde")
         interruptor(tec, "Vista previa al tocar", Ajustes.VISTA_PREVIA, true)
-        interruptor(tec, "Bordes del color de la app", Ajustes.BORDES_APP, true)
+        interruptor(tec, "Detalles del color de la app", Ajustes.BORDES_APP, true, "Trazo al deslizar y tecla enviar")
         interruptor(tec, "Barra de herramientas", Ajustes.BARRA_HERRAMIENTAS, true, "Emojis, portapapeles, edición, una mano, escanear y ajustes")
         opciones(tec, "Modo una mano", Ajustes.UNA_MANO, listOf("Apagado", "Izquierda", "Derecha"), 0)
         deslizador(tec, "Altura", Ajustes.ALTURA, 75, 135, 100) { "$it %" }

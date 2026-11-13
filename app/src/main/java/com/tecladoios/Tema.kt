@@ -7,25 +7,25 @@ import android.graphics.Color
 import java.util.concurrent.Executors
 
 /**
- * Colores del teclado, estilo vidrio oscuro: fondo pizarra azulado con un leve degradado y
- * teclas grises claras y redondeadas, todas del mismo tono. El color de la app queda solo en
- * el filo del teclado y en los detalles.
+ * Colores del teclado: negro AMOLED puro (los píxeles negros se apagan y no gastan batería)
+ * con teclas como las del iPhone en modo oscuro: letras gris oscuro, teclas de función más
+ * oscuras y texto blanco. El color de la app queda solo en el filo y los detalles.
  */
 class Tema(val acento: Int) {
-    val fondo = 0xFF252932.toInt()          // arriba del degradado
-    val fondoAbajo = 0xFF181B22.toInt()     // abajo del degradado
-    val tecla = 0xFF4B4F58.toInt()          // todas las teclas
-    val teclaFuncion = 0xFF40444D.toInt()   // shift, borrar, 123 (apenas más oscuras)
-    val teclaPresionada = 0xFF6C717B.toInt()
-    val funcionPresionada = 0xFF62666F.toInt()
-    val brillo = 0x2EFFFFFF                 // reflejo fino arriba de cada tecla
+    val fondo = 0xFF000000.toInt()
+    val fondoAbajo = 0xFF000000.toInt()
+    val tecla = 0xFF3A3A3C.toInt()          // letras
+    val teclaFuncion = 0xFF232325.toInt()   // shift, borrar, 123, intro
+    val teclaPresionada = 0xFF5C5C60.toInt()
+    val funcionPresionada = 0xFF46464A.toInt()
+    val brillo = 0x00FFFFFF                 // sin reflejos: teclas planas
     val texto = 0xFFFFFFFF.toInt()
     val textoSuave = 0x99FFFFFF.toInt()
-    val pista = 0x8CFFFFFF.toInt()
-    val separador = 0x26FFFFFF
+    val pista = 0x80FFFFFF.toInt()
+    val separador = 0x2EFFFFFF
     val barra = 0x00000000
-    val globo = 0xFF5E636D.toInt()
-    val bordeTecla = 0x1FFFFFFF
+    val globo = 0xFF4A4A4E.toInt()
+    val bordeTecla = 0x14FFFFFF
     val bordePanel = acento
     val estela = acento
     val introActivo = acento

@@ -29,13 +29,13 @@ object Ajustes {
 
     // Teclado
     const val FILA_NUMEROS = "fila_numeros"
-    const val PISTAS = "pistas_simbolos"
+    const val PISTAS = "pistas_simbolos_v2"
     const val VISTA_PREVIA = "vista_previa"
     const val UNA_MANO = "una_mano"          // 0 apagado, 1 izquierda, 2 derecha
     const val ALTURA = "altura"              // 80..130 (%)
     const val MARGEN_ABAJO = "margen_abajo"  // dp de espacio debajo del teclado
     const val RETARDO_LARGA = "retardo_larga"// ms
-    const val BORDES_APP = "bordes_app"
+    const val BORDES_APP = "bordes_app_v2"
     const val BARRA_HERRAMIENTAS = "barra_herramientas"
 
     // Sonido y vibración
@@ -71,7 +71,7 @@ class Config(p: SharedPreferences) {
     val cursorEspacio = p.getBoolean(Ajustes.CURSOR_ESPACIO, true)
 
     val filaNumeros = p.getBoolean(Ajustes.FILA_NUMEROS, false)
-    val pistas = p.getBoolean(Ajustes.PISTAS, true)
+    val pistas = p.getBoolean(Ajustes.PISTAS, false)
     val vistaPrevia = p.getBoolean(Ajustes.VISTA_PREVIA, true)
     val unaMano = p.getInt(Ajustes.UNA_MANO, 0)
     val altura = p.getInt(Ajustes.ALTURA, 100).coerceIn(75, 135)

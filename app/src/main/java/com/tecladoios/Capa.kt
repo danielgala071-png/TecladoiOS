@@ -75,8 +75,8 @@ class Capa(context: Context) : View(context) {
         if (der > width - 2 * d) { izq -= der - (width - 2 * d); der = width - 2 * d }
         val arriba = (tecla.top - alto).coerceAtLeast(1 * d)
         val cuello = tecla.top - tecla.height() * 0.12f
-        val rr = 14 * d
-        val rk = minOf(12.5f * d, tecla.height() * 0.27f)
+        val rr = 10 * d
+        val rk = minOf(7.5f * d, tecla.height() * 0.17f)
         forma.reset()
         forma.moveTo(tecla.left + rk, tecla.bottom)
         forma.quadTo(tecla.left, tecla.bottom, tecla.left, tecla.bottom - rk)
@@ -151,11 +151,6 @@ class Capa(context: Context) : View(context) {
             c.save(); c.translate(0f, 1.5f * d); c.drawPath(forma, sombra); c.restore()
             pintura.color = tema.globo; pintura.alpha = a
             c.drawPath(forma, pintura)
-            // Reflejo de vidrio arriba del globo
-            brilloG.shader = android.graphics.LinearGradient(0f, limites.top, 0f, limites.top + tecla.height() * 0.7f,
-                0x40FFFFFF, 0x00FFFFFF, android.graphics.Shader.TileMode.CLAMP)
-            brilloG.alpha = a
-            c.drawPath(forma, brilloG)
             letraP.color = tema.texto; letraP.alpha = a
             letraP.textSize = tecla.height() * 0.78f
             val cy = limites.top + (tecla.top - limites.top) * 0.5f
