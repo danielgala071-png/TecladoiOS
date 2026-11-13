@@ -929,15 +929,6 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         teclado?.requestLayout()
     }
 
-    override fun menuTeclado(opcion: Int) {
-        when (opcion) {
-            0 -> prefs.edit().putInt(Ajustes.UNA_MANO, 1).apply()
-            1 -> prefs.edit().putInt(Ajustes.UNA_MANO, 0).apply()
-            2 -> prefs.edit().putInt(Ajustes.UNA_MANO, 2).apply()
-            3 -> abrirTamano()
-        }
-    }
-
     override fun unaMano(accion: Int) {
         if (accion == 0) prefs.edit().putInt(Ajustes.UNA_MANO, 0).apply()
         else prefs.edit().putInt(Ajustes.UNA_MANO, if (cfg.unaMano == 1) 2 else 1).apply()
@@ -1192,9 +1183,16 @@ class Marco(c: Context) : FrameLayout(c) {
         setMeasuredDimension(w, h)
     }
 
-    /** Negro puro de borde a borde, sin líneas ni esquinas: AMOLED total */
+    /** Negro puro AMOLED con la parte de arriba curva (barra de sugerencias redondeada), sin líneas */
     override fun onDraw(c: Canvas) {
-        c.drawColor(tema.fondo)
+        val w = width.toFloat(); val h = height.toFloat()
+        val rad = 18 * d
+        forma.reset()
+        r.set(0f, 0f, w, h + rad)
+        forma.addRoundRect(r, floatArrayOf(rad, rad, rad, rad, 0f, 0f, 0f, 0f), Path.Direction.CW)
+        fondo.shader = null
+        fondo.color = tema.fondo
+        c.drawPath(forma, fondo)
     }
 }
 

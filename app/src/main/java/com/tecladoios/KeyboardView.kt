@@ -36,8 +36,6 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         fun deslizado(xs: FloatArray, ys: FloatArray, n: Int)
         fun volverLetras()
         fun unaMano(accion: Int)
-        /** Menú de tamaño (mantener la tecla de emojis): 0 izquierda, 1 centro, 2 derecha, 3 ajustar tamaño */
-        fun menuTeclado(opcion: Int)
         fun respuesta(tipo: Respuesta.Tipo)
     }
 
@@ -205,8 +203,6 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         var acumX = 0f; var acumY = 0f
         var borrados = 0
         var palabras = 0
-        /** Opciones del menú de tamaño, si este dedo lo abrió */
-        var menu: List<String>? = null
         val larga = Runnable { pulsacionLarga(this) }
         val repetir = object : Runnable {
             override fun run() {
@@ -226,7 +222,6 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     private val dedos = HashMap<Int, Dedo>()
-    private val MENU_TAMANO = listOf("⇤", "↔", "⇥", "↕")
     private var presionadas = HashSet<Colocada>()
     private var modoTrackpad = false; set(v) { if (field != v) { field = v; ensuciar() } }
 
@@ -263,6 +258,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private fun tipoRespuesta(t: Tecla) = when (t.tipo) {
         K.ESPACIO -> Respuesta.Tipo.ESPACIO
         K.BORRAR -> Respuesta.Tipo.BORRAR
+        K.SHIFT -> Respuesta.Tipo.MAYUS
         K.INTRO -> Respuesta.Tipo.INTRO
         K.TEXTO -> Respuesta.Tipo.LETRA
         else -> Respuesta.Tipo.FUNCION
@@ -331,7 +327,6 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 presionadas.clear()
             }
             K.ESPACIO -> postDelayed(dd.larga, retardo + 180L)
-            K.EMOJI -> postDelayed(dd.larga, retardo)
         }
         invalidate()
     }
@@ -430,15 +425,6 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 capa.mostrarOpciones(rectEnCapa(c.dibujo), lista, 0)
                 oyente?.respuesta(Respuesta.Tipo.FUNCION)
             }
-            K.EMOJI -> {
-                // Como en el iPhone: teclado a la izquierda, al centro o a la derecha (y ajustar tamaño)
-                val lista = MENU_TAMANO
-                dd.menu = lista
-                dd.modo = Modo.OPCIONES
-                capa.ocultarGlobo()
-                capa.mostrarOpciones(rectEnCapa(c.dibujo), lista, when (unaMano) { 1 -> 0; 2 -> 2; else -> 1 })
-                oyente?.respuesta(Respuesta.Tipo.FUNCION)
-            }
             K.ESPACIO -> {
                 dd.modo = Modo.TRACKPAD
                 dd.acumX = dd.x; dd.acumY = dd.y
@@ -477,9 +463,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             Modo.OPCIONES -> {
                 val elegida = capa.elegida()
                 capa.ocultarOpciones()
-                val menu = dd.menu
-                if (menu != null) { if (elegida != null) oyente?.menuTeclado(menu.indexOf(elegida)) }
-                else if (elegida != null) oyente?.tecla(elegida, dd.x0, dd.y0, false)
+                if (elegida != null) oyente?.tecla(elegida, dd.x0, dd.y0, false)
             }
             Modo.BORRAR_SEL -> oyente?.terminarSeleccionBorrar(dd.palabras > 0)
             Modo.CAMBIO_123 -> if (c != null && c.tecla.tipo == K.TEXTO) {
@@ -554,6 +538,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         t.tipo == K.INTRO && introDestacado -> if (apretada) Tema.mezclar(tema.acento, 0xFF000000.toInt(), 0.72f) else tema.introActivo
         t.tipo == K.SHIFT && shift > 0 -> if (apretada) 0xFFD1D1D6.toInt() else 0xFFF2F2F7.toInt()
         t.funcion -> if (apretada) tema.funcionPresionada else tema.teclaFuncion
+        // Letras: con el globo encima basta un brillo leve (como el iPhone); sin globo, más marcado
+        apretada && t.tipo == K.TEXTO && config?.vistaPrevia != false && t.texto.length <= 2 ->
+            Tema.mezclar(tema.teclaPresionada, tema.tecla, 0.45f)
         apretada -> tema.teclaPresionada
         else -> tema.tecla
     }

@@ -60,12 +60,30 @@ class Barra(context: Context) : View(context) {
     private var corrimiento = 0f
 
     fun mostrarSugerencias(lista: List<String>, literalEntreComillas: String?, autocorrige: Boolean) {
-        sugerencias = lista.take(3); literal = literalEntreComillas
+        val nuevas = lista.take(3)
+        if (nuevas == sugerencias && literalEntreComillas == literal && (autocorrige && lista.isNotEmpty()) == (destacada >= 0)) return
+        val cambiaModo = sugerencias.isEmpty() && literal == null
+        sugerencias = nuevas; literal = literalEntreComillas
         destacada = if (autocorrige && lista.isNotEmpty()) 0 else -1
-        invalidate()
+        animar(if (cambiaModo) 170f else 110f, cambiaModo)
     }
 
-    fun limpiar() { sugerencias = emptyList(); literal = null; destacada = -1; invalidate() }
+    fun limpiar() {
+        if (sugerencias.isEmpty() && literal == null) return
+        sugerencias = emptyList(); literal = null; destacada = -1
+        animar(170f, true)
+    }
+
+    // ---------- Animación (las palabras aparecen suave; herramientas y sugerencias se cruzan) ----------
+
+    private var animInicio = 0L
+    private var animDura = 0f
+    private var animSube = false
+
+    private fun animar(duracion: Float, subir: Boolean) {
+        animInicio = android.os.SystemClock.uptimeMillis(); animDura = duracion; animSube = subir
+        invalidate()
+    }
 
     fun hayContenido() = sugerencias.isNotEmpty() || literal != null
 
@@ -94,6 +112,18 @@ class Barra(context: Context) : View(context) {
     override fun onDraw(c: Canvas) {
         zonas.clear(); zonasLargas.clear()
         val w = width.toFloat(); val h = height.toFloat()
+        val t = if (animDura > 0f) ((android.os.SystemClock.uptimeMillis() - animInicio) / animDura).coerceIn(0f, 1f) else 1f
+        if (t < 1f) {
+            val e = 1f - (1f - t) * (1f - t) * (1f - t)
+            c.saveLayerAlpha(0f, 0f, w, h, (90 + 165 * e).toInt())
+            c.translate(0f, if (animSube) (1f - e) * dp(7f) else (1f - e) * dp(2.5f))
+            dibujarContenido(c, w, h)
+            c.restore()
+            postInvalidateOnAnimation()
+        } else dibujarContenido(c, w, h)
+    }
+
+    private fun dibujarContenido(c: Canvas, w: Float, h: Float) {
         texto.textSize = dp(16.5f); fuerte.textSize = dp(16.5f)
         linea.color = tema.separador; linea.strokeWidth = dp(1f)
         if (buscando) { dibujarBusqueda(c, w, h); return }

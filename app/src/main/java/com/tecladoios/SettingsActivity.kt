@@ -220,8 +220,7 @@ class SettingsActivity : Activity() {
         deslizador(tec, "Mantener presionado", Ajustes.RETARDO_LARGA, 150, 700, 320) { "$it ms" }
 
         val son = seccion("Sonido y vibración")
-        interruptor(son, "Vibración al tocar", Ajustes.VIBRACION, true)
-        deslizador(son, "Fuerza de la vibración", Ajustes.FUERZA, 1, 5, 5) { listOf("", "Suave", "Media", "Firme", "Fuerte", "Máxima")[it] }
+        interruptor(son, "Vibración al tocar", Ajustes.VIBRACION, true, "Golpe fuerte en cada tecla, más fuerte en espacio, mayúscula y borrar")
         interruptor(son, "Sonido al tocar", Ajustes.SONIDO, false)
         deslizador(son, "Volumen", Ajustes.VOLUMEN, 0, 100, 40) { "$it %" }
 

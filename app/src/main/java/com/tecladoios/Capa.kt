@@ -48,8 +48,8 @@ class Capa(context: Context) : View(context) {
     // Animación del globo: aparece creciendo un poco y se va desvaneciendo (muy corta)
     private var apareceMs = 0L
     private var seVaMs = 0L
-    private val APARECE = 130f
-    private val SE_VA = 110f
+    private val APARECE = 110f
+    private val SE_VA = 90f
 
     fun mostrarGlobo(r: RectF, texto: String) {
         val ahora = android.os.SystemClock.uptimeMillis()
@@ -134,14 +134,15 @@ class Capa(context: Context) : View(context) {
             val escala: Float
             if (globo) {
                 val t = ((ahora - apareceMs) / APARECE).coerceIn(0f, 1f)
-                // Sale con un pequeño rebote (pasa un poco del tamaño y se asienta)
+                // Brota desde la tecla con un rebote delicado (llega a 102 % y se asienta)
                 val u = t - 1f
-                val rebote = 1f + 2.4f * u * u * u + 1.4f * u * u
-                alfa = (0.3f + 1.4f * t).coerceAtMost(1f); escala = 0.86f + 0.14f * rebote
+                val rebote = 1f + 1.9f * u * u * u + 0.9f * u * u
+                alfa = (0.45f + 1.6f * t).coerceAtMost(1f); escala = 0.9f + 0.1f * rebote
                 if (t < 1f) postInvalidateOnAnimation()
             } else {
                 val t = ((ahora - seVaMs) / SE_VA).coerceIn(0f, 1f)
-                alfa = 1f - t * t; escala = 1f
+                // Se va encogiéndose apenas y desvaneciéndose
+                alfa = 1f - t * (2f - t); escala = 1f - 0.05f * t
                 postInvalidateOnAnimation()
             }
             val a = (alfa * 255).toInt()

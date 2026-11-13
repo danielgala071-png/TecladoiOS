@@ -14,17 +14,17 @@ import java.util.concurrent.Executors
 class Tema(val acento: Int) {
     val fondo = 0xFF000000.toInt()
     val fondoAbajo = 0xFF000000.toInt()
-    val tecla = 0xFF3A3A3C.toInt()          // letras
-    val teclaFuncion = 0xFF232325.toInt()   // shift, borrar, 123, intro
-    val teclaPresionada = 0xFF5C5C60.toInt()
-    val funcionPresionada = 0xFF46464A.toInt()
+    val tecla = 0xFF4E4E52.toInt()          // letras (gris como el iPhone en modo oscuro)
+    val teclaFuncion = 0xFF2B2B2E.toInt()   // shift, borrar, 123, intro (más oscuras)
+    val teclaPresionada = 0xFF6E6E73.toInt()
+    val funcionPresionada = 0xFF4E4E52.toInt()  // al presionar toma el tono de las letras
     val brillo = 0x00FFFFFF                 // sin reflejos: teclas planas
     val texto = 0xFFFFFFFF.toInt()
     val textoSuave = 0x99FFFFFF.toInt()
     val pista = 0x80FFFFFF.toInt()
     val separador = 0x2EFFFFFF
     val barra = 0x00000000
-    val globo = 0xFF4A4A4E.toInt()
+    val globo = 0xFF5A5A5E.toInt()
     val bordeTecla = 0x14FFFFFF
     val bordePanel = acento
     val estela = acento
