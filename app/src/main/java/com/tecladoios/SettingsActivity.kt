@@ -195,9 +195,16 @@ class SettingsActivity : Activity() {
         }
     }
 
+    /** Al volver de un permiso del sistema, la página se vuelve a dibujar con el estado nuevo */
+    private var redibujarAlVolver = false
+
     override fun onResume() {
         super.onResume()
         actualizarEstado()
+        if (redibujarAlVolver) {
+            redibujarAlVolver = false
+            dibujar()
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -498,6 +505,52 @@ class SettingsActivity : Activity() {
                 "si las pegas con el teclado, se borran solas del portapapeles al minuto. El historial " +
                 "guarda lo último que copiaste (botón 📋 en el panel de emojis); las contraseñas nunca se guardan.")
 
+        val sinAhorro = try {
+            getSystemService(android.os.PowerManager::class.java)?.isIgnoringBatteryOptimizations(packageName) == true
+        } catch (_: Exception) { false }
+        grupo("Rendimiento", listOf(
+            filaAccion("Que Android no cierre el teclado", derecha = if (sinAhorro) "Listo" else "›") {
+                if (!sinAhorro) try {
+                    redibujarAlVolver = true
+                    startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        android.net.Uri.parse("package:$packageName")))
+                } catch (_: Exception) {
+                    try { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } catch (_: Exception) { }
+                }
+            },
+        ), pie = "El ahorro de batería de algunos celulares (Xiaomi, Samsung, Huawei, Oppo) cierra " +
+                "el teclado cuando abres apps pesadas, y luego tarda en volver a aparecer. Al " +
+                "permitirlo, Android lo deja abierto. El teclado casi no gasta batería en reposo.")
+
+        grupo("Idiomas", listOf(
+            filaInterruptor("Inglés", "idioma_en", true),
+            filaInterruptor("Portugués", "idioma_pt", false),
+        ), pie = "Escribe en dos o tres idiomas a la vez sin cambiar nada: el teclado nota en qué " +
+                "idioma va cada frase. No corrige las palabras de otro idioma activado, corrige los " +
+                "dedazos en el idioma de la frase (\u201Cteh\u201D → \u201Cthe\u201D, \u201Cdont\u201D → " +
+                "\u201Cdon\u2019t\u201D) y te sugiere palabras de los idiomas que vas usando. El español " +
+                "siempre está activo.")
+
+        grupo("Escáner de texto", listOf(
+            filaInterruptor("Botón Escanear en la barra", "escaner_barra", true),
+        ), pie = "Con el cuadro de texto vacío, toca “Escanear” en la barra (o en la barra de " +
+                "edición): se abre la cámara, fotografías un documento o cartel y el texto aparece " +
+                "listo para revisar y poner en el chat. Funciona sin internet; la foto se borra al " +
+                "leerla.")
+
+        val conPermiso = Capturas.tienePermiso(this)
+        grupo("Capturas de pantalla", listOfNotNull(
+            filaInterruptor("Capturas en la barra", "capturas", true) { activo ->
+                if (activo && !Capturas.tienePermiso(this)) requestPermissions(arrayOf(Capturas.permiso()), PEDIR_CAPTURAS)
+            },
+            if (!conPermiso && Ajustes.capturas(this)) filaAccion("Permitir ver las capturas", azul, derecha = null) {
+                requestPermissions(arrayOf(Capturas.permiso()), PEDIR_CAPTURAS)
+            } else null,
+        ), pie = "Al sacar una captura, aparece unos minutos en la barra de sugerencias: tócala y se " +
+                "envía en el chat donde estás escribiendo. Mantenla presionada para quitarla. El " +
+                "teclado solo mira las capturas de los últimos minutos (nunca tu galería). Al pedir " +
+                "el permiso, elige “Permitir todo”.")
+
         grupo("Contraseñas", listOf(
             filaInterruptor("Recordar contraseñas", "recordar_claves", true),
             filaAccion("Borrar contraseñas guardadas", rojo, derecha = null) {
@@ -693,15 +746,13 @@ class SettingsActivity : Activity() {
             filaInfo("Mover el cursor", "Mantén presionada la barra espaciadora y desliza: a los lados mueve el cursor letra por letra; arriba y abajo cambia de línea en textos largos."),
             filaInfo("Barra de edición", "Al mover el cursor con la barra espaciadora, o al marcar texto, la barra muestra Seleccionar todo, Seleccionar, Cortar, Copiar y Pegar. Con Seleccionar encendido, mover el cursor va marcando el texto. Al volver a escribir, regresan las sugerencias."),
             filaInfo("Ir a los ajustes", "Mantén presionada la tecla de emojis."),
-            filaInfo("Números sin cambiar de teclado", "Pon el dedo en 123, deslízalo hasta el número o signo y suelta: se escribe y vuelves solo a las letras."),
             filaInfo("Acentos y ñ", "Mantén presionada una letra (a, e, n…) o un signo (? ! $ \" -) para ver sus variantes."),
             filaInfo("Bloq Mayús", "Toca dos veces la tecla de mayúsculas."),
+            filaInfo("Escanear texto", "Con el cuadro vacío, toca Escanear en la barra y fotografía un documento o cartel: el texto se pone en el chat."),
+            filaInfo("Letra firme", "Escribiendo rápido o con dos dedos, sale la letra donde cayó tu dedo aunque lo barras al soltar."),
             filaInfo("Punto rápido", "Toca dos veces la barra espaciadora para poner punto y espacio."),
-            filaInfo("Deslizar para escribir", "Desliza el dedo de letra en letra sin soltar y suelta al final de la palabra."),
-            filaInfo("Aceptar sin estirar el dedo", "Desliza la barra espaciadora hacia arriba: se pone la sugerencia del centro y queda el espacio listo."),
         ))
         grupo("Barra de sugerencias", listOf(
-            filaInfo("Descartar una sugerencia", "Desliza la sugerencia hacia abajo: desaparece y el teclado deja de proponerla."),
             filaInfo("Tildes que cambian el sentido", "Al escribir tu, el, si, mas, que, como, esta… la otra forma (tú, él, sí, más, qué, cómo, está) aparece a la derecha."),
             filaInfo("Sugerencias en cadena", "Después de tocar una sugerencia, la barra ya propone la siguiente palabra: puedes armar frases tocando solo la barra."),
             filaInfo("Siglas y nombres", "SUNAT, EsSalud, WhatsApp o Cusco se escriben bien aunque los pongas en minúsculas."),
@@ -713,7 +764,6 @@ class SettingsActivity : Activity() {
         ))
         grupo("Emojis", listOf(
             filaInfo("Tonos de piel", "En el panel de emojis, mantén presionado un emoji de manos o personas y elige el tono. Se recuerda para la próxima vez."),
-            filaInfo("Emojis en la barra", "Escribe palabras como jaja, corazón o cumpleaños y el emoji aparece a la derecha de la barra."),
         ))
         grupo("Portapapeles", listOf(
             filaInfo("Pegar con un toque", "Lo que copias aparece en la barra al abrir el teclado. Mantenlo presionado para quitarlo."),
@@ -791,6 +841,13 @@ class SettingsActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PEDIR_CAPTURAS) {
+            if (!Capturas.tienePermiso(this)) {
+                Toast.makeText(this, "Sin permiso, el teclado no puede mostrar tus capturas", Toast.LENGTH_SHORT).show()
+            }
+            dibujar()
+            return
+        }
         if (requestCode != PEDIR_CONTACTOS) return
         val ok = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
         if (!ok) {
@@ -830,6 +887,7 @@ class SettingsActivity : Activity() {
         const val PEDIDO_EXPORTAR = 41
         const val PEDIDO_IMPORTAR = 42
         const val PEDIR_CONTACTOS = 43
+        const val PEDIR_CAPTURAS = 44
         const val RESPALDO = "tecladoios-respaldo-1"
     }
 
@@ -875,9 +933,9 @@ class SettingsActivity : Activity() {
                 getSystemService(android.os.Vibrator::class.java)
             } ?: return
             val (letra, pesada) = when (nivel) {
-                "suave" -> 14L to 22L
-                "fuerte" -> 22L to 34L
-                else -> 18L to 28L
+                "suave" -> 17L to 26L
+                "fuerte" -> 27L to 40L
+                else -> 22L to 33L
             }
             val fuerza = if (v.hasAmplitudeControl()) 255 else android.os.VibrationEffect.DEFAULT_AMPLITUDE
             v.vibrate(android.os.VibrationEffect.createWaveform(

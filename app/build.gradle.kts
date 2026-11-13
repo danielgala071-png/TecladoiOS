@@ -15,6 +15,15 @@ android {
         val compilacion = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
         versionCode = 100 + compilacion
         versionName = "7.$compilacion"
+        // Solo celulares (ARM): el reconocimiento de texto trae partes nativas y así el APK
+        // no carga las de computadoras (x86)
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+    }
+
+    // Los errores de fábrica van sin comprimir dentro del APK: el teclado los usa directo
+    // desde ahí (mapeados), sin copiarlos a su memoria ni procesarlos al arrancar
+    androidResources {
+        noCompress += "bin"
     }
 
     // Firma fija: antes cada compilación de GitHub usaba una llave nueva y Android no dejaba
@@ -65,5 +74,8 @@ android {
 }
 
 dependencies {
+    // Leer texto de una foto (escáner por cámara). Funciona sin internet: el modelo viene
+    // dentro del APK y solo se carga en el proceso aparte del escáner, nunca en el teclado
+    implementation("com.google.mlkit:text-recognition:16.0.0")
     testImplementation("junit:junit:4.13.2")
 }

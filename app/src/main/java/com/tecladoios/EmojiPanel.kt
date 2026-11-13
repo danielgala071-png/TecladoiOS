@@ -418,11 +418,9 @@ class BarraCategorias(
         val px = ancho * posPildora + ancho / 2f
         val rx = minOf(ancho * 0.46f, height * 0.5f)
         val ry = height * 0.36f
-        circulo.color = (tema.azul and 0x00FFFFFF) or 0x40000000
+        // Categoría elegida: una píldora gris, sin color (sobria, como el iPhone)
+        circulo.color = 0x2EFFFFFF
         c.drawRoundRect(px - rx, cy - ry, px + rx, cy + ry, ry, ry, circulo)
-        bordePildora.strokeWidth = 1.4f * d
-        bordePildora.color = tema.azul or (0xFF shl 24)
-        c.drawRoundRect(px - rx, cy - ry, px + rx, cy + ry, ry, ry, bordePildora)
         if (tenidoDe != tema.azul) {
             tenidoDe = tema.azul
             val r = Color.red(tema.azul) / 255f
@@ -444,10 +442,11 @@ class BarraCategorias(
             val elegida = i == marcado
             gris.alpha = 150
             if (cat.icono == "&%") {
-                textoSimbolos.color = if (elegida) tema.azul or (0xFF shl 24) else tema.textoSecundario
+                textoSimbolos.color = if (elegida) tema.texto else tema.textoSecundario
                 c.drawText(cat.icono, cx, cy - (fm2.ascent + fm2.descent) / 2f, textoSimbolos)
             } else {
-                c.drawText(cat.icono, cx, cy - (fm.ascent + fm.descent) / 2f, if (elegida) tenido else gris)
+                gris.alpha = if (elegida) 255 else 150
+                c.drawText(cat.icono, cx, cy - (fm.ascent + fm.descent) / 2f, gris)
             }
         }
     }
@@ -664,15 +663,12 @@ class EmojiGrid(
                     if (ri == i && rj == j && avanceRebote in 0f..1f) {
                         // Emoji con rebote: salta, se pasa, se encoge apenas y se acomoda
                         val q = avanceRebote
-                        val k = when {
-                            q < 0.3f -> 1.14f + (1.45f - 1.14f) * (q / 0.3f)
-                            q < 0.6f -> 1.45f + (0.92f - 1.45f) * ((q - 0.3f) / 0.3f)
-                            else -> 0.92f + (1f - 0.92f) * ((q - 0.6f) / 0.4f)
-                        }
-                        val sube = if (q < 0.6f) Math.sin(q / 0.6 * Math.PI).toFloat() * 6f * d else 0f
+                        // Sobrio: crece apenas y vuelve (sin saltar ni rebotar)
+                        val k = if (q < 0.35f) 1f + 0.12f * (q / 0.35f) else 1.12f - 0.12f * ((q - 0.35f) / 0.65f)
+                        val sube = 0f
                         val cx = x + anchoCelda / 2f
                         val cy = y + altoCelda / 2f
-                        fondo.color = (tema.azul and 0x00FFFFFF) or ((0x55 * (1f - q)).toInt().coerceIn(0, 255) shl 24)
+                        fondo.color = 0x00FFFFFF or ((0x30 * (1f - q)).toInt().coerceIn(0, 255) shl 24)
                         val rr = 12f * d
                         c.drawRoundRect(x + 3f * d, y + 1f * d, x + anchoCelda - 3f * d, y + altoCelda - 1f * d, rr, rr, fondo)
                         c.save()
@@ -684,7 +680,7 @@ class EmojiGrid(
                     }
                     if (pi == i && pj == j) {
                         // Al tocarlo: un fondo suave del color de la app
-                        fondo.color = (tema.azul and 0x00FFFFFF) or 0x48000000
+                        fondo.color = 0x30FFFFFF
                         val r = 12f * d
                         c.drawRoundRect(x + 3f * d, y + 1f * d, x + anchoCelda - 3f * d, y + altoCelda - 1f * d, r, r, fondo)
                         // El emoji que tocas crece un poquito (se siente el toque)

@@ -161,10 +161,10 @@ class VariantesPopup(private val anchor: View) {
         vista.pivotX = (r.centerX() - izq) + vista.pad + vista.margen
         vista.pivotY = h.toFloat()
         vista.alpha = 0f
-        vista.scaleX = 0.78f
-        vista.scaleY = 0.78f
+        vista.scaleX = 0.94f
+        vista.scaleY = 0.94f
         vista.animate().alpha(1f).scaleX(1f).scaleY(1f)
-            .setDuration(200).setInterpolator(Movimiento.POP).start()
+            .setDuration(130).setInterpolator(Movimiento.SUAVE).start()
     }
 
     /** x en coordenadas del teclado */

@@ -63,6 +63,10 @@ class TecladoService : InputMethodService(),
         private const val ED_CORTAR = 3
         private const val ED_COPIAR = 4
         private const val ED_PEGAR = 5
+        /** Abrir el escáner de texto por cámara */
+        private const val ED_ESCANEAR = 9
+        /** El texto escaneado espera a que vuelvas al chat como mucho esto */
+        private const val VIGENCIA_ESCANEO = 2 * 60 * 1000L
         /** Dónde se guarda el historial del portapapeles */
         private const val CLAVE_HISTORIAL = "historial_copiado"
         /** Lo aprendido se guarda como mucho cada tantos milisegundos (menos escrituras = menos batería) */
@@ -151,6 +155,44 @@ class TecladoService : InputMethodService(),
     private var copiadoSensible = false
     /** Las contraseñas copiadas se borran solas del portapapeles */
     private var limpiarClaves = true
+
+    // ---------- Escáner de texto por cámara ----------
+    private var escanerActivo = true
+    /** Ficha al azar de cada escaneo: solo se acepta el texto que vuelve con ella */
+    private var fichaEscaner = ""
+    /** La app donde estabas al abrir el escáner (el texto vuelve ahí) */
+    private var escanerApp: String? = null
+    private var textoEscaneado: String? = null
+    private var escaneadoMs = 0L
+    private val receptorEscaner = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: android.content.Context, i: Intent) {
+            val texto = i.getStringExtra(EscanerActivity.EXTRA_TEXTO) ?: return
+            val ficha = i.getStringExtra(EscanerActivity.EXTRA_FICHA) ?: return
+            if (fichaEscaner.isEmpty() || ficha != fichaEscaner) return
+            fichaEscaner = ""
+            textoEscaneado = texto
+            escaneadoMs = SystemClock.uptimeMillis()
+            // Si el chat ya volvió a tener el teclado, se pone al toque; si no, al volver
+            manejador.postDelayed({ volcarEscaneado() }, 250)
+        }
+    }
+
+    // ---------- Capturas de pantalla en la barra ----------
+    private var capturasActivas = true
+    /** La captura que se ofrece ahora en la barra */
+    private var captura: Capturas.Captura? = null
+    /** Capturas ya enviadas o descartadas: no se vuelven a ofrecer */
+    private val capturasVistas = HashSet<android.net.Uri>()
+    private var observando = false
+    private val tareaBuscarCaptura = Runnable { buscarCaptura() }
+    /** Si sacas una captura con el teclado abierto, aparece al momento */
+    private val observadorCapturas = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) {
+            manejador.removeCallbacks(tareaBuscarCaptura)
+            // La captura tarda un instante en terminar de guardarse
+            manejador.postDelayed(tareaBuscarCaptura, 700)
+        }
+    }
 
     // ---------- Contraseñas recordadas (cifradas, solo en el celular) ----------
     private var recordarClaves = true
@@ -372,7 +414,11 @@ class TecladoService : InputMethodService(),
         Registro.iniciar(this)
         diccionario = Diccionario(this)
         // Revisa en segundo plano qué emojis puede dibujar el celular (el panel abre al instante)
-        Thread({ try { CATEGORIAS.forEach { it.emojis } } catch (_: Throwable) { } }, "emojis").apply {
+        Thread({
+            // Con baja prioridad y un instante después: no compite con la apertura del teclado
+            try { Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND) } catch (_: Throwable) { }
+            try { Thread.sleep(1500); CATEGORIAS.forEach { it.emojis } } catch (_: Throwable) { }
+        }, "emojis").apply {
             isDaemon = true
             start()
         }
@@ -385,9 +431,34 @@ class TecladoService : InputMethodService(),
         cargarSonidos()
         portapapeles = getSystemService(ClipboardManager::class.java)
         try { portapapeles?.addPrimaryClipChangedListener(alCambiarCopiado) } catch (_: Exception) { }
+        // El texto del escáner llega desde su proceso aparte (solo de esta misma app)
+        try {
+            registerReceiver(receptorEscaner, android.content.IntentFilter(EscanerActivity.ACCION),
+                android.content.Context.RECEIVER_NOT_EXPORTED)
+        } catch (e: Exception) { Registro.anotar("recibir texto escaneado", e) }
     }
 
     override fun onCreateInputView(): View = construir()
+
+    /**
+     * Android avisa que le falta memoria. Con el teclado cerrado se suelta lo que se rearma solo
+     * (idiomas extra, miniatura de la captura, contraseñas descifradas, cachés): el teclado pesa
+     * menos y es de los últimos que Android cierra. Lo esencial para abrir al instante se queda.
+     */
+    @Suppress("DEPRECATION")
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        val visible = try { isInputViewShown } catch (_: Throwable) { false }
+        if (visible) return
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND ||
+            level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+            level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL
+        ) {
+            Claves.soltarMemoria()
+            if (captura == null) barra?.miniatura = null
+            enMotor { diccionario.soltarMemoria() }
+        }
+    }
 
     /** ¿Se escribe formal aquí? (correo, documentos, apps de trabajo o el asunto de un correo) */
     private fun esFormal(info: EditorInfo): Boolean {
@@ -570,6 +641,12 @@ class TecladoService : InputMethodService(),
         appActual = info.packageName
         // El cerebro aprende cómo escribes en cada app (WhatsApp, Instagram, correo...)
         diccionario.app = (info.packageName ?: "").filter { it.isLetterOrDigit() || it == '.' || it == '_' }
+        // Idiomas a la vez (inglés, portugués): se cargan fuera de la pantalla la primera vez
+        val idiomasPedidos = Ajustes.idiomas(this)
+        enMotor {
+            diccionario.ponerIdiomas(idiomasPedidos)
+            if (!restarting) diccionario.campoNuevo()
+        }
         if (Tema.desde(this, false, colorDeApp(appActual)) != tema || firma() != firmaTamano) {
             setInputView(construir())
         }
@@ -642,6 +719,16 @@ class TecladoService : InputMethodService(),
         mayusPermitida = Ajustes.mayusculas(this) && escribeTexto
         campoClave = esClave
         recordarClaves = Ajustes.recordarClaves(this)
+        escanerActivo = Ajustes.escanerBarra(this)
+        // Volviste al chat después de escanear: el texto entra aquí
+        if (textoEscaneado != null) manejador.postDelayed({ volcarEscaneado() }, 250)
+        capturasActivas = Ajustes.capturas(this)
+        if (capturasActivas) {
+            observarCapturas()
+            buscarCaptura()
+        } else if (captura != null) {
+            quitarCaptura()
+        }
         campoUsuario = esTexto && !esClave && !multilinea && variacion in setOf(
             InputType.TYPE_TEXT_VARIATION_NORMAL,
             InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
@@ -723,6 +810,7 @@ class TecladoService : InputMethodService(),
         super.onWindowHidden()
         // Las contraseñas descifradas no se quedan en memoria con el teclado cerrado
         Claves.soltarMemoria()
+        dejarDeObservarCapturas()
         barra?.visible(false, animar = false)
         teclado?.ocultarPreview()
     }
@@ -765,7 +853,9 @@ class TecladoService : InputMethodService(),
     }
 
     override fun onDestroy() {
+        try { unregisterReceiver(receptorEscaner) } catch (_: Exception) { }
         manejador.removeCallbacksAndMessages(null)
+        dejarDeObservarCapturas()
         try { portapapeles?.removePrimaryClipChangedListener(alCambiarCopiado) } catch (_: Exception) { }
         motor.removeCallbacks(tareaGuardar)
         diccionario.interrumpir()
@@ -1252,6 +1342,13 @@ class TecladoService : InputMethodService(),
         // Lo que copiaste hace poco aparece en la barra para pegarlo con un toque (como en iPhone):
         // al abrir el teclado o con el campo vacío
         if (!enEmojis && !enPad && (!escribiendo || antes.isBlank())) {
+            // Una captura de pantalla recién sacada va primero: se envía con un toque
+            val cap = if (campoClave) null else sugerenciaCaptura()
+            if (cap != null) {
+                b.visible(true)
+                b.mostrar(listOf(cap, null, null))
+                return
+            }
             val clip = sugerenciaCopiado()
             if (clip != null) {
                 b.visible(true)
@@ -1338,6 +1435,8 @@ class TecladoService : InputMethodService(),
             val deshacer = if (uc != null && antes.endsWith(uc.second)) Sugerencia(uc.first.trim(), literal = true, revertir = true) else null
             // La palabra que acabas de escribir pide un emoji ("jaja " → 😂), como en iPhone
             val emo = if (emojisBarraActivo && antes.endsWith(" ")) EmojiPalabras.para(previa) else null
+            // Campo vacío: a la derecha, el botón para escanear texto con la cámara
+            val escanearAqui = escanerActivo && antes.isEmpty() && !campoClave
             motor.post {
                 if (!diccionario.vigente(t)) return@post
                 val sig = try {
@@ -1358,7 +1457,7 @@ class TecladoService : InputMethodService(),
                         // La frase va a la derecha; si ahí va un emoji, a la izquierda (sin tapar el deshacer)
                         if (conFrase != null && emoji != null && deshacer == null) conFrase else izquierda,
                         sig.getOrNull(0)?.let { Sugerencia(it) },
-                        emoji ?: conFrase ?: derecha,
+                        if (escanearAqui) Sugerencia("Escanear", accion = ED_ESCANEAR, icono = 1) else emoji ?: conFrase ?: derecha,
                     ))
                 }
             }
@@ -2411,12 +2510,6 @@ class TecladoService : InputMethodService(),
             // emojis frecuentes o la predicción) y luego se esconde sola
             escribiendo = false
             ultimaEscritura = SystemClock.uptimeMillis()
-            // El toque propio: al enviar, el filo del teclado y de la barra destella
-            if (accion == EditorInfo.IME_ACTION_SEND || accion == EditorInfo.IME_ACTION_GO ||
-                accion == EditorInfo.IME_ACTION_SEARCH || accion == EditorInfo.IME_ACTION_DONE) {
-                (panel as? Panel)?.destellar()
-                barra?.destellar()
-            }
             ic.performEditorAction(accion)
             // Enviar/buscar suele limpiar el campo: se vuelve a leer cuando haga falta
             olvidarEspejo()
@@ -2595,6 +2688,39 @@ class TecladoService : InputMethodService(),
         actualizarBarra()
     }
 
+    /** Abre la cámara para escanear texto; lo leído vuelve a este mismo chat */
+    private fun abrirEscaner() {
+        fichaEscaner = java.util.UUID.randomUUID().toString()
+        escanerApp = appActual
+        textoEscaneado = null
+        retro(Tipo.LETRA)
+        try {
+            startActivity(Intent(this, EscanerActivity::class.java).apply {
+                putExtra(EscanerActivity.EXTRA_FICHA, fichaEscaner)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+        } catch (e: Exception) {
+            fichaEscaner = ""
+            Registro.anotar("abrir el escáner", e)
+        }
+    }
+
+    /** Pone el texto escaneado en el chat donde lo pediste (si ya volviste a él) */
+    private fun volcarEscaneado() {
+        val texto = textoEscaneado ?: return
+        if (SystemClock.uptimeMillis() - escaneadoMs > VIGENCIA_ESCANEO) { textoEscaneado = null; return }
+        if (appActual != escanerApp || !isInputViewShown) return
+        val ic = currentInputConnection ?: return
+        textoEscaneado = null
+        // Un espacio si lo anterior no termina en espacio o salto de línea
+        val anterior = try { ic.getTextBeforeCursor(1, 0)?.toString().orEmpty() } catch (_: Exception) { "" }
+        val sep = if (anterior.isNotEmpty() && !anterior[0].isWhitespace()) " " else ""
+        ic.commitText(sep + texto, 1)
+        olvidarEspejo()
+        retro(Tipo.ENTER)
+        actualizarBarra()
+    }
+
     /** Mantener presionada la tecla de emojis: se abren los ajustes del teclado */
     override fun abrirAjustes() {
         try {
@@ -2609,7 +2735,8 @@ class TecladoService : InputMethodService(),
 
     /** Los tres botones de la barra de edición, según haya texto marcado o no */
     private fun barraEdicion(conSeleccion: Boolean): List<Sugerencia?> {
-        val pegar = if (puedePegar()) Sugerencia("Pegar", accion = ED_PEGAR) else null
+        val pegar = if (puedePegar()) Sugerencia("Pegar", accion = ED_PEGAR)
+            else if (escanerActivo && !campoClave) Sugerencia("Escanear", accion = ED_ESCANEAR, icono = 1) else null
         return if (conSeleccion) listOf(
             Sugerencia("Cortar", accion = ED_CORTAR),
             Sugerencia("Copiar", accion = ED_COPIAR),
@@ -2623,6 +2750,10 @@ class TecladoService : InputMethodService(),
     }
 
     private fun editar(accion: Int) {
+        if (accion == ED_ESCANEAR) {
+            abrirEscaner()
+            return
+        }
         val ic = currentInputConnection ?: return
         toques.clear()
         calculada = null
@@ -2761,10 +2892,112 @@ class TecladoService : InputMethodService(),
         }
     }
 
+    // ---------- Capturas de pantalla ----------
+
+    private fun observarCapturas() {
+        if (observando || !Capturas.tienePermiso(this)) return
+        try {
+            contentResolver.registerContentObserver(
+                android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, observadorCapturas)
+            observando = true
+        } catch (e: Exception) { Registro.anotar("vigilar capturas", e) }
+    }
+
+    private fun dejarDeObservarCapturas() {
+        manejador.removeCallbacks(tareaBuscarCaptura)
+        if (!observando) return
+        try { contentResolver.unregisterContentObserver(observadorCapturas) } catch (_: Exception) { }
+        observando = false
+    }
+
+    /** Busca (fuera del hilo de la pantalla) si hay una captura de los últimos minutos */
+    private fun buscarCaptura() {
+        if (!capturasActivas) return
+        val actual = captura?.uri
+        enMotor {
+            val cap = Capturas.buscar(this)
+            val mini = if (cap != null && cap.uri != actual) Capturas.miniatura(this, cap.uri) else null
+            manejador.post {
+                when {
+                    cap == null || cap.uri in capturasVistas -> if (captura != null) quitarCaptura()
+                    cap.uri == captura?.uri -> {}
+                    mini != null -> {
+                        captura = cap
+                        barra?.miniatura = mini
+                        actualizarBarra()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun sugerenciaCaptura(): Sugerencia? {
+        val cap = captura ?: return null
+        if (barra?.miniatura == null) return null
+        if (System.currentTimeMillis() - cap.ms > Capturas.VIGENCIA_MS) return null
+        return Sugerencia("Enviar captura", portapapeles = true, captura = true)
+    }
+
+    private fun quitarCaptura() {
+        captura = null
+        barra?.miniatura = null
+        actualizarBarra()
+    }
+
+    /** Tocaste la captura en la barra: se envía a la app donde estás escribiendo */
+    private fun enviarCaptura() {
+        val cap = captura ?: return
+        val info = currentInputEditorInfo
+        val app = appActual
+        retro(Tipo.ENTER)
+        capturasVistas.add(cap.uri)
+        quitarCaptura()
+        enMotor {
+            val uri = Capturas.copiarParaEnviar(this, cap) ?: return@enMotor
+            manejador.post { entregarCaptura(uri, cap.mime, info, app) }
+        }
+    }
+
+    private fun entregarCaptura(uri: android.net.Uri, mime: String, info: EditorInfo?, app: String?) {
+        // Lo mejor: la app la recibe directo en el chat (WhatsApp, Messenger, Telegram…)
+        val ic = currentInputConnection
+        if (ic != null && Capturas.aceptaImagen(info, mime)) {
+            val contenido = android.view.inputmethod.InputContentInfo(
+                uri, ClipDescription("Captura de pantalla", arrayOf(mime)), null)
+            val ok = try {
+                ic.commitContent(contenido, android.view.inputmethod.InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null)
+            } catch (e: Exception) {
+                Registro.anotar("pegar captura", e)
+                false
+            }
+            if (ok) return
+        }
+        // La app no acepta imágenes desde el teclado: se abre "Compartir" con esa misma app
+        val enviar = Intent(Intent.ACTION_SEND).apply {
+            type = mime
+            putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = android.content.ClipData.newRawUri("Captura de pantalla", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            if (app == null) throw IllegalStateException("sin app")
+            startActivity(Intent(enviar).setPackage(app))
+        } catch (_: Exception) {
+            try {
+                startActivity(Intent.createChooser(enviar, "Enviar captura")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION))
+            } catch (e: Exception) { Registro.anotar("compartir captura", e) }
+        }
+    }
+
     override fun elegir(s: Sugerencia) {
         if (currentInputConnection == null) return
         if (s.clave != 0) {
             elegirClave(s)
+            return
+        }
+        if (s.captura) {
+            enviarCaptura()
             return
         }
         if (s.accion != 0) {
@@ -2917,6 +3150,13 @@ class TecladoService : InputMethodService(),
     }
 
     override fun olvidar(s: Sugerencia) {
+        if (s.captura) {
+            // Mantener presionada la captura: se quita de la barra y no vuelve a salir
+            captura?.let { capturasVistas.add(it.uri) }
+            retro(Tipo.BORRAR)
+            quitarCaptura()
+            return
+        }
         if (s.clave == 1) {
             val app = appActual
             val clave = s.pegar ?: return
@@ -3022,12 +3262,13 @@ class TecladoService : InputMethodService(),
         // [duración en ms, fuerza 1–255] para cada clase (0 letra, 1 pesada, 2 borrar,
         // 3 función, 4 acento, 5 letra rápida a dos dedos)
         val tabla: Array<IntArray> = when (fuerzaVibracion) {
-            "suave" -> arrayOf(intArrayOf(14, 225), intArrayOf(22, 255), intArrayOf(16, 240), intArrayOf(12, 210),
-                intArrayOf(7, 140), intArrayOf(11, 225))
-            "fuerte" -> arrayOf(intArrayOf(22, 255), intArrayOf(34, 255), intArrayOf(25, 255), intArrayOf(18, 255),
-                intArrayOf(11, 200), intArrayOf(16, 255))
-            else -> arrayOf(intArrayOf(18, 255), intArrayOf(28, 255), intArrayOf(20, 255), intArrayOf(15, 250),
-                intArrayOf(9, 170), intArrayOf(13, 255))
+            // Más intensa que antes, siempre al tope de fuerza y en golpes secos
+            "suave" -> arrayOf(intArrayOf(17, 245), intArrayOf(26, 255), intArrayOf(19, 255), intArrayOf(15, 235),
+                intArrayOf(8, 170), intArrayOf(14, 245))
+            "fuerte" -> arrayOf(intArrayOf(27, 255), intArrayOf(40, 255), intArrayOf(30, 255), intArrayOf(22, 255),
+                intArrayOf(13, 220), intArrayOf(20, 255))
+            else -> arrayOf(intArrayOf(22, 255), intArrayOf(33, 255), intArrayOf(24, 255), intArrayOf(18, 255),
+                intArrayOf(11, 200), intArrayOf(17, 255))
         }
         val valores = tabla[clase]
         val amplitud = conAmplitud == true

@@ -5,6 +5,7 @@ import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -54,6 +55,10 @@ data class Sugerencia(
      * que escribiste, 3 = aviso de que ya se guardó. 0 = no es de contraseñas.
      */
     val clave: Int = 0,
+    /** Captura de pantalla reciente para enviar (va con portapapeles = true) */
+    val captura: Boolean = false,
+    /** Ícono al lado del texto: 1 = cámara (escanear texto) */
+    val icono: Int = 0,
 )
 
 /**
@@ -382,7 +387,9 @@ class SuggestionBar(
             alfaCapsula = if (nuevo >= 0) 1f else 0f
             return
         }
-        val desdePos = if (alfaCapsula > 0.05f) posCapsula else nuevo.toFloat()
+        // Sobrio: la cápsula aparece en su casilla con un fundido corto (no viaja)
+        val desdePos = if (nuevo >= 0) nuevo.toFloat() else posCapsula
+        if (nuevo >= 0 && Math.abs(posCapsula - nuevo) > 0.01f) alfaCapsula = 0f
         val hastaPos = if (nuevo >= 0) nuevo.toFloat() else posCapsula
         val desdeAlfa = alfaCapsula
         val hastaAlfa = if (nuevo >= 0) 1f else 0f
@@ -639,6 +646,16 @@ class SuggestionBar(
         textSize = 15f * d
     }.also { Fuentes.aplicar(it, 400) }
     private var clipCrudo: String? = null
+
+    /** Miniatura de la última captura de pantalla (la pone el servicio) */
+    var miniatura: android.graphics.Bitmap? = null
+        set(v) {
+            if (field !== v) { field = v; sombraMini = null; invalidate() }
+        }
+    private var sombraMini: BitmapShader? = null
+    private val matrizMini = android.graphics.Matrix()
+    private val pinturaMini = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val rectMini = RectF()
     private var clipLinea = ""
     private var clipAncho = -1f
 
@@ -666,10 +683,32 @@ class SuggestionBar(
         c.drawRoundRect(capsula, radioC, radioC, pintura)
         pinturaBorde.color = tema.borde
         c.drawRoundRect(capsula, radioC, radioC, pinturaBorde)
+        val cy = capsula.centerY()
+        val bmp = miniatura
+        if (s.captura && bmp != null) {
+            // La captura: miniatura vertical con esquinas redondeadas (como en el iPhone)
+            val alto = capsula.height() - 8f * d
+            val anchoMini = icono * 1.35f
+            val x0 = izq + lados - 2f * d
+            rectMini.set(x0, cy - alto / 2f, x0 + anchoMini, cy + alto / 2f)
+            val sh = sombraMini ?: BitmapShader(bmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP).also { sombraMini = it }
+            // Llena el cuadro y muestra la parte de arriba de la captura
+            val esc = maxOf(rectMini.width() / bmp.width, rectMini.height() / bmp.height)
+            matrizMini.setScale(esc, esc)
+            matrizMini.postTranslate(rectMini.left + (rectMini.width() - bmp.width * esc) / 2f, rectMini.top)
+            sh.setLocalMatrix(matrizMini)
+            pinturaMini.shader = sh
+            c.drawRoundRect(rectMini, 3.5f * d, 3.5f * d, pinturaMini)
+            pinturaBorde.color = tema.borde
+            c.drawRoundRect(rectMini, 3.5f * d, 3.5f * d, pinturaBorde)
+            pinturaChica.color = tema.texto
+            pinturaChica.getFontMetrics(fmTmp)
+            c.drawText(clipLinea, izq + lados + icono + hueco, cy - (fmTmp.ascent + fmTmp.descent) / 2f, pinturaChica)
+            return
+        }
         // Ícono de portapapeles (una tablilla con su gancho)
         pinturaClip.color = tema.texto
         val cx = izq + lados + icono / 2f
-        val cy = capsula.centerY()
         val w2 = icono * 0.38f
         val h2 = icono * 0.5f
         c.drawRoundRect(cx - w2, cy - h2 + 1.5f * d, cx + w2, cy + h2, 2.5f * d, 2.5f * d, pinturaClip)
@@ -686,7 +725,6 @@ class SuggestionBar(
         val ancho = width / 3f
         // La cápsula de la corrección va debajo de las palabras y se desliza entre casillas
         dibujarCapsula(c, ancho)
-        dibujarLuzBorde(c, ancho)
         for (i in 0 until 3) {
             val s = items[i] ?: continue
             val x0 = ancho * i
@@ -699,7 +737,7 @@ class SuggestionBar(
             if (animando) {
                 // La palabra nueva sube apenas mientras aparece (como en iPhone); la corrección
                 // resaltada además brota desde un poquito más chica
-                c.translate(0f, (1f - cambio) * 5f * d)
+                // (sin saltito: solo el fundido, más serio)
                 if (s.destacada) {
                     val k = 0.9f + 0.1f * cambio
                     c.scale(k, k, x0 + ancho / 2f, height / 2f)
@@ -770,8 +808,8 @@ class SuggestionBar(
             val rp = (height - 16 * d) / 2f
             val elegida = i != presionado
             val f = if (!elegida) 1f else brilloSoltado
-            val base = if (elegida) Tema.mezclar(tema.teclaPresionada or (0xFF shl 24), tema.azul, 0.55f) else tema.teclaPresionada
-            val alfaBase = if (elegida) 0x70 else Color.alpha(tema.teclaPresionada)
+            val base = tema.teclaPresionada
+            val alfaBase = Color.alpha(tema.teclaPresionada)
             pintura.color = (base and 0x00FFFFFF) or ((alfaBase * f).toInt().coerceIn(0, 255) shl 24)
             // Presionada se ve apenas hundida; al soltarla vuelve a su tamaño
             val hundir = if (!elegida) 2f * d else 2f * d * f
@@ -780,6 +818,10 @@ class SuggestionBar(
         }
         if (s.clave != 0) {
             dibujarClave(c, s, x0, ancho)
+            return
+        }
+        if (s.icono == 1) {
+            dibujarEscanear(c, s, x0, ancho)
             return
         }
         // Emoji sugerido: se dibuja grande y nítido (antes salía del tamaño de las letras)
@@ -829,6 +871,32 @@ class SuggestionBar(
         }
         val txt = TextUtils.ellipsize(crudo, pinturaTexto, disponible, TextUtils.TruncateAt.END).toString()
         c.drawText(txt, x0 + ancho / 2f, cy, pinturaTexto)
+        pinturaTexto.textSize = 17f * d
+    }
+
+    /** Botón del escáner: una cámara chiquita y "Escanear", sobrio como el resto de la barra */
+    private fun dibujarEscanear(c: Canvas, s: Sugerencia, x0: Float, ancho: Float) {
+        grosor(400)
+        pinturaTexto.textSize = 15.5f * d
+        val icono = 17f * d
+        val hueco = 6f * d
+        val anchoTxt = pinturaTexto.measureText(s.texto)
+        val izq = x0 + (ancho - (icono + hueco + anchoTxt)) / 2f
+        val cy = (6 * d + height - 10 * d) / 2f
+        pinturaClip.color = conAlfaCasilla(tema.texto)
+        val h = icono * 0.62f
+        // Cuerpo con su "joroba" arriba y el lente
+        c.drawRoundRect(izq, cy - h / 2f + 1f * d, izq + icono, cy + h / 2f + 1f * d, 3f * d, 3f * d, pinturaClip)
+        c.drawLine(izq + icono * 0.34f, cy - h / 2f + 1f * d, izq + icono * 0.42f, cy - h / 2f - 1.2f * d, pinturaClip)
+        c.drawLine(izq + icono * 0.42f, cy - h / 2f - 1.2f * d, izq + icono * 0.66f, cy - h / 2f - 1.2f * d, pinturaClip)
+        c.drawLine(izq + icono * 0.66f, cy - h / 2f - 1.2f * d, izq + icono * 0.74f, cy - h / 2f + 1f * d, pinturaClip)
+        c.drawCircle(izq + icono / 2f, cy + 1f * d, h * 0.28f, pinturaClip)
+        pinturaTexto.color = conAlfaCasilla(tema.texto)
+        val alin = pinturaTexto.textAlign
+        pinturaTexto.textAlign = Paint.Align.LEFT
+        pinturaTexto.getFontMetrics(fmTmp)
+        c.drawText(s.texto, izq + icono + hueco, cy - (fmTmp.ascent + fmTmp.descent) / 2f, pinturaTexto)
+        pinturaTexto.textAlign = alin
         pinturaTexto.textSize = 17f * d
     }
 
@@ -938,7 +1006,7 @@ class SuggestionBar(
                 // Deslizar una sugerencia hacia abajo: se descarta (y no se vuelve a sugerir)
                 val bajo = presionado
                 val sb = if (bajo >= 0) items[bajo] else null
-                if (sb != null && sb.clave == 0 && !mantenido && e.y - y0Toque > height * 0.55f &&
+                if (false && sb != null && sb.clave == 0 && !mantenido && e.y - y0Toque > height * 0.55f &&
                     (sb.portapapeles || sePuedeOlvidar(sb))) {
                     manejador.removeCallbacks(alMantener)
                     mantenido = true

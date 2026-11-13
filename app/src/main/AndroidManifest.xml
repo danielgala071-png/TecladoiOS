@@ -4,6 +4,12 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Solo si lo activas en Ajustes: los nombres de tus contactos (nunca salen del celular) -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Solo si lo activas en Ajustes: ver tus capturas de pantalla recientes para enviarlas
+         desde la barra (solo las de los últimos minutos) -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- Para pedirte (en Ajustes) que el ahorro de batería no cierre el teclado -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:name=".App"
@@ -32,6 +38,32 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+
+        <!-- Escáner de texto por cámara: en su propio proceso, para que el modelo de lectura
+             y la foto nunca ocupen memoria del teclado -->
+        <activity
+            android:name=".EscanerActivity"
+            android:process=":escaner"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="com.tecladoios.escaner"
+            android:windowSoftInputMode="stateHidden|adjustResize"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+        <!-- Donde la cámara deja la foto del escáner (privado, se borra al leerla) -->
+        <provider
+            android:name=".EscanerProvider"
+            android:authorities="com.tecladoios.escaner"
+            android:process=":escaner"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
+        <!-- Entrega la captura que tocas en la barra a la app donde escribes -->
+        <provider
+            android:name=".CapturaProvider"
+            android:authorities="com.tecladoios.capturas"
+            android:exported="false"
+            android:grantUriPermissions="true" />
 
         <service
             android:name=".TecladoService"

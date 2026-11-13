@@ -103639,7 +103639,6 @@ birocraticamente:burocráticamente
 birocraticas:burocráticas
 birocratico:burocrático
 birocraticos:burocráticos
-birra:borra
 birraba:borraba
 birrabamos:borrábamos
 birraban:borraban
@@ -103669,7 +103668,6 @@ birrariamos:borraríamos
 birrarian:borrarían
 birrarias:borrarías
 birraron:borraron
-birras:borras
 birrasela:bórrasela
 birraselo:bórraselo
 birraste:borraste
@@ -129168,7 +129166,6 @@ carreta:carrera
 carretas:carreras
 carretdra:carretera
 carretea:carretera
-carretear:carretera
 carreteas:carreteras
 carreteea:carretera
 carreteeas:carreteras
@@ -139696,7 +139693,6 @@ chamuyados:chamullados
 chamuyamos:chamullamos
 chamuyan:chamullan
 chamuyando:chamullando
-chamuyar:chamullar
 chamuyara:chamullara
 chamuyaran:chamullaran
 chamuyaras:chamullaras
@@ -201599,10 +201595,7 @@ copabamos:copiábamos
 copaban:copiaban
 copabas:copiabas
 copad:copas
-copada:copiada
 copadas:copiadas
-copado:copiado
-copados:copiados
 copadre:compadre
 copadres:compadres
 copai:copia
@@ -223019,7 +223012,6 @@ curqo:curso
 curqr:curar
 curqs:curas
 curr:curar
-currar:curar
 currazo:churrazo
 currciulum:currículum
 currculum:currículum
@@ -371210,7 +371202,6 @@ fomenyes:fomentes
 fomenyo:fomento
 fomer:comer
 fomerntar:fomentar
-fomes:formes
 fometa:fomenta
 fometaba:fomentaba
 fometabamos:fomentábamos
@@ -391456,7 +391447,6 @@ guariamos:guiaríamos
 guarian:guiarían
 guarida:guardia
 guaridas:guardias
-guaro:guardo
 guaron:guiaron
 guarrdar:guardar
 guarsa:guarda
@@ -493026,7 +493016,6 @@ mazmaorrita:mazamorrita
 mazmorrita:mazamorrita
 maznana:manzana
 maznanas:manzanas
-mazo:marzo
 mazor:marzo
 mazos:marzos
 mazre:madre
@@ -508342,11 +508331,9 @@ moklesto:molesto
 mokmento:momento
 moktar:montar
 mol:mil
-mola:molía
 molagro:milagro
 molagros:milagros
 molams:molamos
-molan:molían
 molaos:molamos
 molas:molías
 mold:molde
@@ -553935,7 +553922,6 @@ parceiste:pareciste
 parcemos:parecemos
 parcen:parecen
 parcer:parecer
-parcera:parecerá
 parceran:parecerán
 parceras:parecerás
 parcere:pareceré
@@ -582930,7 +582916,6 @@ polariamos:poblaríamos
 polarian:poblarían
 polarias:poblarías
 polaron:poblaron
-polas:pilas
 polasmar:plasmar
 polaste:poblaste
 polastico:plástico
@@ -748415,7 +748400,6 @@ tronbco:tronco
 tronbo:trono
 tronbos:tronos
 tronc:tronco
-tronca:ronca
 troncar:roncar
 tronci:tronco
 troncis:troncos
@@ -774998,7 +774982,6 @@ viraes:vieras
 virailzar:viralizar
 viraizar:viralizar
 virakizar:viralizar
-viral:vital
 virales:vitales
 viraliar:viralizar
 viraliazr:viralizar

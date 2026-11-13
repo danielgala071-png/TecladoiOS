@@ -2,6 +2,8 @@ package com.tecladoios
 
 import android.content.Context
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.lang.ref.WeakReference
 import java.text.Normalizer
 import java.util.concurrent.atomic.AtomicInteger
@@ -72,6 +74,27 @@ class Diccionario(context: Context) {
 
     /** El cerebro: tu modelo de lenguaje personal (frases, apps, errores de siempre) */
     private val cerebro = Cerebro(File(context.applicationContext.filesDir, Cerebro.ARCHIVO))
+
+    /** Otros idiomas que escribes a la vez (inglés, portugués): sin cambiar nada a mano */
+    private val idiomas = Idiomas(context)
+
+    /** Activa los idiomas extra ("en", "pt"). Cargar es lento: llamar fuera de la pantalla. */
+    fun ponerIdiomas(codigos: Set<String>) = idiomas.activar(codigos)
+
+    /** Campo nuevo: la frase anterior ya no manda tanto sobre el idioma */
+    fun campoNuevo() = idiomas.campoNuevo()
+
+    /**
+     * Android pide memoria con el teclado cerrado: se sueltan las cosas que se rearman solas
+     * (idiomas extra y cachés). El diccionario principal se queda: es lo que hace que el
+     * teclado aparezca con sugerencias al instante.
+     */
+    @Synchronized
+    fun soltarMemoria() {
+        idiomas.soltar()
+        clases.clear()
+        cercanas.clear()
+    }
     /**
      * Tus teclas confundidas (las aprende el cerebro): la autocorrección cobra menos por los
      * dedazos que tú sueles hacer. Es una copia para leerla rápido en cada comparación.
@@ -215,73 +238,133 @@ class Diccionario(context: Context) {
      * Android no tiene que cerrar el teclado por falta de memoria y se busca igual de rápido
      * (búsqueda binaria: unas 20 comparaciones por palabra).
      */
-    private class Tipeos(
-        private val bytes: ByteArray,
-        /** Dónde empieza cada error en [bytes] (el último marca el final) */
-        private val inicios: IntArray,
-        private val destinos: IntArray,
-        private val palabras: Array<String>,
-    ) {
-        val size get() = destinos.size
+    /**
+     * Los errores de fábrica (casi 800 mil) en el formato compacto de assets/errores.bin
+     * (ver herramientas/compilar_errores.py). Normalmente se usan DIRECTO desde el APK
+     * ("mapeados"): no ocupan memoria del teclado ni hay que leer nada al arrancar; Android trae
+     * solo las partes que se consultan. Números de 3 bytes.
+     */
+    private class Tipeos(private val b: ByteBuffer) {
+        private val n: Int
+        private val oIni: Int
+        private val oDest: Int
+        private val oPalIni: Int
+        private val oClaves: Int
+        private val oPal: Int
+
+        init {
+            if (b.capacity() >= 20 && b.get(0) == 'T'.code.toByte() && b.get(1) == 'P'.code.toByte() &&
+                b.get(2) == 'E'.code.toByte() && b.get(3) == '1'.code.toByte()
+            ) {
+                n = b.getInt(4)
+                val m = b.getInt(8)
+                val totalClaves = b.getInt(12)
+                oIni = 20
+                oDest = oIni + (n + 1) * 3
+                oPalIni = oDest + n * 3
+                oClaves = oPalIni + (m + 1) * 3
+                oPal = oClaves + totalClaves
+            } else {
+                n = 0; oIni = 0; oDest = 0; oPalIni = 0; oClaves = 0; oPal = 0
+            }
+        }
+
+        val size get() = n
+
+        private fun u24(p: Int): Int =
+            (b.get(p).toInt() and 0xFF) or ((b.get(p + 1).toInt() and 0xFF) shl 8) or
+                ((b.get(p + 2).toInt() and 0xFF) shl 16)
 
         /** Compara el error [i] con [k] (bytes UTF-8), como el orden del archivo */
         private fun comparar(i: Int, k: ByteArray, soloPrefijo: Boolean = false): Int {
-            val a = inicios[i]
-            val n = inicios[i + 1] - a
-            for (x in 0 until minOf(n, k.size)) {
-                val c = (bytes[a + x].toInt() and 0xFF) - (k[x].toInt() and 0xFF)
+            val a = u24(oIni + i * 3)
+            val largo = u24(oIni + (i + 1) * 3) - a
+            for (x in 0 until minOf(largo, k.size)) {
+                val c = (b.get(oClaves + a + x).toInt() and 0xFF) - (k[x].toInt() and 0xFF)
                 if (c != 0) return c
             }
-            if (soloPrefijo && n >= k.size) return 0
-            return n - k.size
+            if (soloPrefijo && largo >= k.size) return 0
+            return largo - k.size
         }
 
         private fun buscar(k: String): Int {
+            if (n == 0) return -1
             val kb = k.toByteArray(Charsets.UTF_8)
             var a = 0
-            var b = size - 1
-            while (a <= b) {
-                val m = (a + b) ushr 1
+            var z = n - 1
+            while (a <= z) {
+                val m = (a + z) ushr 1
                 val c = comparar(m, kb)
                 if (c == 0) return m
-                if (c < 0) a = m + 1 else b = m - 1
+                if (c < 0) a = m + 1 else z = m - 1
             }
             return -1
         }
 
+        private fun palabra(j: Int): String {
+            val a = u24(oPalIni + j * 3)
+            val z = u24(oPalIni + (j + 1) * 3)
+            val arr = ByteArray(z - a)
+            for (x in arr.indices) arr[x] = b.get(oPal + a + x)
+            return String(arr, Charsets.UTF_8)
+        }
+
         operator fun get(k: String): String? {
             val i = buscar(k)
-            return if (i >= 0) palabras[destinos[i]] else null
+            return if (i >= 0) palabra(u24(oDest + i * 3)) else null
         }
 
         fun containsKey(k: String) = buscar(k) >= 0
 
         /** ¿Algún error empieza con [np]? */
         fun hayConPrefijo(np: String): Boolean {
-            if (size == 0) return false
+            if (n == 0) return false
             val kb = np.toByteArray(Charsets.UTF_8)
             var a = 0
-            var b = size
-            while (a < b) {
-                val m = (a + b) ushr 1
-                if (comparar(m, kb) < 0) a = m + 1 else b = m
+            var z = n
+            while (a < z) {
+                val m = (a + z) ushr 1
+                if (comparar(m, kb) < 0) a = m + 1 else z = m
             }
-            return a < size && comparar(a, kb, soloPrefijo = true) == 0
+            return a < n && comparar(a, kb, soloPrefijo = true) == 0
         }
 
         companion object {
-            val VACIO = Tipeos(ByteArray(0), IntArray(1), IntArray(0), emptyArray())
+            val VACIO = Tipeos(ByteBuffer.allocate(0))
         }
     }
 
     private fun leerTipeos(c: Context): Tipeos {
-        // Primero se juntan los pares (error, corrección); muchos errores llevan a la misma
-        // palabra y de cada una se guarda una sola copia
+        // 1) Lo normal: el binario sin comprimir dentro del APK, mapeado (cero copias)
+        try {
+            c.assets.openFd("errores.bin").use { fd ->
+                java.io.FileInputStream(fd.fileDescriptor).channel.use { canal ->
+                    val buf = canal.map(java.nio.channels.FileChannel.MapMode.READ_ONLY, fd.startOffset, fd.length)
+                    buf.order(ByteOrder.LITTLE_ENDIAN)
+                    val t = Tipeos(buf)
+                    if (t.size > 0) return t
+                }
+            }
+        } catch (_: java.io.FileNotFoundException) {
+            // Comprimido dentro del APK: no se puede mapear, se lee de una vez (abajo)
+        } catch (e: Exception) { Registro.anotar("mapear errores de fábrica", e) }
+        // 2) El binario comprimido: un solo bloque de bytes (sin procesar línea por línea)
+        try {
+            c.assets.open("errores.bin").use { ent ->
+                val t = Tipeos(ByteBuffer.wrap(ent.readBytes()).order(ByteOrder.LITTLE_ENDIAN))
+                if (t.size > 0) return t
+            }
+        } catch (_: java.io.FileNotFoundException) {
+        } catch (e: Exception) { Registro.anotar("leer errores.bin", e) }
+        // 3) Versión vieja (solo errores.txt): se arma el mismo formato en memoria
+        return leerTipeosTexto(c)
+    }
+
+    private fun leerTipeosTexto(c: Context): Tipeos {
         val unicas = HashMap<String, Int>(60_000)
         val palabras = ArrayList<String>(60_000)
-        val claves = ArrayList<String>(740_000)
-        // Números sin "envolver" (una lista de Int crearía 700 mil objetos de más al cargar)
-        var destinos = IntArray(740_000)
+        val claves = ArrayList<String>(800_000)
+        var destinos = IntArray(800_000)
         var cuantos = 0
         try {
             c.assets.open("errores.txt").bufferedReader().useLines { lineas ->
@@ -290,37 +373,50 @@ class Diccionario(context: Context) {
                     val i = linea.indexOf(':')
                     if (i <= 0 || i >= linea.length - 1) continue
                     val d = linea.substring(i + 1).trim().replace('_', ' ')
-                    val n = unicas.getOrPut(d) { palabras.add(d); palabras.size - 1 }
+                    val k = unicas.getOrPut(d) { palabras.add(d); palabras.size - 1 }
                     claves.add(linea.substring(0, i))
                     if (cuantos == destinos.size) destinos = destinos.copyOf(destinos.size * 2)
-                    destinos[cuantos++] = n
+                    destinos[cuantos++] = k
                 }
             }
-        } catch (e: Exception) { Registro.anotar("leer errores de fábrica", e) }
-        unicas.clear()
-        // En orden de bytes (el archivo ya viene así; si alguien lo editó a mano, se ordena)
-        var ordenado = true
-        for (x in 1 until claves.size) if (claves[x - 1] > claves[x]) { ordenado = false; break }
-        val orden: IntArray? = if (ordenado) null else claves.indices.sortedBy { claves[it] }.toIntArray()
-        val n = claves.size
-        // Todo pegado en un solo bloque de bytes (se mide primero para no copiar de más)
-        var total = 0
-        for (x in 0 until n) total += claves[x].toByteArray(Charsets.UTF_8).size
-        val bytes = ByteArray(total)
-        val inicios = IntArray(n + 1)
-        val dest = IntArray(n)
-        var p = 0
-        for (pos in 0 until n) {
-            val idx = orden?.get(pos) ?: pos
-            val b = claves[idx].toByteArray(Charsets.UTF_8)
-            inicios[pos] = p
-            System.arraycopy(b, 0, bytes, p, b.size)
-            p += b.size
-            dest[pos] = destinos[idx]
+        } catch (e: Exception) {
+            Registro.anotar("leer errores de fábrica", e)
+            return Tipeos.VACIO
         }
-        inicios[n] = p
+        unicas.clear()
+        val orden = claves.indices.sortedWith { x, y -> compararBytes(claves[x], claves[y]) }
+        val n = claves.size
+        val clavesB = Array(n) { claves[orden[it]].toByteArray(Charsets.UTF_8) }
+        val palB = Array(palabras.size) { palabras[it].toByteArray(Charsets.UTF_8) }
+        val totalClaves = clavesB.sumOf { it.size }
+        val totalPal = palB.sumOf { it.size }
+        val buf = ByteBuffer.allocate(20 + (n + 1) * 3 + n * 3 + (palB.size + 1) * 3 + totalClaves + totalPal)
+            .order(ByteOrder.LITTLE_ENDIAN)
+        buf.put("TPE1".toByteArray(Charsets.US_ASCII))
+        buf.putInt(n).putInt(palB.size).putInt(totalClaves).putInt(totalPal)
+        fun put24(v: Int) { buf.put((v and 0xFF).toByte()); buf.put(((v shr 8) and 0xFF).toByte()); buf.put(((v shr 16) and 0xFF).toByte()) }
+        var p = 0
+        for (k in clavesB) { put24(p); p += k.size }
+        put24(p)
+        for (x in 0 until n) put24(destinos[orden[x]])
+        p = 0
+        for (w in palB) { put24(p); p += w.size }
+        put24(p)
+        for (k in clavesB) buf.put(k)
+        for (w in palB) buf.put(w)
         claves.clear()
-        return Tipeos(bytes, inicios, dest, palabras.toTypedArray())
+        return Tipeos(buf)
+    }
+
+    /** Orden por bytes UTF-8 (el mismo del archivo) */
+    private fun compararBytes(a: String, b: String): Int {
+        val x = a.toByteArray(Charsets.UTF_8)
+        val y = b.toByteArray(Charsets.UTF_8)
+        for (i in 0 until minOf(x.size, y.size)) {
+            val c = (x[i].toInt() and 0xFF) - (y[i].toInt() and 0xFF)
+            if (c != 0) return c
+        }
+        return x.size - y.size
     }
 
     /** ¿[np] es el comienzo de un dedazo de fábrica? ("connsec" → "connsecuencia") */
@@ -431,7 +527,7 @@ class Diccionario(context: Context) {
                     if (p.isEmpty() || p[0] == '#') continue
                     if (p == "@fijas") {
                         conFijas = true
-                        for (w in (BASE + " " + BASE_TILDES + " " + BASE_EXTRA + " " + JERGA + " " + JERGA_MAS).trim().split(ESPACIOS)) sumar(w)
+                        for (w in (BASE + " " + BASE_TILDES + " " + BASE_EXTRA + " " + JERGA + " " + JERGA_MAS + " " + JERGA_MUNDO).trim().split(ESPACIOS)) sumar(w)
                         continue
                     }
                     sumar(p)
@@ -444,7 +540,7 @@ class Diccionario(context: Context) {
                 }
             }
         } catch (_: Exception) { }
-        if (!conFijas) for (w in (BASE + " " + BASE_TILDES + " " + BASE_EXTRA + " " + JERGA + " " + JERGA_MAS).trim().split(ESPACIOS)) sumar(w)
+        if (!conFijas) for (w in (BASE + " " + BASE_TILDES + " " + BASE_EXTRA + " " + JERGA + " " + JERGA_MAS + " " + JERGA_MUNDO).trim().split(ESPACIOS)) sumar(w)
         if (!conMedio) for (w in MEDIO.split(ESPACIOS)) sumar(w)
         vistos.clear()
 
@@ -596,7 +692,7 @@ class Diccionario(context: Context) {
 
     private fun conoce(ix: Indice, p: String): Boolean =
         rango(ix, p) >= 0 || propia(p.lowercase(), aprendidas[p.lowercase()] ?: 0) ||
-            esContacto(p.lowercase()) || p.lowercase() in INGLES
+            esContacto(p.lowercase()) || p.lowercase() in INGLES || idiomas.existe(p)
 
     /**
      * ¿Una palabra aprendida ya es "tuya" (se sugiere con fuerza y no se corrige)?
@@ -612,9 +708,50 @@ class Diccionario(context: Context) {
             // Una palabra del diccionario escrita sin tilde ("sabado", "codigo") se sigue
             // corrigiendo, salvo que la uses así muchísimas veces a propósito
             SIN_TILDE -> n >= MIN_VARIANTE
-            else -> if (l.length <= 2) n >= MIN_CORTA && l.any { it in "aeiouáéíóú" } else true
+            else -> when {
+                // Golpes de teclado ("asdf", "kjjjk", "hgfd") nunca se vuelven palabras tuyas
+                pareceBasura(l) -> false
+                l.length <= 2 -> n >= MIN_CORTA && l.any { it in "aeiouáéíóú" }
+                // Palabra nueva que está a una letra de una muy común: tiene que repetirse más
+                // (así un dedazo que se te escapó dos veces no se vuelve "tuyo")
+                n < MIN_CERCANA && cercaDeComun(ix, l) -> false
+                else -> true
+            }
         }
     }
+
+    /**
+     * ¿[l] parece un golpe de teclado y no una palabra? Cinco consonantes seguidas, una
+     * consonante tres veces seguidas o una fila del teclado corrida ("asdf", "hjkl").
+     */
+    private fun pareceBasura(l: String): Boolean {
+        if (l.length < 3) return false
+        // (Sin vocales sí puede ser tuya: "tqm", "ntp", "xd", "pls" son abreviaturas a propósito)
+        val vocales = "aeiouáéíóúü"
+        var cons = 0
+        var rep = 1
+        for (i in l.indices) {
+            cons = if (l[i] in vocales || l[i] == 'y') 0 else cons + 1
+            if (cons >= 5) return true
+            rep = if (i > 0 && l[i] == l[i - 1]) rep + 1 else 1
+            if (rep >= 3 && l[i] !in vocales && l[i] !in "jsr") return true
+        }
+        return FILAS_TECLADO.any { l.contains(it) }
+    }
+
+    /** ¿Hay una palabra muy común (entre las 5000 primeras) a una sola letra de [l]? */
+    private fun cercaDeComun(ix: Indice, l: String): Boolean = cercanas.getOrPut(l) {
+        val np = normal(l)
+        var hay = false
+        for (ch in iniciales(np)) {
+            recorrer(ix, ch, np.length - 1, np.length + 1) { i ->
+                if (!hay && i < 5000 && distancia(np, ix.normal[i], ix.normal[i].length, 0.6f) <= 0.6f) hay = true
+            }
+            if (hay) break
+        }
+        hay
+    }
+    private val cercanas = HashMap<String, Boolean>()
 
     private fun clase(ix: Indice, l: String): Int = clases.getOrPut(l) {
         val n = normal(l)
@@ -627,6 +764,10 @@ class Diccionario(context: Context) {
 
     /** ¿[l] es una palabra del diccionario sin su tilde? ("sabado" existe como "sábado") */
     private fun esVariante(ix: Indice, l: String): Boolean = clase(ix, l) == SIN_TILDE
+
+    /** Mayúsculas para una palabra de otro idioma ("I'm" se queda como está) */
+    private fun igualarMayusOtro(c: String, modelo: String): String =
+        if (c.any { it.isUpperCase() }) c else igualarMayus(c, modelo)
 
     private fun igualarMayus(c: String, modelo: String): String = when {
         modelo.length > 1 && modelo.all { !it.isLetter() || it.isUpperCase() } -> c.uppercase()
@@ -961,6 +1102,22 @@ class Diccionario(context: Context) {
             if (agenda.isNotEmpty()) for ((w, nw) in agenda) {
                 if (w == lp || !nw.startsWith(np) || bloqueada(w) || !esContacto(w)) continue
                 res[w] = (res[w] ?: 0) + 520
+            }
+        }
+        // Otros idiomas: sus palabras entran según cuánto pesa ese idioma en la frase. Si en
+        // español casi no hay palabras que empiecen así, también entran (así "beau..." ofrece
+        // "beautiful" aunque vengas escribiendo en español).
+        if (idiomas.activo && !cortado()) {
+            val (_, pesoOtro) = idiomas.dominante() ?: ("" to 0f)
+            if (pesoOtro >= 0.3f || res.size < 3) {
+                val escala = if (pesoOtro >= 0.3f) 0.25f + pesoOtro else 0.3f
+                for ((w, r) in idiomas.completar(prefijo, 6)) {
+                    val lw = w.lowercase()
+                    if (lw == lp || bloqueada(lw)) continue
+                    val f = (1000.0 - 85.0 * Math.log(r + 1.0)).toInt().coerceAtLeast(1)
+                    val v = (f * escala).toInt()
+                    if ((res[w] ?: 0) < v) res[w] = v
+                }
             }
         }
         val enFormal = formal
@@ -1798,6 +1955,20 @@ class Diccionario(context: Context) {
         FORMAS[sinTildes(p)]?.let { f -> return if (f == p || bloqueada(f)) null else f }
         // Palabras en inglés que se usan en el chat ("ok", "link", "story"): no se tocan
         if (l in INGLES) return null
+        // Otro idioma que escribes (inglés, portugués): si la palabra existe allá y la frase va en
+        // ese idioma, o es muy común allá, se respeta tal cual. Si la frase va en ese idioma y la
+        // palabra no existe, se corrige en ese idioma ("teh" → "the") o no se toca: nunca se le
+        // impone una palabra española rara a una frase en inglés.
+        if (idiomas.activo) {
+            val ixE = indice
+            val rEs = if (ixE != null) rango(ixE, p) else -1
+            if (rEs < 0 && !propia(l, aprendidas[l] ?: 0) && !esContacto(l)) {
+                if (idiomas.protege(l)) return null
+                idiomas.corregir(l)?.let { c ->
+                    return if (c == Idiomas.NO_TOCAR) null else igualarMayusOtro(c, p).takeIf { it != p }
+                }
+            }
+        }
         // Nombres de tus contactos: nunca se corrigen, solo se les pone mayúscula
         if (esContacto(l)) return if (p[0].isLowerCase()) p.replaceFirstChar { it.uppercase() } else null
         // Errores comunes al escribir rápido o de oído: "aser" → "hacer", "nesecito" → "necesito"
@@ -2206,6 +2377,7 @@ class Diccionario(context: Context) {
 
     @Synchronized
     fun aprenderPar(previa: String, palabra: String, previa2: String = "") {
+        if (idiomas.activo) idiomas.notar(palabra, indice?.let { rango(it, palabra) } ?: -1)
         if (pausado || !valida(palabra) || (previa.isNotEmpty() && !valida(previa))) return
         val p2 = if (previa2.isNotEmpty() && valida(previa2)) previa2 else ""
         cerebro.aprender(previa, palabra, p2, app)
@@ -2656,6 +2828,13 @@ class Diccionario(context: Context) {
         private const val COMUN_SEPARADOR = 6000
         /** Veces que hay que usar una palabra que no está en el diccionario para que sea tuya */
         private const val MIN_PROPIA = 3
+        /** Una palabra nueva muy parecida a una común necesita más usos para ser tuya */
+        private const val MIN_CERCANA = 6
+        /** Letras seguidas de una fila del teclado: si una "palabra" las tiene, es un golpe */
+        private val FILAS_TECLADO = listOf(
+            "qwer", "wert", "erty", "rtyu", "tyui", "yuio", "uiop", "asdf", "sdfg", "dfgh", "fghj",
+            "ghjk", "hjkl", "jklñ", "zxcv", "xcvb", "cvbn", "vbnm", "poiu", "lkjh", "mnbv", "fdsa",
+        )
         /** Lo mismo para palabras de dos letras ("yq", "jj" casi siempre son errores) */
         private const val MIN_CORTA = 6
         /** Lo mismo para una palabra escrita sin su tilde ("sabado") */
@@ -4183,6 +4362,24 @@ yapéame: porfa, cuando, la, el, ahorita
         // ---------- Más Perú (versión 7) ----------
 
         /** Más jerga peruana del día a día: barrio, chat, familia y verbos bien nuestros */
+        /**
+         * Modismos de toda Latinoamérica y España, y el "spanglish" de redes: México (neta, chido,
+         * órale), Colombia (parcero, bacano, vaina), Argentina (boludo, laburo, quilombo), Chile
+         * (pololo, carrete, fome), España (guay, mola, flipar) y redes (stalkear, ghostear, outfit).
+         * Se respetan al escribirlas (no se "corrigen"). Sin insultos ni palabras vulgares.
+         */
+        private const val JERGA_MUNDO = """
+            guey netas chida chidos chidas padrísimo padrísima órale híjole chamaca chamacos morro morras morros
+            cuates carnal carnala cheve cheves chafa chafas parcera parceros bacana bacanos berraca berracos
+            guaro pola polas rumba rumbear rumbeando parche parchar parchado vaina vainas boluda boludos boludez
+            pibes pibas laburando laburos quilombo quilombos copado copada copados bondi birra birras chabón
+            chabona chamuyo chamuyar morfar morfi fiaca guita trucho bancar bancame fomes pololos pololear
+            carrete carretear guaguas cuático cuática filete guay guays mola molan mogollón flipar flipo flipas
+            flipante tronca curro currar currando mazo chaval chavala chavales majo maja crushes randoms
+            influencers streamers gamers ghostear ghosteo ghosteó outfits looks matches tiktoker tiktokers
+            youtuber youtubers instagramer trends viral hashtag hashtags xdd ksyo besti
+        """
+
         private const val JERGA_MAS = """
             malogrado malograda malogrados malogradas malograr malogra malogran malogró malogré
             malograste malograron malogrando malograrse malogrón huachimán huachimanes guachimán

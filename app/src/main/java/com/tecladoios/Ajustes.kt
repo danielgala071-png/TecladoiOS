@@ -34,6 +34,15 @@ object Ajustes {
     fun limpiarClaves(c: Context) = si(c, "limpiar_claves", true)
     /** Recordar contraseñas (cifradas, solo en el celular; se guardan cuando tú lo pides) */
     fun recordarClaves(c: Context) = si(c, "recordar_claves", true)
+    /** Capturas de pantalla recientes en la barra para enviarlas con un toque */
+    fun capturas(c: Context) = si(c, "capturas", true)
+    /** Botón "Escanear" (texto con la cámara) en la barra con el campo vacío */
+    fun escanerBarra(c: Context) = si(c, "escaner_barra", true)
+    /** Idiomas que escribes además del español (sin cambiar nada a mano) */
+    fun idiomas(c: Context): Set<String> = buildSet {
+        if (si(c, "idioma_en", true)) add("en")
+        if (si(c, "idioma_pt", false)) add("pt")
+    }
     /** Al cerrar con ? o ! se pone el signo de apertura (¿ ¡) al inicio, como se escribe en español */
     fun apertura(c: Context) = si(c, "apertura", true)
     /** Emojis en la barra de sugerencias según lo que escribes ("jaja" → 😂) */

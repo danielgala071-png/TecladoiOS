@@ -195,8 +195,8 @@ class KeyPreviewOverlay(private val anchor: View) {
             // ve al instante, sin quedarse atrás del dedo
             when {
                 deslizando -> b.animar(0.9f, 1f, 80, true, t)
-                rapido -> b.animar(0.8f, 1f, Movimiento.BURBUJA_RAPIDA, true, t)
-                else -> b.animar(0.55f, 1f, Movimiento.BURBUJA_ENTRA, true, t)
+                rapido -> b.animar(0.92f, 1f, Movimiento.BURBUJA_RAPIDA, true, t)
+                else -> b.animar(0.86f, 1f, Movimiento.BURBUJA_ENTRA, true, t)
             }
             activas[id] = b
             postInvalidateOnAnimation()
@@ -340,7 +340,7 @@ class KeyPreviewOverlay(private val anchor: View) {
         const val VISIBLE_MINIMO = 90L
         val REBOTE = Movimiento.REBOTE
         /** Aparece rápido y frena suave, sin rebote (como en iOS) */
-        val REBOTE_BURBUJA = Movimiento.POP
+        val REBOTE_BURBUJA = Movimiento.SUAVE
         val FRENO = Movimiento.SUAVE
 
         /** Color [a] (con transparencia) puesto encima de [b] (opaco) */

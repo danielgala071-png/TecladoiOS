@@ -122,7 +122,8 @@ class KeyboardView(
     /** Medida de letras e íconos: crece y se achica junto con el teclado */
     private fun tx(v: Float) = v * d * factor
     /** Alto de una fila normal de letras */
-    private val altoBase = (if (horizontal) dp(40f) else dp(54f)) * factor
+    // Filas un poco más altas: más cómodo para escribir con dos pulgares (menos letras vecinas)
+    private val altoBase = (if (horizontal) dp(41f) else dp(56f)) * factor
     /** Fila de números arriba de las letras (ajuste): el teclado tiene una fila más */
     private val filaNumeros = Ajustes.filaNumeros(context)
     private val filasTotal = if (filaNumeros) 5 else 4
@@ -138,7 +139,8 @@ class KeyboardView(
     // Huecos un poquito más finos: las teclas se ven más grandes y es más fácil atinarles
     // Separación más fina: las teclas crecen y es más fácil atinarles (como el iPhone)
     private val sepH = dp(1.6f)
-    private val sepV = dp(3.6f)
+    // Entre filas un hueco un poco mayor: el pulgar no se cae a la fila de arriba o de abajo
+    private val sepV = dp(4.1f)
     // Esquinas como las teclas de iOS 26 (redondas pero sin parecer pastillas)
     // Un poco más redondas: el teclado se ve más suave
     private val radio = dp(8.4f)
@@ -281,17 +283,13 @@ class KeyboardView(
     private fun avance(): Float {
         if (aparicion >= 1f) return 1f
         val base = ((aparicion - 0.15f) / 0.85f).coerceIn(0f, 1f)
-        val retraso = if (dirAparicion == 0) 0f else filaDibujo * 0.08f
-        return ((base - retraso) / (1f - 0.08f * 3f)).coerceIn(0f, 1f)
+        // Sobrio, como el iPhone: todo el teclado cambia a la vez con un fundido corto
+        return base
     }
 
-    private fun escalaEtiqueta(): Float {
-        if (aparicion >= 1f) return 1f
-        val p = avance()
-        // Mayúsculas ↔ minúsculas: las letras crecen apenas (94 % → 100 %) mientras aparecen,
-        // como si se transformaran; al cambiar de teclado el acercamiento es más notorio
-        return if (dirAparicion == 0) 0.94f + 0.06f * p else 0.86f + 0.14f * p
-    }
+    /** Sobrio, como el iPhone: las letras no se agrandan al cambiar, solo aparecen */
+    private fun escalaEtiqueta(): Float = 1f
+
 
     private fun animarEtiquetas(direccion: Int = 0) {
         dirAparicion = direccion
@@ -1046,10 +1044,7 @@ class KeyboardView(
             else -> base
         }
         // Teclado numérico: el número que tocas se enciende con un toque del color de la app
-        if (pad && t.tipo == Tipo.LETRA && (presionada || f > 0f) && !modoCursor) {
-            val k = if (presionada) 1f else f
-            color = mezclarConAlfa(color, (tema.azul and 0x00FFFFFF) or (0x8C shl 24), 0.5f * k)
-        }
+        // (gris como el iPhone: el color de la app queda solo en el borde del teclado)
         // Borrar con ritmo: cada letra que se va, la tecla late (un gris más claro, sin color)
         if (t.tipo == Tipo.BORRAR && latidoBorrar > 0f && !modoCursor) {
             color = mezclarConAlfa(color, tema.teclaPresionada, 0.6f * latidoBorrar)
@@ -1143,7 +1138,7 @@ class KeyboardView(
         val cy = r.centerY()
         val contenido = conAparicion(when {
             t.tipo == Tipo.ENTER && enterAccion && !presionada -> tema.textoAcento
-            t.tipo == Tipo.SHIFT && shift > 0 -> flechaActiva
+            t.tipo == Tipo.SHIFT && shift > 0 -> tema.textoActivo
             else -> tema.texto
         })
         pinturaIcono.color = contenido
@@ -1740,8 +1735,9 @@ class KeyboardView(
                                 acciones.moverCursorVertical(m)
                                 yCursor += m * pasoY
                             }
-                        } else if (Math.abs(x - xCursor) > dp(18f) &&
-                            SystemClock.uptimeMillis() - espacioDesdeMs > 140) {
+                        } else if (false && Math.abs(x - xCursor) > dp(18f)) {
+                            // Gesto quitado: barrer el espacio ya no mueve el cursor. Para
+                            // moverlo, mantén el espacio apoyado (como en el iPhone).
                             // Escribiendo rápido con los pulgares el dedo a veces barre el espacio:
                             // solo se activa el cursor si el dedo se quedó un instante apoyado
                             manejador.removeCallbacks(activarCursor)
@@ -1791,7 +1787,7 @@ class KeyboardView(
                         // Toque corto (escribiendo rápido): el dedo se barre al soltarse, pero
                         // la letra es la de donde cayó. Solo un dedo que se queda y se mueve a
                         // propósito cambia de tecla.
-                        if (e.eventTime - (bajadaMs[id] ?: 0L) < TOQUE_RAPIDO_MS) continue
+                        if (e.eventTime - (bajadaMs[id] ?: 0L) < LETRA_FIJA_MS) continue
                         // Un temblor del dedo no cambia la tecla
                         val p0 = puntosToque[id]
                         if (p0 != null && Math.hypot((x - p0[0]).toDouble(), (y - p0[1]).toDouble()) < dp(12f)) continue
@@ -1988,8 +1984,8 @@ class KeyboardView(
                 manejador.postDelayed(activarCursor, 450)
             }
             Tipo.A_NUMEROS, Tipo.A_SIMBOLOS, Tipo.A_LETRAS -> {
-                // Puede que deslices hasta un signo sin soltar (se ve en ACTION_MOVE)
-                if (!esPad && presionadas.size == 1) {
+                // Gesto quitado (deslizar desde 123 hasta un signo): solo toque
+                if (false) {
                     punteroCambio = id
                     cambioDeslizado = false
                     x0Cambio = x
@@ -2012,9 +2008,8 @@ class KeyboardView(
                 ultimoShift = ahora
                 // Mayúsculas ↔ minúsculas con una transición corta, como en iPhone
                 if (modo == Modo.LETRAS) animarEtiquetas()
-                // Mayúscula deslizando: si sin soltar llevas el dedo a una letra, sale esa sola
-                // en mayúscula (lo maneja lo mismo que deslizar desde 123)
-                if (!esPad && modo == Modo.LETRAS && presionadas.size == 1) {
+                // Gesto quitado (mayúscula deslizando): solo toque
+                if (false) {
                     punteroCambio = id
                     cambioDeslizado = false
                     x0Cambio = x
@@ -2060,7 +2055,6 @@ class KeyboardView(
             }
             Tipo.ENTER -> {
                 // Enviar, buscar, ir: la etiqueta del intro despega y vuelve
-                if (enterAccion && !esPad) lanzarDespegue(t)
                 acciones.enter()
             }
             Tipo.A_NUMEROS -> modo = if (modo == Modo.TELEFONO_SIMBOLOS) Modo.PIN else Modo.NUMEROS
@@ -2100,6 +2094,12 @@ class KeyboardView(
         private const val TOQUE_RAPIDO_MS = 170L
         /** Una letra que llega a menos de esto de la anterior: vas escribiendo rápido */
         private const val RAPIDO_MS = 140L
+        /**
+         * Escribiendo rápido o a dos dedos la letra es FIJA: la de donde cayó el dedo, aunque
+         * se barra al soltarlo. Solo un dedo que se queda apoyado más de esto puede pasar a
+         * otra tecla (para corregir mirando la burbuja).
+         */
+        private const val LETRA_FIJA_MS = 280L
 
         /** Lo que aparece al mantener presionada cada tecla */
         private val VARIANTES = mapOf(
