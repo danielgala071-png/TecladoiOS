@@ -1735,20 +1735,9 @@ class KeyboardView(
                                 acciones.moverCursorVertical(m)
                                 yCursor += m * pasoY
                             }
-                        } else if (false && Math.abs(x - xCursor) > dp(18f)) {
-                            // Gesto quitado: barrer el espacio ya no mueve el cursor. Para
-                            // moverlo, mantén el espacio apoyado (como en el iPhone).
-                            // Escribiendo rápido con los pulgares el dedo a veces barre el espacio:
-                            // solo se activa el cursor si el dedo se quedó un instante apoyado
-                            manejador.removeCallbacks(activarCursor)
-                            modoCursor = true
-                            xCursor = x
-                            yCursor = y
-                            dedoCursorX = x
-                            dedoCursorY = y
-                            acciones.retro(Tipo.ESPACIO)
-                            invalidate()
                         }
+                        // (Gesto quitado: barrer el espacio ya no mueve el cursor. Para moverlo,
+                        // mantén el espacio apoyado, como en el iPhone.)
                         continue
                     }
                     if (id == punteroCambio) {
@@ -1984,13 +1973,7 @@ class KeyboardView(
                 manejador.postDelayed(activarCursor, 450)
             }
             Tipo.A_NUMEROS, Tipo.A_SIMBOLOS, Tipo.A_LETRAS -> {
-                // Gesto quitado (deslizar desde 123 hasta un signo): solo toque
-                if (false) {
-                    punteroCambio = id
-                    cambioDeslizado = false
-                    x0Cambio = x
-                    y0Cambio = y
-                }
+                // (Gesto quitado: deslizar desde 123 hasta un signo. Solo toque.)
             }
             Tipo.EMOJI -> {
                 punteroEmoji = id
@@ -2008,13 +1991,7 @@ class KeyboardView(
                 ultimoShift = ahora
                 // Mayúsculas ↔ minúsculas con una transición corta, como en iPhone
                 if (modo == Modo.LETRAS) animarEtiquetas()
-                // Gesto quitado (mayúscula deslizando): solo toque
-                if (false) {
-                    punteroCambio = id
-                    cambioDeslizado = false
-                    x0Cambio = x
-                    y0Cambio = y
-                }
+                // (Gesto quitado: mayúscula deslizando. Solo toque.)
             }
             else -> {}
         }

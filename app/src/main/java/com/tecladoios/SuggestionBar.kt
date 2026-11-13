@@ -1003,20 +1003,8 @@ class SuggestionBar(
             }
             MotionEvent.ACTION_MOVE -> {
                 if (ignorarGesto) return true
-                // Deslizar una sugerencia hacia abajo: se descarta (y no se vuelve a sugerir)
-                val bajo = presionado
-                val sb = if (bajo >= 0) items[bajo] else null
-                if (false && sb != null && sb.clave == 0 && !mantenido && e.y - y0Toque > height * 0.55f &&
-                    (sb.portapapeles || sePuedeOlvidar(sb))) {
-                    manejador.removeCallbacks(alMantener)
-                    mantenido = true
-                    presionado = -1
-                    performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
-                    items = items.map { if (it === sb) null else it }
-                    acciones.olvidar(sb)
-                    invalidate()
-                    return true
-                }
+                // (Gesto quitado: deslizar una sugerencia hacia abajo ya no la borra; para
+                // olvidarla, mantenla presionada)
                 if (presionado != -1 && i != presionado) {
                     manejador.removeCallbacks(alMantener)
                     presionado = -1
