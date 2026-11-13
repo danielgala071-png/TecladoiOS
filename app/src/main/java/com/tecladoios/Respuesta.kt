@@ -52,27 +52,55 @@ class Respuesta(c: Context) {
         }
     }
 
+    // Efectos ya hechos por el fabricante (golpe seco y corto, como el motor del iPhone)
+    private val conEfectos = try {
+        vibrador?.areAllEffectsSupported(VibrationEffect.EFFECT_CLICK, VibrationEffect.EFFECT_HEAVY_CLICK) ==
+            Vibrator.VIBRATION_EFFECT_SUPPORT_YES
+    } catch (_: Throwable) { false }
+    private val conAmplitud = try { vibrador?.hasAmplitudeControl() == true } catch (_: Throwable) { false }
+
+    // Los efectos se arman una sola vez (nada de objetos nuevos en cada tecla)
+    private var fuerzaArmada = -1
+    private var efLetra: VibrationEffect? = null
+    private var efFuerte: VibrationEffect? = null
+    private var efSuave: VibrationEffect? = null
+
+    private fun armar(fuerza: Int) {
+        if (fuerza == fuerzaArmada) return
+        fuerzaArmada = fuerza
+        val escala = (0.62f + fuerza * 0.076f).coerceAtMost(1f)   // 1 → 0.70 · 5 → 1.0
+        try {
+            if (conPrimitivas) {
+                efLetra = VibrationEffect.startComposition()
+                    .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, escala).compose()
+                efFuerte = if (conEfectos) VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK)
+                    else VibrationEffect.startComposition().addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1f).compose()
+                efSuave = VibrationEffect.startComposition()
+                    .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, escala * 0.6f).compose()
+            } else if (conEfectos) {
+                efLetra = VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
+                efFuerte = VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK)
+                efSuave = VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
+            } else {
+                // Motor simple: pulso muy corto a toda fuerza (seco, sin zumbido)
+                val amp = if (conAmplitud) (150 + fuerza * 21).coerceAtMost(255) else VibrationEffect.DEFAULT_AMPLITUDE
+                efLetra = VibrationEffect.createOneShot(7L + fuerza, amp)
+                efFuerte = VibrationEffect.createOneShot(11L + fuerza, if (conAmplitud) 255 else VibrationEffect.DEFAULT_AMPLITUDE)
+                efSuave = VibrationEffect.createOneShot(5L, if (conAmplitud) 90 else VibrationEffect.DEFAULT_AMPLITUDE)
+            }
+        } catch (_: Throwable) { }
+    }
+
     private fun vibrar(t: Tipo, fuerza: Int) {
         val v = vibrador ?: return
         try {
-            val escala = (0.45f + fuerza * 0.11f).coerceAtMost(1f)
-            val efecto = if (conPrimitivas) {
-                val comp = VibrationEffect.startComposition()
-                when (t) {
-                    Tipo.SUAVE -> comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, escala * 0.7f)
-                    Tipo.LETRA -> comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, escala)
-                    else -> {
-                        comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1f)
-                        if (fuerza >= 3) comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, escala, 8)
-                    }
-                }
-                comp.compose()
-            } else {
-                val ms = when (t) { Tipo.SUAVE -> 6L; Tipo.LETRA -> 8L + fuerza * 3; else -> 12L + fuerza * 4 }
-                val amp = when (t) { Tipo.SUAVE -> 90; Tipo.LETRA -> 120 + fuerza * 27; else -> 255 }.coerceAtMost(255)
-                VibrationEffect.createOneShot(ms, amp)
-            }
-            v.vibrate(efecto)
+            armar(fuerza)
+            val ef = when (t) {
+                Tipo.LETRA -> efLetra
+                Tipo.SUAVE -> efSuave
+                else -> efFuerte
+            } ?: return
+            v.vibrate(ef)
         } catch (_: Throwable) { }
     }
 

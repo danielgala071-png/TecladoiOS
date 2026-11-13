@@ -2,6 +2,7 @@ package com.tecladoios
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -43,13 +44,24 @@ class Capa(context: Context) : View(context) {
 
     override fun onTouchEvent(event: android.view.MotionEvent?) = false
 
+    // Animación del globo: aparece creciendo un poco y se va desvaneciendo (muy corta)
+    private var apareceMs = 0L
+    private var seVaMs = 0L
+    private val APARECE = 85f
+    private val SE_VA = 110f
+
     fun mostrarGlobo(r: RectF, texto: String) {
+        val ahora = android.os.SystemClock.uptimeMillis()
+        // Escribiendo rápido el globo salta de tecla en tecla sin volver a crecer
+        if (!globo && ahora - seVaMs > SE_VA) apareceMs = ahora
         tecla.set(r); globoTexto = texto; globo = true
         armarForma()
         invalidate()
     }
 
-    fun ocultarGlobo() { if (globo) { globo = false; invalidate() } }
+    fun ocultarGlobo() {
+        if (globo) { globo = false; seVaMs = android.os.SystemClock.uptimeMillis(); invalidate() }
+    }
 
     private fun armarForma() {
         val w = tecla.width()
@@ -114,19 +126,40 @@ class Capa(context: Context) : View(context) {
     fun ocultarOpciones() { if (opciones.isNotEmpty()) { opciones = emptyList(); invalidate() } }
 
     override fun onDraw(c: Canvas) {
-        if (globo && opciones.isEmpty()) {
+        val ahora = android.os.SystemClock.uptimeMillis()
+        val visible = globo || ahora - seVaMs < SE_VA
+        if (visible && opciones.isEmpty() && !forma.isEmpty) {
+            val alfa: Float
+            val escala: Float
+            if (globo) {
+                val t = ((ahora - apareceMs) / APARECE).coerceIn(0f, 1f)
+                val e = 1f - (1f - t) * (1f - t)
+                alfa = 0.35f + 0.65f * e; escala = 0.9f + 0.1f * e
+                if (t < 1f) postInvalidateOnAnimation()
+            } else {
+                val t = ((ahora - seVaMs) / SE_VA).coerceIn(0f, 1f)
+                alfa = 1f - t * t; escala = 1f
+                postInvalidateOnAnimation()
+            }
+            val a = (alfa * 255).toInt()
+            c.save()
+            c.scale(escala, escala, tecla.centerX(), tecla.bottom)
+            sombra.alpha = (a * 0.4f).toInt()
             c.save(); c.translate(0f, 1.5f * d); c.drawPath(forma, sombra); c.restore()
-            pintura.color = tema.globo
+            pintura.color = tema.globo; pintura.alpha = a
             c.drawPath(forma, pintura)
-            borde.color = tema.bordeTecla; borde.strokeWidth = 1f * d
+            borde.color = tema.bordeTecla; borde.strokeWidth = 0.7f * d; borde.alpha = (Color.alpha(tema.bordeTecla) * alfa).toInt()
             c.drawPath(forma, borde)
-            letraP.color = tema.texto
+            letraP.color = tema.texto; letraP.alpha = a
             letraP.textSize = tecla.height() * 0.78f
             val cy = limites.top + (tecla.top - limites.top) * 0.5f
             c.drawText(globoTexto, limites.centerX(), cy + letraP.textSize * 0.35f, letraP)
+            c.restore()
+            pintura.alpha = 255; letraP.alpha = 255
         }
         if (opciones.isNotEmpty()) {
             c.save(); c.translate(0f, 2f * d)
+            sombra.alpha = 0x66
             c.drawRoundRect(caja, 11 * d, 11 * d, sombra); c.restore()
             pintura.color = tema.globo
             c.drawRoundRect(caja, 11 * d, 11 * d, pintura)

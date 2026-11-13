@@ -1,6 +1,7 @@
 package com.tecladoios
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
@@ -38,19 +39,19 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     var oyente: Oyente? = null
-    var tema = Tema(Tema.AZUL); set(v) { field = v; invalidate() }
-    var config: Config? = null
+    var tema = Tema(Tema.AZUL); set(v) { field = v; ensuciar() }
+    var config: Config? = null; set(v) { field = v; ensuciar() }
     val geo = Cerebro.geo
 
     var distribucion: Distribucion = Distribuciones.crear(Distribuciones.LETRAS, 0, false)
-        set(v) { field = v; reacomodar(); invalidate() }
+        set(v) { field = v; reacomodar(); ensuciar() }
 
     /** 0 minúsculas, 1 mayúscula, 2 bloqueo */
-    var shift = 0; set(v) { if (field != v) { field = v; invalidate() } }
+    var shift = 0; set(v) { if (field != v) { field = v; ensuciar() } }
     /** Texto de la tecla intro ("buscar", "enviar"...) o null para la flecha */
-    var textoIntro: String? = null; set(v) { field = v; invalidate() }
-    var introDestacado = false; set(v) { field = v; invalidate() }
-    var unaMano = 0; set(v) { if (field != v) { field = v; reacomodar(); requestLayout(); invalidate() } }
+    var textoIntro: String? = null; set(v) { if (field != v) { field = v; ensuciar() } }
+    var introDestacado = false; set(v) { if (field != v) { field = v; ensuciar() } }
+    var unaMano = 0; set(v) { if (field != v) { field = v; reacomodar(); requestLayout(); ensuciar() } }
 
     private val d = resources.displayMetrics.density
     private fun dp(v: Float) = v * d
@@ -122,6 +123,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         colocadas = lista.toTypedArray()
         geo.ancho = unidad
         geo.alto = altoFila
+        sucio = true
     }
 
     // ---------- Ajuste a tu manera de tocar ----------
@@ -217,7 +219,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     private val dedos = HashMap<Int, Dedo>()
     private var presionadas = HashSet<Colocada>()
-    private var modoTrackpad = false
+    private var modoTrackpad = false; set(v) { if (field != v) { field = v; ensuciar() } }
 
     private fun desplazamientoCapa(): Float {
         val a = IntArray(2); val b = IntArray(2)
@@ -433,6 +435,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         if (t.esLetra) aprenderDesvio(t.texto[0], dd.x0, dd.y0, c.dibujo)
         oyente?.tecla(t.texto, dd.x0, dd.y0, t.esLetra)
         presionadas.remove(c)
+        apagando[c] = SystemClock.uptimeMillis()
         capa.ocultarGlobo()
     }
 
@@ -465,7 +468,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 else if (botonCambiar.contains(x, y)) { oyente?.respuesta(Respuesta.Tipo.FUNCION); oyente?.unaMano(1) }
             }
         }
-        if (c != null) presionadas.remove(c)
+        if (c != null) { presionadas.remove(c); apagando[c] = SystemClock.uptimeMillis() }
         if (dd.modo == Modo.CURSOR || dd.modo == Modo.TRACKPAD) modoTrackpad = dedos.values.any { it.modo == Modo.CURSOR || it.modo == Modo.TRACKPAD }
         if (dedos.values.none { it.modo == Modo.NORMAL && it.tecla?.tecla?.tipo == K.TEXTO }) capa.ocultarGlobo()
         invalidate()
@@ -476,7 +479,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             removeCallbacks(dd.larga); removeCallbacks(dd.repetir)
             if (dd.modo == Modo.BORRAR_SEL) oyente?.terminarSeleccionBorrar(false)
         }
-        dedos.clear(); presionadas.clear(); modoTrackpad = false
+        dedos.clear(); presionadas.clear(); apagando.clear(); modoTrackpad = false
         capa.ocultarGlobo(); capa.ocultarOpciones()
         invalidate()
     }
@@ -484,12 +487,18 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         cancelarTodo()
+        // La imagen guardada se suelta: el teclado escondido no ocupa memoria
+        cache?.recycle(); cache = null; sucio = true
     }
 
     // ---------- Dibujo ----------
+    //
+    // Para gastar lo mínimo de batería, las teclas en reposo se dibujan UNA vez en una imagen
+    // guardada; en cada toque solo se dibuja encima la tecla presionada (y se apaga suave).
 
     private val relleno = Paint(Paint.ANTI_ALIAS_FLAG)
     private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val sombra = Paint(Paint.ANTI_ALIAS_FLAG)
     private val letra = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 400) }
     private val chica = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 500) }
     private val pista = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 500) }
@@ -499,95 +508,134 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
     private val camino = Path()
 
-    override fun onDraw(c: Canvas) {
-        val radio = dp(7f)
-        val bordes = config?.bordesApp != false
-        borde.strokeWidth = dp(0.8f)
+    private var cache: Bitmap? = null
+    private var sucio = true
+    private val apagando = HashMap<Colocada, Long>()
+    private val DURACION_APAGADO = 140f
+
+    private fun ensuciar() { sucio = true; invalidate() }
+
+    private fun prepararPinturas() {
+        borde.strokeWidth = dp(0.6f)
         borde.color = tema.bordeTecla
+        sombra.color = 0x8C000000.toInt()
         letra.textSize = altoFila * 0.43f
         chica.textSize = minOf(altoFila * 0.29f, dp(16f))
         pista.textSize = altoFila * 0.19f
         pista.color = tema.pista
-        val conPistas = config?.pistas != false && distribucion.nombre == "abc"
-        val ocultarLetras = modoTrackpad
+    }
 
-        for (k in colocadas) {
-            val t = k.tecla
-            val r = k.dibujo
-            val apretada = k in presionadas
-            val esFuncion = t.funcion
-            relleno.color = when {
-                t.tipo == K.INTRO && introDestacado -> if (apretada) Tema.mezclar(tema.acento, 0xFF000000.toInt(), 0.7f) else tema.introActivo
-                t.tipo == K.SHIFT && shift > 0 -> 0xFFE5E5EA.toInt()
-                esFuncion -> if (apretada) tema.teclaPresionada else tema.teclaFuncion
-                apretada && (config?.vistaPrevia == false || t.tipo == K.ESPACIO || t.texto.length > 2) -> tema.teclaPresionada
-                else -> tema.tecla
+    private fun colorTecla(t: Tecla, apretada: Boolean): Int = when {
+        t.tipo == K.INTRO && introDestacado -> if (apretada) Tema.mezclar(tema.acento, 0xFF000000.toInt(), 0.72f) else tema.introActivo
+        t.tipo == K.SHIFT && shift > 0 -> if (apretada) 0xFFC7C7CC.toInt() else 0xFFE5E5EA.toInt()
+        t.funcion -> if (apretada) tema.funcionPresionada else tema.teclaFuncion
+        apretada -> tema.teclaPresionada
+        else -> tema.tecla
+    }
+
+    /**
+     * Dibuja una tecla. [fondo] (0..1) es cuánto se ve el fondo de \"presionada\" encima de la
+     * imagen guardada; en reposo es 1 con el color normal.
+     */
+    private fun dibujarTecla(c: Canvas, k: Colocada, apretada: Boolean, fondo: Float) {
+        val t = k.tecla
+        val r = k.dibujo
+        val radio = dp(8f)
+        if (!apretada) c.drawRoundRect(r.left, r.top + dp(0.8f), r.right, r.bottom + dp(0.8f), radio, radio, sombra)
+        relleno.color = colorTecla(t, apretada)
+        relleno.alpha = (relleno.alpha * fondo).toInt().coerceIn(0, 255)
+        c.drawRoundRect(r, radio, radio, relleno)
+        if (config?.bordesApp != false) c.drawRoundRect(r, radio, radio, borde)
+        if (modoTrackpad) return
+
+        val cx = r.centerX(); val cy = r.centerY()
+        val s = minOf(r.height(), r.width())
+        icono.color = tema.texto
+        when (t.tipo) {
+            K.TEXTO -> {
+                val txt = textoVisible(t)
+                val p = if (txt.length > 1) chica else letra
+                p.color = tema.texto
+                val ajuste = if (t.esLetra && shift == 0) -p.textSize * 0.05f else 0f
+                c.drawText(txt, cx, cy + p.textSize * 0.36f + ajuste, p)
+                if (config?.pistas != false && distribucion.nombre == "abc" && t.pista != null)
+                    c.drawText(t.pista, r.right - r.width() * 0.2f, r.top + pista.textSize * 1.05f, pista)
             }
-            // Sombra fina abajo (como el iPhone)
-            icono.color = 0xCC000000.toInt()
-            c.drawRoundRect(r.left, r.top + dp(1f), r.right, r.bottom + dp(1f), radio, radio, icono)
-            c.drawRoundRect(r, radio, radio, relleno)
-            if (bordes) c.drawRoundRect(r, radio, radio, borde)
-            if (ocultarLetras) continue
-
-            val cx = r.centerX(); val cy = r.centerY()
-            val s = minOf(r.height(), r.width()) * 1.0f
-            icono.color = tema.texto
-            when (t.tipo) {
-                K.TEXTO -> {
-                    val txt = textoVisible(t)
-                    val p = if (txt.length > 1) chica else letra
-                    p.color = tema.texto
-                    val ajuste = if (t.esLetra && shift == 0) -p.textSize * 0.05f else 0f
-                    c.drawText(txt, cx, cy + p.textSize * 0.36f + ajuste, p)
-                    if (conPistas && t.pista != null) c.drawText(t.pista, r.right - r.width() * 0.2f, r.top + pista.textSize * 1.05f, pista)
-                }
-                K.SHIFT -> {
-                    icono.color = if (shift > 0) 0xFF000000.toInt() else tema.texto
-                    Iconos.shift(c, cx, cy, s, icono, shift > 0, shift == 2)
-                }
-                K.BORRAR -> { icono.color = tema.texto; Iconos.borrar(c, cx, cy, s, icono, false) }
-                K.EMOJI -> { icono.color = tema.texto; Iconos.cara(c, cx, cy, s, icono) }
-                K.INTRO -> {
-                    val txt = textoIntro
-                    if (txt != null) {
-                        chica.color = tema.texto
-                        c.drawText(txt, cx, cy + chica.textSize * 0.36f, chica)
-                    } else { icono.color = tema.texto; Iconos.intro(c, cx, cy, s, icono) }
-                }
-                K.ESPACIO -> {
-                    chica.color = tema.textoSuave
-                    c.drawText("espacio", cx, cy + chica.textSize * 0.36f, chica)
-                }
-                else -> {
-                    chica.color = tema.texto
-                    c.drawText(t.texto, cx, cy + chica.textSize * 0.36f, chica)
-                }
+            K.SHIFT -> {
+                icono.color = if (shift > 0) 0xFF000000.toInt() else tema.texto
+                Iconos.shift(c, cx, cy, s, icono, shift > 0, shift == 2)
             }
-        }
-
-        // Panel de una mano
-        if (!panelMano.isEmpty) {
-            icono.color = tema.textoSuave
-            Iconos.expandir(c, botonExpandir.centerX(), botonExpandir.centerY(), botonExpandir.width(), icono)
-            Iconos.flecha(c, botonCambiar.centerX(), botonCambiar.centerY(), botonCambiar.width(), icono, if (unaMano == 1) 180f else 0f)
-        }
-
-        // Estela al deslizar
-        if (config?.estela != false) for (dd in dedos.values) if (dd.modo == Modo.DESLIZAR && dd.n > 1) {
-            val desde = maxOf(0, dd.n - 70)
-            camino.reset()
-            camino.moveTo(dd.tx[desde], dd.ty[desde])
-            for (i in desde + 1 until dd.n) camino.lineTo(dd.tx[i], dd.ty[i])
-            estela.color = Tema.mezclar(tema.estela, 0x00000000, 0.85f)
-            estela.strokeWidth = dp(5f)
-            c.drawPath(camino, estela)
+            K.BORRAR -> Iconos.borrar(c, cx, cy, s, icono, false)
+            K.EMOJI -> Iconos.cara(c, cx, cy, s, icono)
+            K.INTRO -> {
+                val txt = textoIntro
+                if (txt != null) { chica.color = tema.texto; c.drawText(txt, cx, cy + chica.textSize * 0.36f, chica) }
+                else Iconos.intro(c, cx, cy, s, icono)
+            }
+            K.ESPACIO -> { chica.color = tema.textoSuave; c.drawText("espacio", cx, cy + chica.textSize * 0.36f, chica) }
+            else -> { chica.color = tema.texto; c.drawText(t.texto, cx, cy + chica.textSize * 0.36f, chica) }
         }
     }
 
-    /** Para que el teclado se vea \"escribiendo\" en el instante de mostrarse */
-    fun hayDedos() = dedos.isNotEmpty()
+    /** Suavizado: rápido al principio y lento al final */
+    private fun suave(t: Float) = 1f - (1f - t) * (1f - t)
 
-    @Suppress("unused")
-    private fun ahora() = SystemClock.uptimeMillis()
+    override fun onDraw(c: Canvas) {
+        if (width <= 0 || height <= 0) return
+        var bmp = cache
+        if (bmp == null || bmp.width != width || bmp.height != height) {
+            bmp?.recycle()
+            bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            cache = bmp
+            sucio = true
+        }
+        if (sucio) {
+            bmp.eraseColor(0)
+            val cc = Canvas(bmp)
+            prepararPinturas()
+            for (k in colocadas) dibujarTecla(cc, k, false, 1f)
+            if (!panelMano.isEmpty) {
+                icono.color = tema.textoSuave
+                Iconos.expandir(cc, botonExpandir.centerX(), botonExpandir.centerY(), botonExpandir.width(), icono)
+                Iconos.flecha(cc, botonCambiar.centerX(), botonCambiar.centerY(), botonCambiar.width(), icono, if (unaMano == 1) 180f else 0f)
+            }
+            sucio = false
+        }
+        c.drawBitmap(bmp, 0f, 0f, null)
+
+        // Teclas presionadas (encima) y las que se están soltando, apagándose suave
+        for (k in presionadas) dibujarTecla(c, k, true, 1f)
+        if (apagando.isNotEmpty()) {
+            val ahora = SystemClock.uptimeMillis()
+            val it = apagando.entries.iterator()
+            while (it.hasNext()) {
+                val e = it.next()
+                if (e.key in presionadas) { it.remove(); continue }
+                val t = (ahora - e.value) / DURACION_APAGADO
+                if (t >= 1f) { it.remove(); continue }
+                dibujarTecla(c, e.key, true, 1f - suave(t))
+            }
+            if (apagando.isNotEmpty()) postInvalidateOnAnimation()
+        }
+
+        // Estela al deslizar (se afina hacia el final, como una pincelada)
+        if (config?.estela != false) for (dd in dedos.values) if (dd.modo == Modo.DESLIZAR && dd.n > 1) {
+            val desde = maxOf(0, dd.n - 60)
+            val tramos = 4
+            val largo = dd.n - desde
+            for (tramo in 0 until tramos) {
+                val a = desde + largo * tramo / tramos
+                val b = minOf(dd.n - 1, desde + largo * (tramo + 1) / tramos)
+                if (b <= a) continue
+                camino.reset()
+                camino.moveTo(dd.tx[a], dd.ty[a])
+                for (i in a + 1..b) camino.lineTo(dd.tx[i], dd.ty[i])
+                val f = (tramo + 1f) / tramos
+                estela.color = Tema.mezclar(tema.estela, 0x00000000, 0.35f + 0.55f * f)
+                estela.strokeWidth = dp(2f + 3.5f * f)
+                c.drawPath(camino, estela)
+            }
+        }
+    }
+
 }

@@ -305,7 +305,13 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private fun antes(n: Int): String = ic()?.getTextBeforeCursor(n, 0)?.toString() ?: ""
     private fun despues(n: Int): String = ic()?.getTextAfterCursor(n, 0)?.toString() ?: ""
 
+    /** Contexto de la palabra actual: se lee una vez al empezarla (menos consultas a la app = menos batería) */
+    private var ctxPalabra: List<String>? = null
+
+    private fun contextoPalabra(): List<String> = ctxPalabra ?: contexto().also { ctxPalabra = it }
+
     private fun reiniciarPalabra() {
+        ctxPalabra = null
         palabra.setLength(0)
         vinoDeslizado = false
         alternativasDeslizar = emptyList()
@@ -493,7 +499,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         val ic = ic() ?: return
         val escrito = palabra.toString()
         var resultado = escrito
-        val ctx = contexto()
+        val ctx = contextoPalabra()
         if (!vinoDeslizado && sugerir && corregir) {
             val p = propuestaPara(escrito, ctx)
             p?.autocorregir?.let { resultado = it }
@@ -667,7 +673,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         val escrito = palabra.toString()
         val n = escrito.length
         val xs = tx.copyOf(n); val ys = ty.copyOf(n)
-        val ctx = contexto()
+        val ctx = contextoPalabra()
         val t = turno.incrementAndGet()
         val deslizado = vinoDeslizado
         val alts = alternativasDeslizar

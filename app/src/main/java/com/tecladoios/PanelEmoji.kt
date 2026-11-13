@@ -58,7 +58,14 @@ class PanelEmoji(context: Context) : View(context) {
             val paises = listOf("PE") + Locale.getISOCountries().filter { it != "PE" }
             val banderas = paises.map { cc -> cc.map { String(Character.toChars(0x1F1E6 + (it - 'A'))) }.joinToString("") }
                 .filter { p.hasGlyph(it) }
-            lista.add(Categoria("BANDERAS", listOf("\uD83C\uDFC1", "\uD83D\uDEA9", "\uD83C\uDFF4", "\uD83C\uDFF3\uFE0F") + banderas))
+            val especiales = listOf(
+                "\uD83C\uDFC1", "\uD83D\uDEA9", "\uD83C\uDF8C", "\uD83C\uDFF4", "\uD83C\uDFF3\uFE0F",
+                "\uD83C\uDFF3\uFE0F\u200D\uD83C\uDF08", "\uD83C\uDFF3\uFE0F\u200D\u26A7\uFE0F", "\uD83C\uDFF4\u200D\u2620\uFE0F",
+                "\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62\uDB40\uDC65\uDB40\uDC6E\uDB40\uDC67\uDB40\uDC7F",
+                "\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62\uDB40\uDC73\uDB40\uDC63\uDB40\uDC74\uDB40\uDC7F",
+                "\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62\uDB40\uDC77\uDB40\uDC6C\uDB40\uDC73\uDB40\uDC7F",
+            ).filter { p.hasGlyph(it) }
+            lista.add(Categoria("BANDERAS", especiales + banderas))
             cache = lista
             return lista
         }
@@ -77,62 +84,76 @@ class PanelEmoji(context: Context) : View(context) {
     }
 
     private var categorias: List<Categoria> = emptyList()
-    private var inicioCol = IntArray(0)
-    private var totalCols = 0
+    private var columnas = IntArray(0)
+    private var inicioX = FloatArray(0)
+    private var anchoTotal = 0f
+    private var celdaArmada = -1f
 
+    /** Vuelve a leer los recientes y arma las secciones (cada categoría con su título) */
     fun refrescar() {
         val base = cargar(context)
-        val rec = recientes()
-        categorias = listOf(Categoria("USADOS RECIENTEMENTE", rec)) + base
-        inicioCol = IntArray(categorias.size)
-        var col = 0
-        for ((i, c) in categorias.withIndex()) {
-            inicioCol[i] = col
-            col += maxOf(1, (c.emojis.size + FILAS - 1) / FILAS)
-        }
-        totalCols = col
+        categorias = listOf(Categoria("USADOS RECIENTEMENTE", recientes())) + base
+        celdaArmada = -1f
         corrimiento = 0f
-        saltarRecientes = rec.isEmpty()
         scroller.forceFinished(true)
         invalidate()
     }
 
+    private fun armarSecciones(cel: Float) {
+        if (cel == celdaArmada) return
+        celdaArmada = cel
+        val n = categorias.size
+        columnas = IntArray(n); inicioX = FloatArray(n)
+        var x = dp(10f)
+        for ((k, cat) in categorias.withIndex()) {
+            inicioX[k] = x
+            // Recientes vacío: un espacio para el aviso, sin pisar la sección que sigue
+            columnas[k] = if (cat.emojis.isEmpty()) 0 else (cat.emojis.size + FILAS - 1) / FILAS
+            val ancho = if (cat.emojis.isEmpty()) dp(170f) else columnas[k] * cel
+            x += ancho + SEPARACION_DP * d
+        }
+        anchoTotal = x
+    }
+
     private fun recientes(): List<String> =
-        prefs.getString("emojis_recientes", null)?.split('\n')?.filter { it.isNotEmpty() } ?: emptyList()
+        prefs.getString("emojis_recientes", null)?.split('\n')?.filter { it.isNotEmpty() }?.take(30) ?: emptyList()
 
     private fun sumarReciente(e: String) {
-        val l = recientes().toMutableList()
+        val l = (prefs.getString("emojis_recientes", null)?.split('\n')?.filter { it.isNotEmpty() } ?: emptyList()).toMutableList()
         l.remove(e); l.add(0, e)
-        prefs.edit().putString("emojis_recientes", l.take(36).joinToString("\n")).apply()
+        prefs.edit().putString("emojis_recientes", l.take(30).joinToString("\n")).apply()
     }
 
     // ---------- Medidas ----------
 
-    private fun altoAbajo() = dp(44f)
-    private fun arribaGrilla() = dp(26f)
-    private fun celda() = (height - altoAbajo() - arribaGrilla()) / FILAS.toFloat()
+    private val SEPARACION_DP = 22f
+    private fun altoAbajo() = dp(46f)
+    private fun arribaGrilla() = dp(30f)
+    private fun celda() = (height - altoAbajo() - arribaGrilla() - dp(4f)) / FILAS.toFloat()
 
     private var corrimiento = 0f
-    private var saltarRecientes = false
     private val scroller = OverScroller(context)
 
-    private fun maxCorrimiento() = (totalCols * celda() - width + dp(8f)).coerceAtLeast(0f)
+    private fun maxCorrimiento() = (anchoTotal - width).coerceAtLeast(0f)
 
     private fun categoriaActual(): Int {
-        val col = ((corrimiento + celda() * 0.5f) / celda()).toInt()
+        val x = corrimiento + width * 0.3f
         var i = 0
-        for (k in inicioCol.indices) if (inicioCol[k] <= col) i = k
-        return i
+        for (k in inicioX.indices) if (inicioX[k] <= x) i = k
+        return if (corrimiento >= maxCorrimiento() - 1f && maxCorrimiento() > 0f) inicioX.size - 1 else i
     }
 
     private fun emojiEn(x: Float, y: Float): String? {
         if (y < arribaGrilla() || y > height - altoAbajo()) return null
-        val col = ((x + corrimiento - dp(4f)) / celda()).toInt()
-        val fila = ((y - arribaGrilla()) / celda()).toInt().coerceIn(0, FILAS - 1)
-        for (k in categorias.indices.reversed()) {
-            if (col >= inicioCol[k]) {
-                val idx = (col - inicioCol[k]) * FILAS + fila
-                return categorias[k].emojis.getOrNull(idx)
+        if (columnas.size != categorias.size) return null
+        val cel = celda()
+        val ax = x + corrimiento
+        val fila = ((y - arribaGrilla()) / cel).toInt().coerceIn(0, FILAS - 1)
+        for (k in categorias.indices) {
+            val ancho = columnas[k] * cel
+            if (ax >= inicioX[k] && ax < inicioX[k] + ancho) {
+                val col = ((ax - inicioX[k]) / cel).toInt()
+                return categorias[k].emojis.getOrNull(col * FILAS + fila)
             }
         }
         return null
@@ -141,7 +162,9 @@ class PanelEmoji(context: Context) : View(context) {
     // ---------- Dibujo ----------
 
     private val emojiP = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
-    private val titulo = Paint(Paint.ANTI_ALIAS_FLAG).apply { Fuentes.aplicar(this, 600) }
+    private val titulo = Paint(Paint.ANTI_ALIAS_FLAG).apply { Fuentes.aplicar(this, 600); letterSpacing = 0.03f }
+    private val aviso = Paint(Paint.ANTI_ALIAS_FLAG).apply { Fuentes.aplicar(this, 400) }
+    private val boton = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 500) }
     private val icono = Paint(Paint.ANTI_ALIAS_FLAG)
     private val relleno = Paint(Paint.ANTI_ALIAS_FLAG)
     private val r = RectF()
@@ -150,6 +173,9 @@ class PanelEmoji(context: Context) : View(context) {
     private var tonosDe: String? = null
     private val cajaTonos = RectF()
     private var tonoElegido = -1
+
+    // Emoji presionado (se achica un poco, como en el iPhone)
+    private var presionado: String? = null
 
     override fun computeScroll() {
         if (scroller.computeScrollOffset()) {
@@ -163,73 +189,102 @@ class PanelEmoji(context: Context) : View(context) {
         val w = width.toFloat(); val h = height.toFloat()
         val cel = celda()
         if (cel <= 0f) return
-        if (saltarRecientes) { saltarRecientes = false; corrimiento = (inicioCol.getOrElse(1) { 0 } * cel).coerceAtMost(maxCorrimiento()) }
-        // Título de la categoría
+        armarSecciones(cel)
+        val yAbajo = h - altoAbajo()
+
+        // Títulos: cada sección tiene el suyo; el de la sección actual se queda pegado a la izquierda
         titulo.textSize = dp(12f); titulo.color = tema.textoSuave
-        val actual = categoriaActual()
-        c.drawText(categorias.getOrNull(actual)?.nombre ?: "", dp(14f), dp(18f), titulo)
-        // Grilla
-        emojiP.textSize = cel * 0.74f
-        c.save()
-        c.clipRect(0f, arribaGrilla(), w, h - altoAbajo())
-        val primeraCol = (corrimiento / cel).toInt()
-        val ultimaCol = ((corrimiento + w) / cel).toInt() + 1
-        for ((k, cat) in categorias.withIndex()) {
-            val c0 = inicioCol[k]
-            val c1 = c0 + (cat.emojis.size + FILAS - 1) / FILAS
-            if (c1 < primeraCol || c0 > ultimaCol) continue
-            for ((i, e) in cat.emojis.withIndex()) {
-                val col = c0 + i / FILAS
-                if (col < primeraCol || col > ultimaCol) continue
-                val fila = i % FILAS
-                val x = dp(4f) + col * cel - corrimiento + cel / 2
-                val y = arribaGrilla() + fila * cel + cel / 2 + emojiP.textSize * 0.36f
-                c.drawText(e, x, y, emojiP)
-            }
+        for (k in categorias.indices) {
+            val ancho = if (columnas[k] == 0) dp(170f) else columnas[k] * cel
+            val x0 = inicioX[k] - corrimiento
+            if (x0 > w || x0 + ancho < 0) continue
+            val nombre = categorias[k].nombre
+            val tw = titulo.measureText(nombre)
+            var tx = maxOf(x0 + dp(4f), dp(14f))
+            tx = minOf(tx, x0 + ancho - tw)            // no se sale de su sección
+            tx = maxOf(tx, x0 + dp(4f))
+            c.drawText(nombre, tx, dp(21f), titulo)
         }
-        if (categorias.firstOrNull()?.emojis?.isEmpty() == true && corrimiento < cel * 2) {
-            titulo.color = tema.textoSuave; titulo.textSize = dp(13f)
-            c.drawText("Aquí aparecerán tus emojis", dp(14f) - corrimiento, arribaGrilla() + cel, titulo)
+
+        // Emojis (solo las columnas visibles)
+        emojiP.textSize = cel * 0.76f
+        c.save()
+        c.clipRect(0f, arribaGrilla() - dp(2f), w, yAbajo)
+        for ((k, cat) in categorias.withIndex()) {
+            val x0 = inicioX[k] - corrimiento
+            if (cat.emojis.isEmpty()) {
+                if (x0 < w && x0 + dp(170f) > 0) {
+                    aviso.textSize = dp(13.5f); aviso.color = tema.textoSuave
+                    c.drawText("Aquí aparecerán", x0 + dp(4f), arribaGrilla() + cel * 1.2f, aviso)
+                    c.drawText("tus emojis", x0 + dp(4f), arribaGrilla() + cel * 1.2f + dp(18f), aviso)
+                }
+                continue
+            }
+            val ancho = columnas[k] * cel
+            if (x0 > w || x0 + ancho < 0) continue
+            val primera = ((-x0) / cel).toInt().coerceAtLeast(0)
+            val ultima = minOf(columnas[k] - 1, ((w - x0) / cel).toInt())
+            for (col in primera..ultima) for (fila in 0 until FILAS) {
+                val e = cat.emojis.getOrNull(col * FILAS + fila) ?: break
+                val cx = x0 + col * cel + cel / 2
+                val cy = arribaGrilla() + fila * cel + cel / 2
+                if (e == presionado) {
+                    relleno.color = 0x22FFFFFF
+                    c.drawRoundRect(cx - cel * 0.46f, cy - cel * 0.46f, cx + cel * 0.46f, cy + cel * 0.46f, dp(10f), dp(10f), relleno)
+                }
+                c.drawText(e, cx, cy + emojiP.textSize * 0.35f, emojiP)
+            }
         }
         c.restore()
-        // Barra de abajo: ABC, buscar, categorías, borrar
-        val yb = h - altoAbajo()
-        val chico = Paint(titulo).apply { textAlign = Paint.Align.CENTER; textSize = dp(15f); color = tema.texto }
-        r.set(dp(6f), yb + dp(6f), dp(58f), h - dp(6f))
+
+        // Línea fina que separa la barra de categorías
+        relleno.color = tema.separador
+        c.drawRect(0f, yAbajo, w, yAbajo + d * 0.6f, relleno)
+
+        // Abajo: ABC, buscar, categorías, borrar
+        boton.textSize = dp(15f); boton.color = tema.texto
+        r.set(dp(6f), yAbajo + dp(7f), dp(58f), h - dp(6f))
         relleno.color = tema.teclaFuncion
-        c.drawRoundRect(r, dp(7f), dp(7f), relleno)
-        c.drawText("ABC", r.centerX(), r.centerY() + chico.textSize * 0.36f, chico)
+        c.drawRoundRect(r, dp(8f), dp(8f), relleno)
+        c.drawText("ABC", r.centerX(), r.centerY() + boton.textSize * 0.36f, boton)
         icono.color = tema.textoSuave
-        Iconos.lupa(c, dp(80f), yb + altoAbajo() / 2, dp(30f), icono)
+        Iconos.lupa(c, dp(80f), yAbajo + altoAbajo() / 2, dp(30f), icono)
         val izq = dp(100f); val der = w - dp(60f)
         val paso = (der - izq) / categorias.size
-        emojiP.textSize = minOf(paso * 0.62f, dp(20f))
-        for ((k, cat) in categorias.withIndex()) {
+        val actual = categoriaActual()
+        emojiP.textSize = minOf(paso * 0.58f, dp(19f))
+        for (k in categorias.indices) {
             val cx = izq + paso * k + paso / 2
+            val cy = yAbajo + altoAbajo() / 2
             if (k == actual) {
-                relleno.color = Tema.mezclar(tema.acento, 0, 0.35f)
-                c.drawCircle(cx, yb + altoAbajo() / 2, minOf(paso * 0.48f, dp(16f)), relleno)
+                relleno.color = 0x2EFFFFFF
+                c.drawCircle(cx, cy, minOf(paso * 0.46f, dp(16f)), relleno)
             }
-            val ic = if (k == 0) "\uD83D\uDD52" else cat.emojis.firstOrNull() ?: "•"
-            c.drawText(ic, cx, yb + altoAbajo() / 2 + emojiP.textSize * 0.36f, emojiP)
+            val ic = when (k) { 0 -> "\uD83D\uDD52"; else -> categorias[k].emojis.firstOrNull() ?: "•" }
+            emojiP.alpha = if (k == actual) 255 else 150
+            c.drawText(ic, cx, cy + emojiP.textSize * 0.35f, emojiP)
         }
+        emojiP.alpha = 255
         icono.color = tema.texto
-        Iconos.borrar(c, w - dp(30f), yb + altoAbajo() / 2, dp(40f), icono, false)
-        // Tonos
+        Iconos.borrar(c, w - dp(30f), yAbajo + altoAbajo() / 2, dp(40f), icono, false)
+
+        // Tonos de piel
         val base = tonosDe
         if (base != null) {
+            relleno.color = 0x66000000
+            c.drawRoundRect(cajaTonos.left, cajaTonos.top + dp(2f), cajaTonos.right, cajaTonos.bottom + dp(2f), dp(12f), dp(12f), relleno)
             relleno.color = tema.globo
-            c.drawRoundRect(cajaTonos, dp(10f), dp(10f), relleno)
+            c.drawRoundRect(cajaTonos, dp(12f), dp(12f), relleno)
             val anch = cajaTonos.width() / 6
-            emojiP.textSize = anch * 0.7f
+            emojiP.textSize = anch * 0.68f
             val opciones = listOf(base) + TONOS.map { conTono(base, it) }
             for ((i, e) in opciones.withIndex()) {
                 val x0 = cajaTonos.left + anch * i
                 if (i == tonoElegido) {
                     relleno.color = tema.acento
-                    c.drawRoundRect(x0 + dp(2f), cajaTonos.top + dp(4f), x0 + anch - dp(2f), cajaTonos.bottom - dp(4f), dp(7f), dp(7f), relleno)
+                    c.drawRoundRect(x0 + dp(3f), cajaTonos.top + dp(5f), x0 + anch - dp(3f), cajaTonos.bottom - dp(5f), dp(8f), dp(8f), relleno)
                 }
-                c.drawText(e, x0 + anch / 2, cajaTonos.centerY() + emojiP.textSize * 0.36f, emojiP)
+                c.drawText(e, x0 + anch / 2, cajaTonos.centerY() + emojiP.textSize * 0.35f, emojiP)
             }
         }
     }
@@ -247,6 +302,7 @@ class PanelEmoji(context: Context) : View(context) {
         val e = emojiEn(x0, y0) ?: return@Runnable
         if (!admiteTono(e)) return@Runnable
         tonosDe = e
+        presionado = null
         val anch = celda() * 0.95f
         var izq = x0 - anch * 3
         izq = izq.coerceIn(dp(4f), width - anch * 6 - dp(4f))
@@ -267,18 +323,22 @@ class PanelEmoji(context: Context) : View(context) {
                 if (e.y > h - altoAbajo() && e.x > width - dp(60f)) {
                     borrando = true; oyente?.borrar(); oyente?.respuesta(Respuesta.Tipo.BORRAR)
                     postDelayed(repetirBorrar, 420L)
-                } else if (e.y < h - altoAbajo()) postDelayed(larga, 380L)
+                } else if (e.y < h - altoAbajo()) {
+                    presionado = emojiEn(e.x, e.y)
+                    if (presionado != null) invalidate()
+                    postDelayed(larga, 380L)
+                }
             }
             MotionEvent.ACTION_MOVE -> {
                 velocidad?.addMovement(e)
                 if (tonosDe != null) {
                     val anch = cajaTonos.width() / 6
                     val i = ((e.x - cajaTonos.left) / anch).toInt().coerceIn(0, 5)
-                    if (i != tonoElegido) { tonoElegido = i; invalidate() }
+                    if (i != tonoElegido) { tonoElegido = i; oyente?.respuesta(Respuesta.Tipo.SUAVE); invalidate() }
                     return true
                 }
                 if (!arrastrando && kotlin.math.abs(e.x - x0) > dp(8f) && e.y < h - altoAbajo()) {
-                    arrastrando = true; removeCallbacks(larga)
+                    arrastrando = true; removeCallbacks(larga); presionado = null
                 }
                 if (arrastrando) {
                     corrimiento = (corrimiento - (e.x - ultX)).coerceIn(0f, maxCorrimiento())
@@ -288,6 +348,7 @@ class PanelEmoji(context: Context) : View(context) {
             }
             MotionEvent.ACTION_UP -> {
                 removeCallbacks(larga); borrando = false; removeCallbacks(repetirBorrar)
+                presionado = null
                 val base = tonosDe
                 if (base != null) {
                     val elegido = if (tonoElegido <= 0) base else conTono(base, TONOS[tonoElegido - 1])
@@ -303,9 +364,10 @@ class PanelEmoji(context: Context) : View(context) {
                     postInvalidateOnAnimation()
                 } else tocar(e.x, e.y)
                 velocidad?.recycle(); velocidad = null
+                invalidate()
             }
             MotionEvent.ACTION_CANCEL -> {
-                removeCallbacks(larga); borrando = false; removeCallbacks(repetirBorrar); tonosDe = null
+                removeCallbacks(larga); borrando = false; removeCallbacks(repetirBorrar); tonosDe = null; presionado = null
                 velocidad?.recycle(); velocidad = null; invalidate()
             }
         }
@@ -321,10 +383,12 @@ class PanelEmoji(context: Context) : View(context) {
                 x < width - dp(60f) -> {
                     val izq = dp(100f); val der = width - dp(60f)
                     val k = ((x - izq) / ((der - izq) / categorias.size)).toInt().coerceIn(0, categorias.size - 1)
+                    // Desliza suave hasta la categoría
+                    val destino = (inicioX.getOrElse(k) { 0f } - dp(10f)).coerceIn(0f, maxCorrimiento())
                     scroller.forceFinished(true)
-                    corrimiento = (inicioCol[k] * celda()).coerceAtMost(maxCorrimiento())
+                    scroller.startScroll(corrimiento.toInt(), 0, (destino - corrimiento).toInt(), 0, 320)
                     oyente?.respuesta(Respuesta.Tipo.SUAVE)
-                    invalidate()
+                    postInvalidateOnAnimation()
                 }
             }
             return
@@ -341,5 +405,6 @@ class PanelEmoji(context: Context) : View(context) {
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         borrando = false; removeCallbacks(repetirBorrar); removeCallbacks(larga)
+        velocidad?.recycle(); velocidad = null
     }
 }

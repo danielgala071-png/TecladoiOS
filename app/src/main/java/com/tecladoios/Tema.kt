@@ -12,17 +12,17 @@ import java.util.concurrent.Executors
  */
 class Tema(val acento: Int) {
     val fondo = Color.BLACK
-    val tecla = 0xFF323235.toInt()          // letras
-    val teclaFuncion = 0xFF1C1C1F.toInt()   // shift, borrar, 123, intro
-    val teclaPresionada = 0xFF5A5A5F.toInt()
-    val funcionPresionada = 0xFF3A3A3E.toInt()
+    val tecla = 0xFF2E2E31.toInt()          // letras
+    val teclaFuncion = 0xFF19191C.toInt()   // shift, borrar, 123, intro
+    val teclaPresionada = 0xFF46464B.toInt()
+    val funcionPresionada = 0xFF323236.toInt()
     val texto = 0xFFFFFFFF.toInt()
     val textoSuave = 0x99FFFFFF.toInt()
     val pista = 0x80FFFFFF.toInt()
     val separador = 0x33FFFFFF.toInt()
     val barra = 0xFF0E0E10.toInt()
     val globo = 0xFF4A4A4F.toInt()
-    val bordeTecla = mezclar(acento, 0x00000000, 0.55f)
+    val bordeTecla = mezclar(acento, 0x00000000, 0.38f)
     val bordePanel = acento
     val estela = acento
     val introActivo = acento
