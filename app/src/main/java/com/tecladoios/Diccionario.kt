@@ -69,6 +69,8 @@ class Diccionario(context: Context) {
      * [EN_DICCIONARIO], [SIN_TILDE] ("sabado" existe como "sábado") u [OTRA].
      */
     private val clases = HashMap<String, Int>()
+    /** ¿Palabra nueva a una letra de una muy común? (se calcula una vez por palabra) */
+    private val cercanas = HashMap<String, Boolean>()
     /** Modo incógnito: no se aprende nada (lo pide la app, como Chrome incógnito) */
     @Volatile var pausado = false
 
@@ -751,7 +753,6 @@ class Diccionario(context: Context) {
         }
         hay
     }
-    private val cercanas = HashMap<String, Boolean>()
 
     private fun clase(ix: Indice, l: String): Int = clases.getOrPut(l) {
         val n = normal(l)

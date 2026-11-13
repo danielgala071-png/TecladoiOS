@@ -177,6 +177,7 @@ class EscanerActivity : Activity() {
 
     // ---------- Cámara ----------
 
+    @Suppress("DEPRECATION")
     private fun tomarFoto() {
         try { EscanerProvider.archivo(this).delete() } catch (_: Throwable) { }
         val uri = EscanerProvider.uri()
@@ -188,7 +189,6 @@ class EscanerActivity : Activity() {
         girando.visibility = View.VISIBLE
         estado.text = "Apunta al texto y toma la foto"
         try {
-            @Suppress("DEPRECATION")
             startActivityForResult(camara, PEDIR_FOTO)
         } catch (e: Exception) {
             Registro.anotar("abrir la cámara", e)
@@ -198,8 +198,8 @@ class EscanerActivity : Activity() {
     }
 
     @Deprecated("Deprecated in Java")
+    @Suppress("DEPRECATION")
     override fun onActivityResult(pedido: Int, resultado: Int, datos: Intent?) {
-        @Suppress("DEPRECATION")
         super.onActivityResult(pedido, resultado, datos)
         if (pedido != PEDIR_FOTO) return
         val archivo = EscanerProvider.archivo(this)

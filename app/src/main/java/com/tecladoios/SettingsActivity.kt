@@ -927,11 +927,12 @@ class SettingsActivity : Activity() {
     /** Prueba en vivo: "tac, tac, TAC" (dos letras y un espacio) con la fuerza elegida */
     private fun probarVibracion(nivel: String) {
         try {
-            val v = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            // (Entre paréntesis: así el "?: return" vale para los dos casos, no solo para el else)
+            val v: android.os.Vibrator = (if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                 getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
             } else {
                 getSystemService(android.os.Vibrator::class.java)
-            } ?: return
+            }) ?: return
             val (letra, pesada) = when (nivel) {
                 "suave" -> 17L to 26L
                 "fuerte" -> 27L to 40L

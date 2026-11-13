@@ -2918,14 +2918,13 @@ class TecladoService : InputMethodService(),
             val cap = Capturas.buscar(this)
             val mini = if (cap != null && cap.uri != actual) Capturas.miniatura(this, cap.uri) else null
             manejador.post {
-                when {
-                    cap == null || cap.uri in capturasVistas -> if (captura != null) quitarCaptura()
-                    cap.uri == captura?.uri -> {}
-                    mini != null -> {
-                        captura = cap
-                        barra?.miniatura = mini
-                        actualizarBarra()
-                    }
+                val nueva = cap
+                if (nueva == null || nueva.uri in capturasVistas) {
+                    if (captura != null) quitarCaptura()
+                } else if (nueva.uri != captura?.uri && mini != null) {
+                    captura = nueva
+                    barra?.miniatura = mini
+                    actualizarBarra()
                 }
             }
         }
