@@ -178,6 +178,17 @@ object Iconos {
         c.drawLine(cx + a, cy + a, cx + a * 0.2f, cy + a * 0.2f, p)
     }
 
+    /** Rectángulo con flechas arriba y abajo (ajustar tamaño) */
+    fun tamano(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
+        trazo(p, s * 0.8f)
+        val w = s * 0.5f; val h = s * 0.26f
+        r.set(cx - w / 2, cy - h / 2 + s * 0.04f, cx + w / 2, cy + h / 2 + s * 0.04f)
+        c.drawRoundRect(r, s * 0.05f, s * 0.05f, p)
+        val a = s * 0.07f
+        c.drawLine(cx, cy - s * 0.3f, cx, cy - s * 0.14f, p)
+        c.drawLine(cx - a, cy - s * 0.3f + a, cx, cy - s * 0.3f, p); c.drawLine(cx + a, cy - s * 0.3f + a, cx, cy - s * 0.3f, p)
+    }
+
     fun cerrar(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
         trazo(p, s * 0.8f)
         val a = s * 0.16f

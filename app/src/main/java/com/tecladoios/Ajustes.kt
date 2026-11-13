@@ -33,6 +33,7 @@ object Ajustes {
     const val VISTA_PREVIA = "vista_previa"
     const val UNA_MANO = "una_mano"          // 0 apagado, 1 izquierda, 2 derecha
     const val ALTURA = "altura"              // 80..130 (%)
+    const val MARGEN_ABAJO = "margen_abajo"  // dp de espacio debajo del teclado
     const val RETARDO_LARGA = "retardo_larga"// ms
     const val BORDES_APP = "bordes_app"
     const val BARRA_HERRAMIENTAS = "barra_herramientas"
@@ -74,6 +75,7 @@ class Config(p: SharedPreferences) {
     val vistaPrevia = p.getBoolean(Ajustes.VISTA_PREVIA, true)
     val unaMano = p.getInt(Ajustes.UNA_MANO, 0)
     val altura = p.getInt(Ajustes.ALTURA, 100).coerceIn(75, 135)
+    val margenAbajo = p.getInt(Ajustes.MARGEN_ABAJO, 0).coerceIn(0, 120)
     val retardoLarga = p.getInt(Ajustes.RETARDO_LARGA, 320).coerceIn(150, 800)
     val bordesApp = p.getBoolean(Ajustes.BORDES_APP, true)
     val barraHerramientas = p.getBoolean(Ajustes.BARRA_HERRAMIENTAS, true)
@@ -81,7 +83,7 @@ class Config(p: SharedPreferences) {
     val sonido = p.getBoolean(Ajustes.SONIDO, false)
     val volumen = p.getInt(Ajustes.VOLUMEN, 40).coerceIn(0, 100)
     val vibracion = p.getBoolean(Ajustes.VIBRACION, true)
-    val fuerza = p.getInt(Ajustes.FUERZA, 4).coerceIn(1, 5)
+    val fuerza = p.getInt(Ajustes.FUERZA, 5).coerceIn(1, 5)
 
     val portapapeles = p.getBoolean(Ajustes.PORTAPAPELES, true)
     val capturas = p.getBoolean(Ajustes.CAPTURAS, false)

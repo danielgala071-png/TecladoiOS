@@ -68,25 +68,28 @@ class Respuesta(c: Context) {
     private fun armar(fuerza: Int) {
         if (fuerza == fuerzaArmada) return
         fuerzaArmada = fuerza
-        val escala = (0.62f + fuerza * 0.076f).coerceAtMost(1f)   // 1 → 0.70 · 5 → 1.0
+        // Golpes secos y fuertes: desde la fuerza 3 las letras ya usan el golpe pesado
         try {
-            if (conPrimitivas) {
-                efLetra = VibrationEffect.startComposition()
-                    .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, escala).compose()
-                efFuerte = if (conEfectos) VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK)
-                    else VibrationEffect.startComposition().addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1f).compose()
-                efSuave = VibrationEffect.startComposition()
-                    .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, escala * 0.6f).compose()
-            } else if (conEfectos) {
-                efLetra = VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
-                efFuerte = VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK)
-                efSuave = VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
-            } else {
-                // Motor simple: pulso muy corto a toda fuerza (seco, sin zumbido)
-                val amp = if (conAmplitud) (150 + fuerza * 21).coerceAtMost(255) else VibrationEffect.DEFAULT_AMPLITUDE
-                efLetra = VibrationEffect.createOneShot(7L + fuerza, amp)
-                efFuerte = VibrationEffect.createOneShot(11L + fuerza, if (conAmplitud) 255 else VibrationEffect.DEFAULT_AMPLITUDE)
-                efSuave = VibrationEffect.createOneShot(5L, if (conAmplitud) 90 else VibrationEffect.DEFAULT_AMPLITUDE)
+            val pesado: VibrationEffect = when {
+                conEfectos -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK)
+                conPrimitivas -> VibrationEffect.startComposition()
+                    .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1f)
+                    .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 1f, 0).compose()
+                else -> VibrationEffect.createOneShot(14L + fuerza * 2, if (conAmplitud) 255 else VibrationEffect.DEFAULT_AMPLITUDE)
+            }
+            efFuerte = pesado
+            efLetra = when {
+                fuerza >= 3 -> pesado
+                conPrimitivas -> VibrationEffect.startComposition()
+                    .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.8f + fuerza * 0.1f).compose()
+                conEfectos -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
+                else -> VibrationEffect.createOneShot(10L + fuerza * 2, if (conAmplitud) 200 + fuerza * 18 else VibrationEffect.DEFAULT_AMPLITUDE)
+            }
+            efSuave = when {
+                conPrimitivas -> VibrationEffect.startComposition()
+                    .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 0.7f).compose()
+                conEfectos -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
+                else -> VibrationEffect.createOneShot(6L, if (conAmplitud) 120 else VibrationEffect.DEFAULT_AMPLITUDE)
             }
         } catch (_: Throwable) { }
     }

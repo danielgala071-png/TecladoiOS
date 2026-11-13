@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *   palabras pegadas (\"Yanpodemos\" → \"Ya podemos\").
  */
 class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, PanelEmoji.Oyente,
-    PanelEdicion.Oyente, PanelPortapapeles.Oyente, SharedPreferences.OnSharedPreferenceChangeListener {
+    PanelEdicion.Oyente, PanelPortapapeles.Oyente, AjusteTamano.Oyente, SharedPreferences.OnSharedPreferenceChangeListener {
 
     private lateinit var prefs: SharedPreferences
     private lateinit var cfg: Config
@@ -57,6 +57,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private var panelEmoji: PanelEmoji? = null
     private var panelEdicion: PanelEdicion? = null
     private var panelCopiado: PanelPortapapeles? = null
+    private var ajusteTamano: AjusteTamano? = null
     private var tema = Tema(Tema.AZUL)
     private var acentoApp = Tema.AZUL
 
@@ -147,6 +148,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         if (clave == Ajustes.CONTACTOS) Cerebro.cargarContactos(this)
         Cerebro.motor?.separarPegadas = cfg.separarPegadas
         if (clave == Ajustes.ALTURA || clave == Ajustes.FILA_NUMEROS) { ponerDistribucion(); teclado?.requestLayout() }
+        if (clave == Ajustes.MARGEN_ABAJO) marco?.margenAbajo = (cfg.margenAbajo * resources.displayMetrics.density).toInt()
         aplicarTema(acentoApp)
     }
 
@@ -163,6 +165,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         val pe = PanelEmoji(c).apply { oyente = this@TecladoService; visibility = View.GONE }
         val ed = PanelEdicion(c).apply { oyente = this@TecladoService; visibility = View.GONE; alResponder = { respuesta.tocar(it) } }
         val pc = PanelPortapapeles(c).apply { oyente = this@TecladoService; visibility = View.GONE; alResponder = { respuesta.tocar(it) } }
+        val aj = AjusteTamano(c).apply { oyente = this@TecladoService; visibility = View.GONE }
         val cuerpo = Cuerpo(c).apply {
             addView(kb, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             for (v in listOf(pe, ed, pc)) addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -175,13 +178,15 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         val m = Marco(c).apply {
             addView(columna, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(cp, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-            setOnApplyWindowInsetsListener { v, ins ->
-                v.setPadding(0, 0, 0, ins.getInsets(WindowInsets.Type.navigationBars()).bottom)
+            addView(aj, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            setOnApplyWindowInsetsListener { _, ins ->
+                abajoSistema = ins.getInsets(WindowInsets.Type.navigationBars()).bottom
                 ins
             }
         }
         marco = m; barra = br; teclado = kb; capa = cp
-        panelEmoji = pe; panelEdicion = ed; panelCopiado = pc
+        panelEmoji = pe; panelEdicion = ed; panelCopiado = pc; ajusteTamano = aj
+        m.margenAbajo = (cfg.margenAbajo * resources.displayMetrics.density).toInt()
         aplicarTema(acentoApp)
         return m
     }
@@ -223,6 +228,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         teclado?.cancelarTodo()
+        if (ajusteTamano?.visibility == View.VISIBLE) cerrarTamano()
         if (palabra.isNotEmpty()) { currentInputConnection?.finishComposingText(); reiniciarPalabra() }
         cerrarBusqueda()
         teclado?.let { prefs.edit().putString("desvios", it.desviosTexto()).apply() }
@@ -292,7 +298,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         val t = Tema(if (cfg.bordesApp) acento else Tema.AZUL)
         tema = t
         marco?.tema = t; teclado?.tema = t; barra?.tema = t; capa?.tema = t
-        panelEmoji?.tema = t; panelEdicion?.tema = t; panelCopiado?.tema = t
+        panelEmoji?.tema = t; panelEdicion?.tema = t; panelCopiado?.tema = t; ajusteTamano?.tema = t
         marco?.conBorde = cfg.bordesApp
     }
 
@@ -893,8 +899,34 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             Barra.H_EDITAR -> mostrarPanel(if (panel == Panel.EDICION) Panel.TECLADO else Panel.EDICION)
             Barra.H_UNA_MANO -> prefs.edit().putInt(Ajustes.UNA_MANO, if (cfg.unaMano == 0) 2 else 0).apply()
             Barra.H_ESCANEAR -> abrirEscaner()
+            Barra.H_TAMANO -> abrirTamano()
             Barra.H_AJUSTES -> startActivity(Intent(this, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
+    }
+
+    // ---------- Ajustar tamaño ----------
+
+    private fun abrirTamano() {
+        val aj = ajusteTamano ?: return
+        val kb = teclado ?: return
+        mostrarPanel(Panel.TECLADO)
+        aj.altura = cfg.altura
+        aj.margen = cfg.margenAbajo
+        aj.altoBase = (kb.height * 100f / cfg.altura).coerceAtLeast(1f)
+        aj.visibility = View.VISIBLE
+        aj.invalidate()
+    }
+
+    override fun tamano(altura: Int, margen: Int, fin: Boolean) {
+        teclado?.alturaForzada = altura
+        marco?.margenAbajo = (margen * resources.displayMetrics.density).toInt()
+        if (fin) prefs.edit().putInt(Ajustes.ALTURA, altura).putInt(Ajustes.MARGEN_ABAJO, margen).apply()
+    }
+
+    override fun cerrarTamano() {
+        ajusteTamano?.visibility = View.GONE
+        teclado?.alturaForzada = null
+        teclado?.requestLayout()
     }
 
     override fun unaMano(accion: Int) {
@@ -1119,35 +1151,51 @@ class Marco(c: Context) : FrameLayout(c) {
     private val forma = Path()
     private val r = RectF()
 
-    init { setWillNotDraw(false) }
+    /** Alto de la barra de navegación de Android (el teclado queda encima) */
+    var abajoSistema = 0; set(v) { field = v; aplicarRelleno() }
+    /** Espacio extra abajo que elige el usuario al ajustar el tamaño (en px) */
+    var margenAbajo = 0; set(v) { field = v; aplicarRelleno() }
+
+    private val lado = (4 * d).toInt()
+
+    init {
+        setWillNotDraw(false)
+        aplicarRelleno()
+    }
+
+    private fun aplicarRelleno() = setPadding(lado, (4 * d).toInt(), lado, abajoSistema + margenAbajo)
 
     /**
-     * El alto lo pone solo la barra con el teclado (el primer hijo). La capa de globos se ajusta
-     * a ese mismo tamaño: si se midiera sola, ocuparía toda la pantalla.
+     * El alto lo pone solo la barra con el teclado (el primer hijo). Las demás capas (globos,
+     * ajuste de tamaño) se ajustan a ese mismo tamaño: si se midieran solas, ocuparían toda la
+     * pantalla.
      */
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val contenido = getChildAt(0) ?: return super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         val w = MeasureSpec.getSize(widthMeasureSpec)
-        contenido.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+        val anchoDentro = w - paddingLeft - paddingRight
+        contenido.measure(MeasureSpec.makeMeasureSpec(anchoDentro, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
         val h = contenido.measuredHeight + paddingTop + paddingBottom
         for (i in 1 until childCount) {
-            getChildAt(i).measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
+            getChildAt(i).measure(MeasureSpec.makeMeasureSpec(anchoDentro, MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(contenido.measuredHeight, MeasureSpec.EXACTLY))
         }
         setMeasuredDimension(w, h)
     }
 
+    /** Tarjeta con esquinas grandes (abajo siguen la curva de la pantalla) y leve degradado */
     override fun onDraw(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
-        val rad = 16 * d
-        val med = 0.75f * d
+        val arriba = 26 * d
+        val abajo = 40 * d
+        val med = 0.6f * d
         forma.reset()
-        r.set(med, med, w - med, h + rad)
-        forma.addRoundRect(r, floatArrayOf(rad, rad, rad, rad, 0f, 0f, 0f, 0f), Path.Direction.CW)
-        fondo.color = tema.fondo
+        r.set(med, med, w - med, h - med)
+        forma.addRoundRect(r, floatArrayOf(arriba, arriba, arriba, arriba, abajo, abajo, abajo, abajo), Path.Direction.CW)
+        fondo.shader = android.graphics.LinearGradient(0f, 0f, 0f, h, tema.fondo, tema.fondoAbajo, android.graphics.Shader.TileMode.CLAMP)
         c.drawPath(forma, fondo)
         if (conBorde) {
-            borde.color = tema.bordePanel; borde.strokeWidth = 1.5f * d
+            borde.color = Tema.mezclar(tema.bordePanel, 0x00000000, 0.75f); borde.strokeWidth = 1.2f * d
             c.drawPath(forma, borde)
         }
     }

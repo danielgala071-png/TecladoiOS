@@ -38,6 +38,7 @@ class Barra(context: Context) : View(context) {
         const val H_ESCANEAR = 4
         const val H_AJUSTES = 5
         const val H_EMOJI = 6
+        const val H_TAMANO = 7
     }
 
     var oyente: Oyente? = null
@@ -88,7 +89,7 @@ class Barra(context: Context) : View(context) {
     private val zonas = ArrayList<Pair<RectF, () -> Any?>>()
     private val zonasLargas = ArrayList<Pair<RectF, () -> Any?>>()
 
-    private val HERRAMIENTAS = intArrayOf(H_EMOJI, H_PORTAPAPELES, H_EDITAR, H_UNA_MANO, H_ESCANEAR, H_AJUSTES)
+    private val HERRAMIENTAS = intArrayOf(H_EMOJI, H_PORTAPAPELES, H_EDITAR, H_UNA_MANO, H_TAMANO, H_ESCANEAR, H_AJUSTES)
 
     override fun onDraw(c: Canvas) {
         zonas.clear(); zonasLargas.clear()
@@ -180,6 +181,7 @@ class Barra(context: Context) : View(context) {
                 H_EDITAR -> Iconos.editar(c, cx, cy, s, icono)
                 H_UNA_MANO -> Iconos.unaMano(c, cx, cy, s, icono)
                 H_ESCANEAR -> Iconos.escanear(c, cx, cy, s, icono)
+                H_TAMANO -> Iconos.tamano(c, cx, cy, s, icono)
                 H_AJUSTES -> Iconos.engranaje(c, cx, cy, s, icono)
             }
             val id = hId

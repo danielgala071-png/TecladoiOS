@@ -51,6 +51,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     /** Texto de la tecla intro ("buscar", "enviar"...) o null para la flecha */
     var textoIntro: String? = null; set(v) { if (field != v) { field = v; ensuciar() } }
     var introDestacado = false; set(v) { if (field != v) { field = v; ensuciar() } }
+    /** Altura en % mientras se ajusta el tamaño (null = la de los ajustes) */
+    var alturaForzada: Int? = null; set(v) { if (field != v) { field = v; requestLayout() } }
     var unaMano = 0; set(v) { if (field != v) { field = v; reacomodar(); requestLayout(); ensuciar() } }
 
     private val d = resources.displayMetrics.density
@@ -70,7 +72,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
         val filas = distribucion.filas.size
-        val escala = (config?.altura ?: 100) / 100f
+        val escala = (alturaForzada ?: config?.altura ?: 100) / 100f
         val base = if (filas >= 5) 50f else 54f
         val h = (dp(base) * filas * escala + dp(8f) + dp(6f)).toInt()
         setMeasuredDimension(w, h)
@@ -499,6 +501,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private val relleno = Paint(Paint.ANTI_ALIAS_FLAG)
     private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val sombra = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val brillo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val letra = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 400) }
     private val chica = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 500) }
     private val pista = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 500) }
@@ -518,8 +521,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private fun prepararPinturas() {
         borde.strokeWidth = dp(0.6f)
         borde.color = tema.bordeTecla
-        sombra.color = 0x8C000000.toInt()
-        letra.textSize = altoFila * 0.43f
+        brillo.strokeWidth = dp(1f)
+        sombra.color = 0x40000000
+        letra.textSize = altoFila * 0.46f
         chica.textSize = minOf(altoFila * 0.29f, dp(16f))
         pista.textSize = altoFila * 0.19f
         pista.color = tema.pista
@@ -527,7 +531,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     private fun colorTecla(t: Tecla, apretada: Boolean): Int = when {
         t.tipo == K.INTRO && introDestacado -> if (apretada) Tema.mezclar(tema.acento, 0xFF000000.toInt(), 0.72f) else tema.introActivo
-        t.tipo == K.SHIFT && shift > 0 -> if (apretada) 0xFFC7C7CC.toInt() else 0xFFE5E5EA.toInt()
+        t.tipo == K.SHIFT && shift > 0 -> if (apretada) 0xFFD1D1D6.toInt() else 0xFFF2F2F7.toInt()
         t.funcion -> if (apretada) tema.funcionPresionada else tema.teclaFuncion
         apretada -> tema.teclaPresionada
         else -> tema.tecla
@@ -540,12 +544,19 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private fun dibujarTecla(c: Canvas, k: Colocada, apretada: Boolean, fondo: Float) {
         val t = k.tecla
         val r = k.dibujo
-        val radio = dp(8f)
-        if (!apretada) c.drawRoundRect(r.left, r.top + dp(0.8f), r.right, r.bottom + dp(0.8f), radio, radio, sombra)
+        // Esquinas bien redondeadas, como las teclas de vidrio
+        val radio = minOf(dp(12.5f), r.height() * 0.27f)
+        if (!apretada) c.drawRoundRect(r.left, r.top + dp(0.7f), r.right, r.bottom + dp(0.7f), radio, radio, sombra)
         relleno.color = colorTecla(t, apretada)
         relleno.alpha = (relleno.alpha * fondo).toInt().coerceIn(0, 255)
         c.drawRoundRect(r, radio, radio, relleno)
-        if (config?.bordesApp != false) c.drawRoundRect(r, radio, radio, borde)
+        // Reflejo fino en el borde de arriba (efecto vidrio)
+        if (!(t.tipo == K.SHIFT && shift > 0) && !(t.tipo == K.INTRO && introDestacado)) {
+            brillo.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.5f,
+                tema.brillo, 0x00FFFFFF, android.graphics.Shader.TileMode.CLAMP)
+            brillo.alpha = (255 * fondo).toInt().coerceIn(0, 255)
+            c.drawRoundRect(r.left + dp(0.5f), r.top + dp(0.5f), r.right - dp(0.5f), r.bottom - dp(0.5f), radio, radio, brillo)
+        }
         if (modoTrackpad) return
 
         val cx = r.centerX(); val cy = r.centerY()
@@ -572,7 +583,12 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 if (txt != null) { chica.color = tema.texto; c.drawText(txt, cx, cy + chica.textSize * 0.36f, chica) }
                 else Iconos.intro(c, cx, cy, s, icono)
             }
-            K.ESPACIO -> { chica.color = tema.textoSuave; c.drawText("espacio", cx, cy + chica.textSize * 0.36f, chica) }
+            K.ESPACIO -> {
+                // Como en el iPhone: el espacio va limpio, solo el idioma chiquito en la esquina
+                pista.textAlign = Paint.Align.RIGHT
+                c.drawText("ES", r.right - dp(10f), r.bottom - dp(8f), pista)
+                pista.textAlign = Paint.Align.CENTER
+            }
             else -> { chica.color = tema.texto; c.drawText(t.texto, cx, cy + chica.textSize * 0.36f, chica) }
         }
     }

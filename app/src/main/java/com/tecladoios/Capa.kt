@@ -22,6 +22,7 @@ class Capa(context: Context) : View(context) {
     private val letraP = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 400) }
     private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val sombra = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x66000000 }
+    private val brilloG = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.2f * resources.displayMetrics.density }
 
     // Globo
     private var globo = false
@@ -47,7 +48,7 @@ class Capa(context: Context) : View(context) {
     // Animación del globo: aparece creciendo un poco y se va desvaneciendo (muy corta)
     private var apareceMs = 0L
     private var seVaMs = 0L
-    private val APARECE = 85f
+    private val APARECE = 130f
     private val SE_VA = 110f
 
     fun mostrarGlobo(r: RectF, texto: String) {
@@ -74,8 +75,8 @@ class Capa(context: Context) : View(context) {
         if (der > width - 2 * d) { izq -= der - (width - 2 * d); der = width - 2 * d }
         val arriba = (tecla.top - alto).coerceAtLeast(1 * d)
         val cuello = tecla.top - tecla.height() * 0.12f
-        val rr = 10 * d
-        val rk = 6 * d
+        val rr = 14 * d
+        val rk = minOf(12.5f * d, tecla.height() * 0.27f)
         forma.reset()
         forma.moveTo(tecla.left + rk, tecla.bottom)
         forma.quadTo(tecla.left, tecla.bottom, tecla.left, tecla.bottom - rk)
@@ -133,8 +134,10 @@ class Capa(context: Context) : View(context) {
             val escala: Float
             if (globo) {
                 val t = ((ahora - apareceMs) / APARECE).coerceIn(0f, 1f)
-                val e = 1f - (1f - t) * (1f - t)
-                alfa = 0.35f + 0.65f * e; escala = 0.9f + 0.1f * e
+                // Sale con un pequeño rebote (pasa un poco del tamaño y se asienta)
+                val u = t - 1f
+                val rebote = 1f + 2.4f * u * u * u + 1.4f * u * u
+                alfa = (0.3f + 1.4f * t).coerceAtMost(1f); escala = 0.86f + 0.14f * rebote
                 if (t < 1f) postInvalidateOnAnimation()
             } else {
                 val t = ((ahora - seVaMs) / SE_VA).coerceIn(0f, 1f)
@@ -148,8 +151,11 @@ class Capa(context: Context) : View(context) {
             c.save(); c.translate(0f, 1.5f * d); c.drawPath(forma, sombra); c.restore()
             pintura.color = tema.globo; pintura.alpha = a
             c.drawPath(forma, pintura)
-            borde.color = tema.bordeTecla; borde.strokeWidth = 0.7f * d; borde.alpha = (Color.alpha(tema.bordeTecla) * alfa).toInt()
-            c.drawPath(forma, borde)
+            // Reflejo de vidrio arriba del globo
+            brilloG.shader = android.graphics.LinearGradient(0f, limites.top, 0f, limites.top + tecla.height() * 0.7f,
+                0x40FFFFFF, 0x00FFFFFF, android.graphics.Shader.TileMode.CLAMP)
+            brilloG.alpha = a
+            c.drawPath(forma, brilloG)
             letraP.color = tema.texto; letraP.alpha = a
             letraP.textSize = tecla.height() * 0.78f
             val cy = limites.top + (tecla.top - limites.top) * 0.5f
