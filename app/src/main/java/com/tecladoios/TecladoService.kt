@@ -965,13 +965,14 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             v.visibility = View.VISIBLE
             if (animar) {
                 v.alpha = 0f; v.translationY = dy
-                v.animate().alpha(1f).translationY(0f).setDuration(190L)
-                    .setInterpolator(android.view.animation.DecelerateInterpolator(1.6f)).withLayer().start()
+                v.animate().alpha(1f).translationY(0f).setDuration(280L)
+                    .setInterpolator(android.view.animation.PathInterpolator(0.25f, 0.1f, 0.25f, 1f)).withLayer().start()
             } else { v.alpha = 1f; v.translationY = 0f }
         } else {
             if (v.visibility != View.VISIBLE) return
             if (animar) {
-                v.animate().alpha(0f).setDuration(110L).withLayer().withEndAction {
+                v.animate().alpha(0f).setDuration(160L)
+                    .setInterpolator(android.view.animation.PathInterpolator(0.4f, 0f, 1f, 1f)).withLayer().withEndAction {
                     v.visibility = oculto; v.alpha = 1f; v.translationY = 0f
                 }.start()
             } else v.visibility = oculto
@@ -1218,12 +1219,12 @@ class Marco(c: Context) : FrameLayout(c) {
      */
     override fun onDraw(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
-        c.drawColor(tema.fondo)
-        val arriba = 26 * d
-        val abajo = 36 * d
+        // Solo la tarjeta: fuera de ella no se pinta nada (antes el negro de afuera se veía
+        // como manchas en las esquinas). Arriba curva, abajo recta hasta el borde.
+        val arriba = 22 * d
         forma.reset()
-        r.set(3 * d, 2 * d, w - 3 * d, h - 3 * d)
-        forma.addRoundRect(r, floatArrayOf(arriba, arriba, arriba, arriba, abajo, abajo, abajo, abajo), Path.Direction.CW)
+        r.set(0f, 0f, w, h)
+        forma.addRoundRect(r, floatArrayOf(arriba, arriba, arriba, arriba, 0f, 0f, 0f, 0f), Path.Direction.CW)
         fondo.shader = null
         fondo.color = tema.tarjeta
         c.drawPath(forma, fondo)

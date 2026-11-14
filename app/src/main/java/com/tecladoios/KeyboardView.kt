@@ -531,13 +531,13 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private var cache: Bitmap? = null
     private var sucio = true
     private val apagando = HashMap<Colocada, Long>()
-    private val DURACION_APAGADO = 190f
+    private val DURACION_APAGADO = 260f
     private val encendidas = HashMap<Colocada, Long>()
     private var anterior: Bitmap? = null
     private var cambioMs = 0L
     private val pinturaAnterior = Paint(Paint.FILTER_BITMAP_FLAG)
-    private val DURACION_CAMBIO = 150f
-    private val DURACION_ENCENDIDO = 70f
+    private val DURACION_CAMBIO = 210f
+    private val DURACION_ENCENDIDO = 90f
 
     private fun ensuciar() { sucio = true; invalidate() }
 
@@ -636,7 +636,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     /** Suavizado: rápido al principio y lento al final */
-    private fun suave(t: Float) = 1f - (1f - t) * (1f - t)
+    private fun suave(t: Float): Float { val u = 1f - t; return 1f - u * u * u }  // salida cúbica: muy suave al final
 
     override fun onDraw(c: Canvas) {
         if (width <= 0 || height <= 0) return

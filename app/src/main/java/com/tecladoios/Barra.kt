@@ -65,13 +65,13 @@ class Barra(context: Context) : View(context) {
         val cambiaModo = sugerencias.isEmpty() && literal == null
         sugerencias = nuevas; literal = literalEntreComillas
         destacada = if (autocorrige && lista.isNotEmpty()) 0 else -1
-        animar(if (cambiaModo) 170f else 110f, cambiaModo)
+        animar(if (cambiaModo) 230f else 150f, cambiaModo)
     }
 
     fun limpiar() {
         if (sugerencias.isEmpty() && literal == null) return
         sugerencias = emptyList(); literal = null; destacada = -1
-        animar(170f, true)
+        animar(230f, true)
     }
 
     // ---------- Animación (las palabras aparecen suave; herramientas y sugerencias se cruzan) ----------
