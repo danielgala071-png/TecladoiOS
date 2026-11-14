@@ -541,7 +541,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private var anterior: Bitmap? = null
     private var cambioMs = 0L
     private val pinturaAnterior = Paint(Paint.FILTER_BITMAP_FLAG)
-    private val DURACION_CAMBIO = 210f
+    private val pinturaNueva = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val DURACION_CAMBIO = 240f
     private val DURACION_ENCENDIDO = 90f
 
     private fun ensuciar() { sucio = true; invalidate() }
@@ -557,7 +558,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     private fun colorTecla(t: Tecla, apretada: Boolean): Int = when {
-        t.tipo == K.INTRO && introDestacado -> if (apretada) Tema.mezclar(tema.acento, 0xFF000000.toInt(), 0.72f) else tema.introActivo
+        t.tipo == K.INTRO && introDestacado -> if (apretada) tema.teclaPresionada else tema.introActivo
         t.tipo == K.SHIFT && shift > 0 -> if (apretada) 0xFFD1D1D6.toInt() else 0xFFF2F2F7.toInt()
         t.funcion -> if (apretada) tema.funcionPresionada else tema.teclaFuncion
         // Letras: con el globo encima basta un brillo leve (como el iPhone); sin globo, más marcado
@@ -668,16 +669,23 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             }
             sucio = false
         }
-        c.drawBitmap(bmp, 0f, 0f, null)
         val previa = anterior
-        if (previa != null) {
-            val t = (SystemClock.uptimeMillis() - cambioMs) / DURACION_CAMBIO
-            if (t >= 1f || previa.isRecycled || previa.width != width) anterior = null
-            else {
-                pinturaAnterior.alpha = (255 * (1f - suave(t))).toInt()
-                c.drawBitmap(previa, 0f, 0f, pinturaAnterior)
-                postInvalidateOnAnimation()
-            }
+        val tc = if (previa != null) (SystemClock.uptimeMillis() - cambioMs) / DURACION_CAMBIO else 1f
+        if (previa == null || tc >= 1f || previa.isRecycled || previa.width != width) {
+            anterior = null
+            c.drawBitmap(bmp, 0f, 0f, null)
+        } else {
+            // Cambio a símbolos premium: la distribución anterior se desvanece creciendo apenas
+            // y la nueva aparece asentándose desde un 98 %, con la misma forma de teclado
+            val e = suave(tc)
+            val cx = width / 2f; val cy = height / 2f
+            pinturaAnterior.alpha = (255 * (1f - e)).toInt()
+            c.save(); c.scale(1f + 0.02f * e, 1f + 0.02f * e, cx, cy)
+            c.drawBitmap(previa, 0f, 0f, pinturaAnterior); c.restore()
+            pinturaNueva.alpha = (255 * e).toInt()
+            c.save(); c.scale(0.98f + 0.02f * e, 0.98f + 0.02f * e, cx, cy)
+            c.drawBitmap(bmp, 0f, 0f, pinturaNueva); c.restore()
+            postInvalidateOnAnimation()
         }
 
         // Teclas presionadas (encima) y las que se están soltando, apagándose suave

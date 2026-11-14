@@ -59,7 +59,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private var panelCopiado: PanelPortapapeles? = null
     private var ajusteTamano: AjusteTamano? = null
     private var tema = Tema(Tema.AZUL)
-    private var acentoApp = Tema.AZUL
+    private var acentoApp = Tema.PLATA
 
     // Estado de la escritura
     private val palabra = StringBuilder()
@@ -217,9 +217,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         actualizarIntro(info)
         // Color de la app
         val pkg = info.packageName
-        val conocido = ColorApp.conocido(this, pkg)
-        if (conocido != null) aplicarTema(conocido)
-        else if (pkg != null) { aplicarTema(Tema.AZUL); ColorApp.calcular(this, pkg) { color -> if (currentInputEditorInfo?.packageName == pkg) aplicarTema(color) } }
+        // Sin el color de cada app: el teclado siempre igual, negro AMOLED con detalles en plata
+        aplicarTema(Tema.PLATA)
         actualizarShift()
         revisarCaptura(info)
         actualizarBarra()
@@ -295,7 +294,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     private fun aplicarTema(acento: Int) {
         acentoApp = acento
-        val t = Tema(if (cfg.bordesApp) acento else Tema.AZUL)
+        val t = Tema(Tema.PLATA)
         tema = t
         marco?.tema = t; teclado?.tema = t; barra?.tema = t; capa?.tema = t
         panelEmoji?.tema = t; panelEdicion?.tema = t; panelCopiado?.tema = t; ajusteTamano?.tema = t

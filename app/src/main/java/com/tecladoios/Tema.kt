@@ -11,28 +11,31 @@ import java.util.concurrent.Executors
  * con teclas como las del iPhone en modo oscuro: letras gris oscuro, teclas de función más
  * oscuras y texto blanco. El color de la app queda solo en el filo y los detalles.
  */
-class Tema(val acento: Int) {
+class Tema(val acento: Int = PLATA) {
     val fondo = 0xFF000000.toInt()
     val fondoAbajo = 0xFF000000.toInt()
-    val tecla = 0xFF46464A.toInt()          // todas las teclas casi del mismo gris (estilo iPhone)
-    val teclaFuncion = 0xFF38383C.toInt()   // shift, borrar, 123, intro: apenas más oscuras
-    val teclaPresionada = 0xFF6A6A70.toInt()
-    val funcionPresionada = 0xFF56565B.toInt()
+    // Grafito con un leve tono frío: sobre negro puro se ve elegante y no cansa la vista
+    val tecla = 0xFF3A3A40.toInt()          // letras
+    val teclaFuncion = 0xFF26262B.toInt()   // shift, borrar, 123, intro
+    val teclaPresionada = 0xFF5A5A62.toInt()
+    val funcionPresionada = 0xFF42424A.toInt()
     val brillo = 0x1CFFFFFF                 // filo de luz finísimo arriba de cada tecla (relieve)
-    val texto = 0xFFFFFFFF.toInt()
-    val textoSuave = 0x99FFFFFF.toInt()
-    val pista = 0x80FFFFFF.toInt()
-    val separador = 0x2EFFFFFF
+    val texto = 0xFFF5F5F7.toInt()          // blanco suave (menos duro que el blanco puro)
+    val textoSuave = 0x99EBEBF5.toInt()
+    val pista = 0x80EBEBF5.toInt()
+    val separador = 0x24FFFFFF
     val barra = 0x00000000
-    val globo = 0xFF55555A.toInt()
-    val tarjeta = 0xFF101012.toInt()       // fondo del teclado: tarjeta casi negra sobre negro puro
+    val globo = 0xFF4C4C54.toInt()
+    val tarjeta = 0xFF000000.toInt()        // negro puro: AMOLED total
     val bordeTecla = 0x14FFFFFF
     val bordePanel = acento
-    val estela = acento
-    val introActivo = acento
+    val estela = 0xCCF5F5F7.toInt()         // trazo de deslizar: blanco perla
+    val introActivo = 0xFF55555E.toInt()    // tecla enviar/buscar: grafito más claro, sin color
 
     companion object {
         const val AZUL = 0xFF0A84FF.toInt()
+        /** Detalles en plata (sin el color de cada app) */
+        const val PLATA = 0xFFC7C7CF.toInt()
 
         fun mezclar(a: Int, b: Int, cuantoA: Float): Int {
             val t = cuantoA.coerceIn(0f, 1f)

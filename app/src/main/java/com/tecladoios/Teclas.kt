@@ -118,16 +118,17 @@ object Distribuciones {
                     else -> texto(it)
                 }
             }),
+            // Misma forma que la fila de letras (1,5 + 7 teclas + 1,5): el teclado no "salta" al cambiar
             Fila(listOf(Tecla(K.SIMB2, "#+=", 1.5f), texto("."), texto(","), texto("?", 1f, listOf("¿")),
                 texto("!", 1f, listOf("¡")), texto("'", 1f, listOf("‘", "’", "`")), texto("%", 1f, listOf("‰")),
-                Tecla(K.BORRAR, "", 1.5f))),
+                texto("*", 1f, listOf("•", "†")), Tecla(K.BORRAR, "", 1.5f))),
             filaAbajo(modo, campo),
         ), "123")
         SIMBOLOS2 -> Distribucion(listOf(
             Fila(listOf("[", "]", "{", "}", "#", "%", "^", "*", "+", "=").map { texto(it) }),
             Fila(listOf("_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•").map { texto(it) }),
             Fila(listOf(Tecla(K.NUM, "123", 1.5f), texto("."), texto(","), texto("¿"), texto("¡"),
-                texto("°"), texto("§"), Tecla(K.BORRAR, "", 1.5f))),
+                texto("°"), texto("§"), texto("…"), Tecla(K.BORRAR, "", 1.5f))),
             filaAbajo(modo, campo),
         ), "#+=")
         NUMEROS -> Distribucion(listOf(

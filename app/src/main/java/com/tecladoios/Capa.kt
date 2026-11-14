@@ -178,10 +178,11 @@ class Capa(context: Context) : View(context) {
             for ((i, o) in opciones.withIndex()) {
                 val x0 = caja.left + 4 * d + anchoOpcion * i
                 if (i == seleccion) {
-                    pintura.color = tema.acento
+                    // Opción elegida: pastilla blanca con letra negra (sin color de app)
+                    pintura.color = 0xFFF5F5F7.toInt()
                     c.drawRoundRect(x0 + 1 * d, caja.top + 5 * d, x0 + anchoOpcion - 1 * d, caja.bottom - 5 * d, 7 * d, 7 * d, pintura)
                 }
-                letraP.color = tema.texto
+                letraP.color = if (i == seleccion) 0xFF000000.toInt() else tema.texto
                 val tam = if (o.length > 2) letraP.textSize * 0.62f else letraP.textSize
                 val previo = letraP.textSize
                 letraP.textSize = tam

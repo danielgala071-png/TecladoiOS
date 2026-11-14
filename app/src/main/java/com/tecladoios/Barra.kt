@@ -147,16 +147,15 @@ class Barra(context: Context) : View(context) {
             val s = celdas[i] ?: continue
             val x0 = i * ancho
             val p = if (i == 1 && destacada >= 0) fuerte else texto
-            p.color = if (i == 1 && destacada >= 0) tema.acento else tema.texto
+            val destacadaAqui = i == 1 && destacada >= 0
+            // Sin cápsula ni color: la palabra que se pondrá sola brilla (blanco intenso con un
+            // halo suave) y las demás quedan en un blanco más tenue
+            p.color = if (destacadaAqui) 0xFFFFFFFF.toInt() else 0xBFEBEBF5.toInt()
             val mostrado = if (esLiteral[i]) "«$s»" else s
             val corto = TextUtils.ellipsize(mostrado, p, ancho - dp(22f), TextUtils.TruncateAt.MIDDLE).toString()
-            if (i == 1 && destacada >= 0) {
-                // La palabra que se pondrá sola va en una cápsula suave del color de la app
-                val pw = minOf(p.measureText(corto) + dp(26f), ancho - dp(8f))
-                relleno.color = Tema.mezclar(tema.acento, 0xFF000000.toInt(), 0.2f)
-                c.drawRoundRect(x0 + ancho / 2 - pw / 2, h / 2 - dp(15f), x0 + ancho / 2 + pw / 2, h / 2 + dp(15f), dp(15f), dp(15f), relleno)
-            }
+            if (destacadaAqui) p.setShadowLayer(dp(7f), 0f, 0f, 0x8CFFFFFF.toInt())
             c.drawText(corto, x0 + ancho / 2, h / 2 + p.textSize * 0.36f, p)
+            if (destacadaAqui) p.clearShadowLayer()
             val rr = RectF(x0, 0f, x0 + ancho, h)
             val lit = esLiteral[i]
             zonas.add(rr to { oyente?.elegir(s, lit) })
