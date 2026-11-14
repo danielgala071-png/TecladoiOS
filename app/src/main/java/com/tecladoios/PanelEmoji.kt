@@ -400,8 +400,12 @@ class PanelEmoji(context: Context) : View(context) {
                     val cx = gx + col * colW + colW / 2
                     val cy = arribaGrilla() + fila * cel + cel / 2
                     if (e == presionado) {
-                        relleno.color = 0x22FFFFFF
+                        // Vidrio con tinte violeta bajo el emoji que tocas
+                        relleno.color = 0x335E5CE6
                         c.drawRoundRect(cx - cel * 0.46f, cy - cel * 0.46f, cx + cel * 0.46f, cy + cel * 0.46f, dp(10f), dp(10f), relleno)
+                        filoIndicador.strokeWidth = dp(0.8f); filoIndicador.color = 0x59B9B8FF
+                        c.drawRoundRect(cx - cel * 0.46f, cy - cel * 0.46f, cx + cel * 0.46f, cy + cel * 0.46f, dp(10f), dp(10f), filoIndicador)
+                        filoIndicador.color = 0xFFFFFFFF.toInt()
                     }
                     dibujarEmoji(c, e, cx, cy, emojiP.textSize)
                 }
@@ -409,8 +413,11 @@ class PanelEmoji(context: Context) : View(context) {
         }
         c.restore()
 
-        // Línea fina que separa la barra de categorías
-        relleno.color = tema.separador
+        // Franja de vidrio de las categorías (a juego con el teclado)
+        relleno.shader = vidrioAbajo(yAbajo, h)
+        c.drawRect(0f, yAbajo, w, h, relleno)
+        relleno.shader = null
+        relleno.color = 0x1FFFFFFF
         c.drawRect(0f, yAbajo, w, yAbajo + d * 0.6f, relleno)
 
         // Abajo: ABC, buscar, categorías, borrar
@@ -435,11 +442,14 @@ class PanelEmoji(context: Context) : View(context) {
             if (kotlin.math.abs(falta) > 0.5f) postInvalidateOnAnimation() else indicadorX = meta
             val cy = yAbajo + altoAbajo() / 2
             val rad = minOf(paso * 0.48f, dp(17f))
-            relleno.color = if (deslizandoCat) 0x3DFFFFFF else 0x29FFFFFF
+            // Círculo violeta de vidrio con un halo suave
+            relleno.color = if (deslizandoCat) 0x2E5E5CE6 else 0x1A5E5CE6
+            c.drawCircle(indicadorX, cy, rad + dp(3.5f), relleno)
+            relleno.color = if (deslizandoCat) 0x805E5CE6.toInt() else 0x5C5E5CE6
             c.drawCircle(indicadorX, cy, rad, relleno)
             filoIndicador.strokeWidth = dp(0.8f)
             filoIndicador.shader = android.graphics.LinearGradient(0f, cy - rad, 0f, cy + rad,
-                intArrayOf(0x59FFFFFF, 0x00FFFFFF, 0x14FFFFFF), floatArrayOf(0f, 0.55f, 1f), android.graphics.Shader.TileMode.CLAMP)
+                intArrayOf(0x8CFFFFFF.toInt(), 0x00B9B8FF, 0x33B9B8FF), floatArrayOf(0f, 0.55f, 1f), android.graphics.Shader.TileMode.CLAMP)
             c.drawCircle(indicadorX, cy, rad - dp(0.4f), filoIndicador)
             filoIndicador.shader = null
         }
@@ -470,7 +480,7 @@ class PanelEmoji(context: Context) : View(context) {
             for ((i, e) in opciones.withIndex()) {
                 val x0 = cajaTonos.left + anch * i
                 if (i == tonoElegido) {
-                    relleno.color = tema.acento
+                    relleno.color = Tema.ROJO
                     c.drawRoundRect(x0 + dp(3f), cajaTonos.top + dp(5f), x0 + anch - dp(3f), cajaTonos.bottom - dp(5f), dp(8f), dp(8f), relleno)
                 }
                 c.drawText(e, x0 + anch / 2, cajaTonos.centerY() + emojiP.textSize * 0.35f, emojiP)
@@ -487,6 +497,16 @@ class PanelEmoji(context: Context) : View(context) {
     private var movioCat = false
     private var ultimaCat = -1
     private var indicadorX = -1f
+    private var vidrioCache: android.graphics.Shader? = null
+    private var vidrioDe = Float.NaN
+    private fun vidrioAbajo(y0: Float, y1: Float): android.graphics.Shader {
+        val v = vidrioCache
+        if (v != null && vidrioDe == y0 + y1 * 10000f) return v
+        val nuevo = android.graphics.LinearGradient(0f, y0, 0f, y1,
+            intArrayOf(0x1AFFFFFF, 0x0DFFFFFF, 0x085E5CE6), floatArrayOf(0f, 0.5f, 1f), android.graphics.Shader.TileMode.CLAMP)
+        vidrioCache = nuevo; vidrioDe = y0 + y1 * 10000f
+        return nuevo
+    }
     private val filoIndicador = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
 
     private fun categoriaEnBarra(x: Float): Int {

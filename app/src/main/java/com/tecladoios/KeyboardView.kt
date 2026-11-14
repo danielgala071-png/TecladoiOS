@@ -55,6 +55,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 anteriorFondo = cacheFondo; anteriorLetras = cacheLetras
                 cacheFondo = null; cacheLetras = null
                 cambioMs = SystemClock.uptimeMillis()
+                // abc → 123: las letras salen a la izquierda; al volver, a la derecha
+                cambioHaciaIzq = v.nombre != "abc"
             }
             field = v; reacomodar(); ensuciar()
         }
@@ -231,6 +233,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             override fun run() {
                 if (modo != Modo.NORMAL || tecla?.tecla?.tipo != K.BORRAR) return
                 borrados++
+                destelloBorrar(borrados)
                 oyente?.borrarRepetido(borrados)
                 oyente?.respuesta(Respuesta.Tipo.SUAVE)
                 postDelayed(this, when { borrados < 4 -> 85L; borrados < 15 -> 60L; else -> 45L })
@@ -600,7 +603,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         colorFilter = android.graphics.PorterDuffColorFilter(Tema.ROJO, android.graphics.PorterDuff.Mode.SRC_IN)
     }
     /** Cada fila tarda esto en cambiar... */
-    private val DURACION_FILA = 170f
+    private val DURACION_FILA = 210f
+    private var cambioHaciaIzq = true
     /** ...y arranca este tanto después de la de abajo: una ola que nace en la tecla 123 */
     private val ESCALON = 0f
 
@@ -757,6 +761,16 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             relleno.shader = android.graphics.LinearGradient(0f, r.bottom - r.height() * 0.28f, 0f, r.bottom,
                 0x00FFFFFF, 0x12FFFFFF, android.graphics.Shader.TileMode.CLAMP)
             c.drawRect(r.left, r.bottom - r.height() * 0.28f, r.right, r.bottom, relleno)
+            // Teclas de función: un punto de luz violeta detrás del ícono (va en la imagen
+            // guardada, no cuesta nada al escribir)
+            val tipo = k.tecla.tipo
+            if (tipo == K.SHIFT || tipo == K.BORRAR || tipo == K.EMOJI) {
+                val rad = minOf(r.width(), r.height()) * 0.46f
+                relleno.shader = android.graphics.RadialGradient(r.centerX(), r.centerY(), rad,
+                    intArrayOf(0x595E5CE6, 0x265E5CE6, 0x005E5CE6), floatArrayOf(0f, 0.45f, 1f),
+                    android.graphics.Shader.TileMode.CLAMP)
+                c.drawCircle(r.centerX(), r.centerY(), rad, relleno)
+            }
             relleno.shader = null
             c.restore()
             // Filo luminoso
@@ -799,9 +813,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                     c.drawText(t.pista, r.right - r.width() * 0.2f, r.top + pista.textSize * 1.05f, pista)
             }
             // Activa: la flecha negra va pintada sobre la tecla blanca (en la imagen de cuerpos)
-            K.SHIFT -> if (shift == 0) Iconos.shift(c, cx, cy, s, icono, false, false)
-            K.BORRAR -> Iconos.borrar(c, cx, cy, s, icono, false)
-            K.EMOJI -> Iconos.cara(c, cx, cy, s, icono)
+            // Íconos de trazo más fino (estilo "luz")
+            K.SHIFT -> if (shift == 0) Iconos.fino { Iconos.shift(c, cx, cy, s, icono, false, false) }
+            K.BORRAR -> Iconos.fino { Iconos.borrar(c, cx, cy, s, icono, false) }
+            K.EMOJI -> Iconos.fino { Iconos.cara(c, cx, cy, s, icono) }
             K.INTRO -> {
                 val txt = textoIntro
                 if (txt != null) { chica.color = tema.texto; c.drawText(txt, cx, cy + chica.textSize * 0.36f, chica) }
@@ -917,6 +932,77 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private val puntoShader = android.graphics.RadialGradient(0f, 0f, 1f,
         intArrayOf(0xFFFFFFFF.toInt(), 0xE69DB8FF.toInt(), 0x995E5CE6.toInt(), 0x005E5CE6), floatArrayOf(0f, 0.22f, 0.5f, 1f), android.graphics.Shader.TileMode.CLAMP)
     private val puntoCursor = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = puntoShader }
+
+    // ---------- Luces: borrado, espacio que respira y bloqueo de mayúsculas ----------
+
+    // Un solo degradado radial de radio 1; se estira con una matriz (sin crear objetos al dibujar)
+    private val violetaShader = android.graphics.RadialGradient(0f, 0f, 1f,
+        intArrayOf(0xE69A98FF.toInt(), 0x805E5CE6.toInt(), 0x005E5CE6), floatArrayOf(0f, 0.5f, 1f),
+        android.graphics.Shader.TileMode.CLAMP)
+    private val violetaPintura = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = violetaShader }
+    private val matrizVioleta = android.graphics.Matrix()
+    private val aroMayus = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+
+    private var borrarMs = 0L
+    private var borrarDura = 0f
+    private var borrarFuerza = 0f
+    private var espacioMs = 0L
+    private val RESPIRA = 520f
+
+    /** Cada letra que se va al mantener borrar deja un destello; más rápido, más intenso */
+    private fun destelloBorrar(n: Int) {
+        borrarMs = SystemClock.uptimeMillis()
+        borrarDura = (150f - minOf(n, 20) * 4f)
+        borrarFuerza = 0.5f + 0.5f * minOf(1f, n / 15f)
+        invalidate()
+    }
+
+    /** La barra espaciadora hace un pulso violeta suave (punto automático o mayúscula sola) */
+    fun respirarEspacio() { espacioMs = SystemClock.uptimeMillis(); invalidate() }
+
+    private fun teclaDe(tipo: Int): Colocada? { for (k in colocadas) if (k.tecla.tipo == tipo) return k; return null }
+
+    private fun luzVioleta(c: Canvas, r: RectF, fuerza: Float, ancho: Float, alto: Float) {
+        if (fuerza <= 0.01f) return
+        matrizVioleta.setScale(ancho, alto)
+        matrizVioleta.postTranslate(r.centerX(), r.centerY())
+        violetaShader.setLocalMatrix(matrizVioleta)
+        violetaPintura.alpha = (255 * fuerza).toInt().coerceIn(0, 255)
+        c.drawRect(r.centerX() - ancho, r.centerY() - alto, r.centerX() + ancho, r.centerY() + alto, violetaPintura)
+    }
+
+    private fun dibujarLuces(c: Canvas, ahora: Long) {
+        if (modoTrackpad) return
+        // Destello en borrar
+        if (borrarMs != 0L) {
+            val t = (ahora - borrarMs) / borrarDura
+            if (t >= 1f) borrarMs = 0L
+            else teclaDe(K.BORRAR)?.let { k ->
+                val u = 1f - t
+                luzVioleta(c, k.dibujo, borrarFuerza * u * u, k.dibujo.width() * 0.75f, k.dibujo.height() * 0.85f)
+                postInvalidateOnAnimation()
+            }
+        }
+        // Espacio que respira: sube y baja una vez
+        if (espacioMs != 0L) {
+            val t = (ahora - espacioMs) / RESPIRA
+            if (t >= 1f) espacioMs = 0L
+            else teclaDe(K.ESPACIO)?.let { k ->
+                val f = kotlin.math.sin(Math.PI * t).toFloat()
+                luzVioleta(c, k.dibujo, 0.55f * f, k.dibujo.width() * 0.55f, k.dibujo.height() * 0.9f)
+                postInvalidateOnAnimation()
+            }
+        }
+        // Bloqueo de mayúsculas: la tecla blanca queda con un aro de luz violeta
+        if (shift == 2) teclaDe(K.SHIFT)?.let { k ->
+            val r = k.dibujo
+            val rad = radioDe(r)
+            aroMayus.strokeWidth = dp(4f); aroMayus.color = 0x405E5CE6
+            c.drawRoundRect(r.left - dp(1.5f), r.top - dp(1.5f), r.right + dp(1.5f), r.bottom + dp(1.5f), rad + dp(1.5f), rad + dp(1.5f), aroMayus)
+            aroMayus.strokeWidth = dp(1.4f); aroMayus.color = 0xD99A98FF.toInt()
+            c.drawRoundRect(r.left - dp(0.6f), r.top - dp(0.6f), r.right + dp(0.6f), r.bottom + dp(0.6f), rad + dp(0.6f), rad + dp(0.6f), aroMayus)
+        }
+    }
 
     // Entrada en cascada al abrir el teclado
     private var entradaMs = 0L
@@ -1066,6 +1152,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             if (pulsos.values.any { it.suelta != 0L || ahora - it.t0 < BAJAR }) postInvalidateOnAnimation()
         }
 
+        dibujarLuces(c, ahora)
+
         // Cursor de vidrio: al mover el cursor con el espacio, el teclado queda como un panel
         // de vidrio vacío y un punto de luz sigue tu dedo
         if (modoTrackpad) {
@@ -1128,18 +1216,21 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 pinturaDestello.alpha = (destello * 46).toInt()
                 c.drawBitmap(fondo, 0f, 0f, pinturaDestello)
             }
-            // Letras: ruedan dentro de cada tecla (recortadas al alto de la tecla)
+            // Letras: pasan como una página (las viejas salen por un lado y las nuevas entran
+            // por el otro), recortadas al alto de las teclas de la fila
             c.clipRect(0f, y0 + medio, w, y0 + altoFila - medio)
+            val lado = if (cambioHaciaIzq) -1f else 1f
+            val tramo = w * 0.32f
             if (f < 1f) {
                 val u = 1f - e
                 pinturaAnterior.alpha = (255 * u * u).toInt().coerceIn(0, 255)
-                c.save(); c.translate(0f, -sube * e)
+                c.save(); c.translate(lado * tramo * e, 0f)
                 c.drawBitmap(viejoL, 0f, 0f, pinturaAnterior)
                 c.restore()
             }
             if (f > 0f) {
-                pinturaNueva.alpha = (255 * minOf(1f, f * 1.6f)).toInt().coerceIn(0, 255)
-                c.save(); c.translate(0f, sube * (1f - asentar(f)))
+                pinturaNueva.alpha = (255 * minOf(1f, f * 1.5f)).toInt().coerceIn(0, 255)
+                c.save(); c.translate(-lado * tramo * (1f - asentar(f)), 0f)
                 c.drawBitmap(letras, 0f, 0f, pinturaNueva)
                 c.restore()
             }

@@ -30,9 +30,12 @@ class Barra(context: Context) : View(context) {
         fun emojiBuscado(e: String)
         fun cerrarBusqueda()
         fun respuesta(tipo: Respuesta.Tipo)
+        /** Tocaste la palabra recién corregida: vuelve lo que escribiste */
+        fun deshacerCorreccion()
     }
 
     companion object {
+        const val CORREGIDA_DURA = 2600L
         const val H_PORTAPAPELES = 1
         const val H_EDITAR = 2
         const val H_UNA_MANO = 3
@@ -45,6 +48,29 @@ class Barra(context: Context) : View(context) {
     var oyente: Oyente? = null
     var tema = Tema(Tema.AZUL); set(v) { field = v; invalidate() }
     var herramientasActivas = true
+
+    /** Estilo según la app: 0 normal, 1 chat (línea cálida), 2 navegador (más compacta) */
+    var estilo = 0; set(v) { if (field != v) { field = v; invalidate() } }
+
+    /** Campo de contraseña o modo incógnito: no aprende ni guarda nada (candado en la barra) */
+    var privado = false; set(v) { if (field != v) { field = v; invalidate() } }
+
+    // Palabra que el teclado acaba de corregir: se ilumina un momento y al tocarla se deshace
+    private var corregida: String? = null
+    private var corregidaMs = 0L
+
+    fun avisarCorreccion(puesta: String?) {
+        if (puesta == null && corregida == null) return
+        corregida = puesta; corregidaMs = android.os.SystemClock.uptimeMillis()
+        invalidate()
+        if (puesta != null) postInvalidateDelayed(CORREGIDA_DURA + 20)
+    }
+
+    private fun corregidaVisible(): String? {
+        val c = corregida ?: return null
+        if (android.os.SystemClock.uptimeMillis() - corregidaMs > CORREGIDA_DURA) { corregida = null; return null }
+        return c
+    }
 
     /**
      * La barra nunca se esconde: siempre muestra palabras. Las herramientas se abren con el
@@ -74,6 +100,8 @@ class Barra(context: Context) : View(context) {
     fun mostrarSugerencias(lista: List<String>, literalEntreComillas: String?, autocorrige: Boolean) {
         val nuevas = lista.take(3)
         if (porEliminar != null && (nuevas != sugerencias || literalEntreComillas != literal)) porEliminar = null
+        // Empezaste otra palabra: la corrección anterior ya no se ofrece
+        if (literalEntreComillas != null || autocorrige) corregida = null
         if (nuevas == sugerencias && literalEntreComillas == literal && (autocorrige && lista.isNotEmpty()) == (destacada >= 0)) return
         val cambiaModo = sugerencias.isEmpty() && literal == null
         sugerencias = nuevas; literal = literalEntreComillas
@@ -152,7 +180,9 @@ class Barra(context: Context) : View(context) {
     }
 
     private fun dibujarContenido(c: Canvas, w: Float, h: Float) {
-        texto.textSize = dp(17.5f); fuerte.textSize = dp(17.5f)
+        // En el navegador la barra es más compacta (letra algo menor)
+        val tam = if (estilo == 2) dp(15.5f) else dp(17.5f)
+        texto.textSize = tam; fuerte.textSize = tam
         linea.color = tema.separador; linea.strokeWidth = dp(0.8f); linea.strokeCap = Paint.Cap.ROUND
         if (buscando) { dibujarBusqueda(c, w, h); return }
         porEliminar?.let { dibujarEliminar(c, w, h, it); return }
@@ -205,6 +235,9 @@ class Barra(context: Context) : View(context) {
         celdas[1] = mejor
         if (literal != null) { celdas[0] = literal; esLiteral[0] = true; celdas[2] = sugerencias.getOrNull(1) }
         else { celdas[0] = sugerencias.getOrNull(1); celdas[2] = sugerencias.getOrNull(2) }
+        // La palabra recién corregida ocupa la izquierda y brilla en violeta
+        val corr = if (literal == null && destacada < 0) corregidaVisible() else null
+        if (corr != null) celdas[0] = corr
         // Botón de herramientas a la izquierda (cuatro puntitos, como Gboard)
         val boton = dp(40f)
         val ahora = android.os.SystemClock.uptimeMillis()
@@ -212,10 +245,12 @@ class Barra(context: Context) : View(context) {
             val cx = boton / 2 + dp(2f); val cy = h / 2
             val apretado = tocando && toqueX in 0f..boton
             if (apretado) { relleno.color = 0x24FFFFFF; c.drawCircle(cx, cy, dp(15f), relleno) }
-            relleno.color = tema.textoSuave
-            val sep = dp(4.2f); val lado = dp(2.6f)
-            for (a in -1..1 step 2) for (b in -1..1 step 2)
-                c.drawRoundRect(cx + a * sep - lado, cy + b * sep - lado, cx + a * sep + lado, cy + b * sep + lado, dp(1.2f), dp(1.2f), relleno)
+            if (privado) candado(c, cx, cy) else {
+                relleno.color = tema.textoSuave
+                val sep = dp(4.2f); val lado = dp(2.6f)
+                for (a in -1..1 step 2) for (b in -1..1 step 2)
+                    c.drawRoundRect(cx + a * sep - lado, cy + b * sep - lado, cx + a * sep + lado, cy + b * sep + lado, dp(1.2f), dp(1.2f), relleno)
+            }
             zonas.add(RectF(0f, 0f, boton + dp(4f), h) to { verHerramientas = true; animar(200f, true) })
         }
         c.save()
@@ -263,15 +298,24 @@ class Barra(context: Context) : View(context) {
             // Todas legibles; la que se pondrá sola (o la que tocas) blanca con un reflejo de luz
             val brillaTocada = i == celdaTocada
             val brillaElegida = if (i == elegidaCelda) brilloElegida else 0f
+            val esCorregida = i == 0 && corr != null
             p.color = if (destacadaAqui || brillaTocada || brillaElegida > 0f) 0xFFFFFFFF.toInt() else 0xD9EBEBF5.toInt()
-            val halo = when {
+            var halo = when {
                 brillaElegida > 0f -> brillaElegida
                 destacadaAqui -> 0.75f
                 brillaTocada -> 0.55f
                 else -> 0f
             }
-            if (halo > 0f) p.setShadowLayer(dp(5f) + dp(7f) * halo, 0f, 0f, ((0xCC * halo).toInt() shl 24) or 0xFFFFFF)
-            val mostrado = if (esLiteral[i]) "«$s»" else s
+            if (esCorregida) {
+                // Destello violeta que se apaga despacio; la palabra queda en lila suave
+                val tcorr = ((ahora - corregidaMs) / 900f).coerceIn(0f, 1f)
+                val fuerzaC = 1f - tcorr * tcorr
+                if (tcorr < 1f) seguir = true
+                p.color = Tema.mezclar(0xFFFFFFFF.toInt(), 0xFFB9B8FF.toInt(), 0.35f + 0.65f * fuerzaC)
+                halo = 0f
+                p.setShadowLayer(dp(4f) + dp(9f) * fuerzaC, 0f, 0f, ((0x60 + (0x9F * fuerzaC).toInt()) shl 24) or 0x5E5CE6)
+            } else if (halo > 0f) p.setShadowLayer(dp(5f) + dp(7f) * halo, 0f, 0f, ((0xCC * halo).toInt() shl 24) or 0xFFFFFF)
+            val mostrado = if (esLiteral[i]) "«$s»" else if (esCorregida) "↶ $s" else s
             val corto = TextUtils.ellipsize(mostrado, p, ancho - dp(22f), TextUtils.TruncateAt.MIDDLE).toString()
             val alfaBase = p.alpha
             p.alpha = (alfaBase * (0.15f + 0.85f * ec)).toInt()
@@ -286,16 +330,19 @@ class Barra(context: Context) : View(context) {
                 matrizLinea.setScale(medio * 2f, 1f)
                 matrizLinea.postTranslate(x0 + ancho / 2 - medio, 0f)
                 degradadoLinea.setLocalMatrix(matrizLinea)
-                lineaLuz.shader = degradadoLinea
+                val lin = if (estilo == 1) degradadoCalido else degradadoLinea
+                lin.setLocalMatrix(matrizLinea)
+                lineaLuz.shader = lin
                 lineaLuz.alpha = (255 * fuerza).toInt().coerceIn(0, 255)
-                lineaLuz.setShadowLayer(dp(6f) + dp(6f) * fuerza, 0f, 0f, 0xE65E5CE6.toInt())
+                lineaLuz.setShadowLayer(dp(6f) + dp(6f) * fuerza, 0f, 0f, if (estilo == 1) 0xE6FF7A6B.toInt() else 0xE65E5CE6.toInt())
                 c.drawRoundRect(x0 + ancho / 2 - medio, yl, x0 + ancho / 2 + medio, yl + dp(2.5f), dp(1.25f), dp(1.25f), lineaLuz)
             }
-            if (halo > 0f) p.clearShadowLayer()
+            if (halo > 0f || esCorregida) p.clearShadowLayer()
             c.restore()
             val rr = RectF(desplazamiento + x0, 0f, desplazamiento + x0 + ancho, h)
             val lit = esLiteral[i]
             val celda = i
+            if (esCorregida) { zonas.add(rr to { corregida = null; oyente?.deshacerCorreccion() }); continue }
             zonas.add(rr to { elegidaCelda = celda; elegidaMs = android.os.SystemClock.uptimeMillis(); oyente?.elegir(s, lit) })
             if (!lit) zonasLargas.add(rr to { porEliminar = s; invalidate() })
         }
@@ -309,7 +356,26 @@ class Barra(context: Context) : View(context) {
     private val degradadoLinea = android.graphics.LinearGradient(0f, 0f, 1f, 0f,
         intArrayOf(0x000A84FF, 0xFF7A8CFF.toInt(), 0xFF5E5CE6.toInt(), 0x005E5CE6), floatArrayOf(0f, 0.3f, 0.7f, 1f),
         android.graphics.Shader.TileMode.CLAMP)
+    /** En chats (WhatsApp, Telegram…) la línea es más cálida: ámbar → coral → violeta */
+    private val degradadoCalido = android.graphics.LinearGradient(0f, 0f, 1f, 0f,
+        intArrayOf(0x00FFB340, 0xFFFFA24A.toInt(), 0xFFFF6B7A.toInt(), 0x00B06CF0), floatArrayOf(0f, 0.3f, 0.7f, 1f),
+        android.graphics.Shader.TileMode.CLAMP)
     private val matrizLinea = android.graphics.Matrix()
+
+    /** Candado pequeño con un punto de luz violeta (modo privado) */
+    private val trazo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+    private fun candado(c: Canvas, cx: Float, cy: Float) {
+        relleno.color = 0x335E5CE6
+        c.drawCircle(cx, cy, dp(14f), relleno)
+        trazo.color = 0xFFC9C8FF.toInt(); trazo.strokeWidth = dp(1.6f)
+        c.drawArc(cx - dp(4f), cy - dp(8.5f), cx + dp(4f), cy - dp(0.5f), 180f, 180f, false, trazo)
+        c.drawLine(cx - dp(4f), cy - dp(4.5f), cx - dp(4f), cy - dp(2f), trazo)
+        c.drawLine(cx + dp(4f), cy - dp(4.5f), cx + dp(4f), cy - dp(2f), trazo)
+        relleno.color = 0xFFC9C8FF.toInt()
+        c.drawRoundRect(cx - dp(6f), cy - dp(2f), cx + dp(6f), cy + dp(7f), dp(2f), dp(2f), relleno)
+        relleno.color = 0xFF5E5CE6.toInt()
+        c.drawCircle(cx, cy + dp(2.5f), dp(1.4f), relleno)
+    }
 
     /** Cápsula de vidrio: relleno translúcido y filo de luz arriba */
     private val filoCapsula = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }

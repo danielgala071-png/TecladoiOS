@@ -95,4 +95,6 @@ class Config(p: SharedPreferences) {
 
     val portapapeles = p.getBoolean(Ajustes.PORTAPAPELES, true)
     val capturas = p.getBoolean(Ajustes.CAPTURAS, false)
+
+    val atajos: Map<String, String> = Atajos.leer(p)
 }

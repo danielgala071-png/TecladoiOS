@@ -246,6 +246,14 @@ class SettingsActivity : Activity() {
                 .setNegativeButton("Cancelar", null).show()
         }
 
+        val ata = seccion("Atajos de texto", "Escribe la clave y toca espacio: se pone la frase completa. Si borras justo después, vuelve lo que escribiste.")
+        boton(ata, "Mis atajos", sub = "Toca uno para cambiarlo o borrarlo") { verAtajos() }
+        boton(ata, "Agregar un atajo") { editarAtajo(null) }
+
+        val copia = seccion("Copia de seguridad", "Guarda en un archivo tus palabras, costumbres y atajos para pasarlos a otro celular o recuperarlos.")
+        boton(copia, "Exportar lo aprendido") { exportarCerebro() }
+        boton(copia, "Importar una copia", sub = "Se suma a lo que el teclado ya sabe") { importarCerebro() }
+
         val otros = seccion("Otros")
         interruptor(otros, "Ocultar el ícono de la app", Ajustes.ICONO_OCULTO, false, "Abre los ajustes desde el engranaje del teclado") { si ->
             packageManager.setComponentEnabledSetting(ComponentName(this, "com.tecladoios.Lanzador"),
@@ -332,6 +340,95 @@ class SettingsActivity : Activity() {
                 val w = campo.text.toString().trim()
                 if (w.isNotEmpty() && !w.contains(' ')) { m.aprendido.agregar(w, fija = true); Cerebro.guardar() }
             }.setNegativeButton("Cancelar", null).show()
+    }
+
+    // ---------- Atajos de texto ----------
+
+    private fun verAtajos() {
+        val m = Atajos.leer(prefs)
+        if (m.isEmpty()) { editarAtajo(null); return }
+        val claves = m.keys.toList()
+        val filas = claves.map { "$it  →  ${m[it]}" }.toTypedArray()
+        AlertDialog.Builder(this).setTitle("Atajos de texto")
+            .setItems(filas) { _, i -> editarAtajo(claves[i]) }
+            .setPositiveButton("Agregar") { _, _ -> editarAtajo(null) }
+            .setNegativeButton("Cerrar", null).show()
+    }
+
+    private fun editarAtajo(clave: String?) {
+        val m = Atajos.leer(prefs)
+        val caja = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20f), dp(8f), dp(20f), 0) }
+        val campoClave = EditText(this).apply { hint = "Clave (ej.: bd)"; setText(clave ?: ""); inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS }
+        val campoFrase = EditText(this).apply { hint = "Frase (ej.: Buenos días)"; setText(clave?.let { m[it] } ?: "") }
+        caja.addView(campoClave); caja.addView(campoFrase)
+        val d = AlertDialog.Builder(this).setTitle(if (clave == null) "Nuevo atajo" else "Editar atajo").setView(caja)
+            .setPositiveButton("Guardar") { _, _ ->
+                val k = campoClave.text.toString().trim().lowercase()
+                val v = campoFrase.text.toString().trim()
+                if (!Atajos.claveValida(k) || v.isEmpty()) {
+                    AlertDialog.Builder(this).setMessage("La clave debe ser una sola palabra sin espacios y la frase no puede quedar vacía.").setPositiveButton("OK", null).show()
+                    return@setPositiveButton
+                }
+                if (clave != null) m.remove(clave)
+                m[k] = v
+                Atajos.guardar(prefs, m)
+            }
+            .setNegativeButton("Cancelar", null)
+        if (clave != null) d.setNeutralButton("Borrar") { _, _ -> m.remove(clave); Atajos.guardar(prefs, m) }
+        d.show()
+    }
+
+    // ---------- Copia de seguridad del cerebro ----------
+
+    private val PEDIR_EXPORTAR = 41
+    private val PEDIR_IMPORTAR = 42
+
+    private fun exportarCerebro() = conMotor {
+        val i = Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("text/plain")
+            .putExtra(Intent.EXTRA_TITLE, "tecladoios-cerebro.txt")
+        try { startActivityForResult(i, PEDIR_EXPORTAR) } catch (e: Exception) { aviso("No se pudo abrir el selector de archivos.") }
+    }
+
+    private fun importarCerebro() = conMotor {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+        try { startActivityForResult(i, PEDIR_IMPORTAR) } catch (e: Exception) { aviso("No se pudo abrir el selector de archivos.") }
+    }
+
+    private fun aviso(t: String) { AlertDialog.Builder(this).setMessage(t).setPositiveButton("OK", null).show() }
+
+    @Deprecated("Activity sencilla, sin AndroidX")
+    override fun onActivityResult(pedido: Int, resultado: Int, datos: Intent?) {
+        super.onActivityResult(pedido, resultado, datos)
+        val uri = datos?.data
+        if (resultado != RESULT_OK || uri == null) return
+        val m = Cerebro.motor ?: run { aviso("El diccionario aún no está listo. Inténtalo de nuevo."); return }
+        when (pedido) {
+            PEDIR_EXPORTAR -> try {
+                contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter(Charsets.UTF_8).use { w ->
+                    w.write("#TecladoiOS-cerebro 1\n")
+                    for ((k, v) in Atajos.leer(prefs)) w.write("A\t$k\t$v\n")
+                    m.aprendido.escribir(w)
+                }
+                aviso("Listo: copia guardada.")
+            } catch (e: Exception) { Registro.anotar("exportar", e); aviso("No se pudo guardar la copia.") }
+            PEDIR_IMPORTAR -> try {
+                val lineas = contentResolver.openInputStream(uri)!!.bufferedReader(Charsets.UTF_8).use { it.readLines() }
+                if (lineas.firstOrNull()?.startsWith("#TecladoiOS-cerebro") != true && lineas.firstOrNull()?.startsWith("#TPA") != true) {
+                    aviso("Ese archivo no es una copia del teclado."); return
+                }
+                val atajos = Atajos.leer(prefs)
+                var n = 0
+                for (l in lineas) {
+                    if (l.startsWith("A\t")) {
+                        val p = l.split('\t', limit = 3)
+                        if (p.size == 3 && Atajos.claveValida(p[1]) && p[2].isNotBlank()) { atajos[p[1]] = p[2]; n++ }
+                    } else if (m.aprendido.mezclar(l)) n++
+                }
+                Atajos.guardar(prefs, atajos)
+                m.aprendido.guardar()
+                aviso(if (n > 0) "Listo: copia importada." else "La copia estaba vacía.")
+            } catch (e: Exception) { Registro.anotar("importar", e); aviso("No se pudo leer la copia.") }
+        }
     }
 
     private fun verRegistro() {

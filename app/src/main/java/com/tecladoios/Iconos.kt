@@ -13,9 +13,15 @@ object Iconos {
     private val path = Path()
     private val r = RectF()
 
+    private var grosor = 1f
+
+    /** Dibuja con trazo más fino (teclas de función con ícono de luz) */
+    inline fun fino(f: () -> Unit) { ponerGrosor(0.78f); try { f() } finally { ponerGrosor(1f) } }
+    fun ponerGrosor(g: Float) { grosor = g }
+
     private fun trazo(p: Paint, s: Float) {
         p.style = Paint.Style.STROKE
-        p.strokeWidth = s * 0.085f
+        p.strokeWidth = s * 0.085f * grosor
         p.strokeCap = Paint.Cap.ROUND
         p.strokeJoin = Paint.Join.ROUND
     }

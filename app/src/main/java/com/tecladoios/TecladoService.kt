@@ -71,7 +71,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private var ultimoShiftMs = 0L
     private var shiftUsadoMientrasApretado = false
 
-    private class Correccion(val original: String, val puesta: String, val separador: String)
+    private class Correccion(val original: String, val puesta: String, val separador: String, val atajo: Boolean = false)
     private var ultimaCorreccion: Correccion? = null
 
     private var modo = Distribuciones.LETRAS
@@ -245,6 +245,11 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         teclado?.unaMano = cfg.unaMano
         barra?.herramientasActivas = cfg.barraHerramientas
         leerCampo(info)
+        // Modo privado: contraseñas e incógnito no aprenden ni guardan lo copiado
+        privado = esPrivado(info)
+        if (privado) aprender = false
+        barra?.privado = privado
+        barra?.estilo = estiloDe(info.packageName)
         // Al abrirse, las filas entran en cascada (una décima y media de segundo)
         if (!restarting) teclado?.animarEntrada()
         // Algunas apps reinician el campo al enviar: si la palabra ya no está, se suelta
@@ -308,6 +313,31 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                     variacion == InputType.TYPE_TEXT_VARIATION_PERSON_NAME
             }
             else -> { sugerir = false; corregir = false }
+        }
+    }
+
+    private var privado = false
+
+    private fun esPrivado(info: EditorInfo): Boolean {
+        if ((info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0) return true
+        val clase = info.inputType and InputType.TYPE_MASK_CLASS
+        val v = info.inputType and InputType.TYPE_MASK_VARIATION
+        return (clase == InputType.TYPE_CLASS_TEXT && (v == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+            v == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD || v == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)) ||
+            (clase == InputType.TYPE_CLASS_NUMBER && v == InputType.TYPE_NUMBER_VARIATION_PASSWORD)
+    }
+
+    /** La barra cambia según la app: chats más cálidos, navegadores más compactos */
+    private fun estiloDe(paquete: String?): Int {
+        val p = paquete ?: return 0
+        return when {
+            p.startsWith("com.whatsapp") || p.startsWith("org.telegram") || p == "com.facebook.orca" ||
+                p.startsWith("org.thoughtcrime.securesms") || p == "com.instagram.android" ||
+                p == "com.google.android.apps.messaging" || p == "com.samsung.android.messaging" -> 1
+            p == "com.android.chrome" || p.startsWith("org.mozilla.") || p == "com.opera.browser" ||
+                p == "com.brave.browser" || p == "com.microsoft.emmx" || p == "com.sec.android.app.sbrowser" ||
+                p.startsWith("com.duckduckgo") || p == "com.vivaldi.browser" -> 2
+            else -> 0
         }
     }
 
@@ -415,8 +445,10 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     private fun actualizarShift(leido: String? = null) {
         if (shift == 2) { teclado?.shift = 2; return }
+        var finDeFrase = false
         val auto = cfg.mayusAuto && mayusCampo && modo == Distribuciones.LETRAS && palabra.isEmpty() && run {
             val t = leido?.takeLast(4) ?: antes(4)
+            finDeFrase = t.isNotEmpty()
             if (t.isEmpty()) true
             else {
                 val sinEsp = t.trimEnd(' ')
@@ -424,6 +456,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                     (sinEsp.isEmpty() || sinEsp.last() in ".?!\n")
             }
         }
+        // Mayúscula automática al empezar otra frase: la barra espaciadora respira en violeta
+        if (auto && shift == 0 && finDeFrase) teclado?.respirarEspacio()
         shift = if (auto) 1 else if (shift == 1 && palabra.isEmpty()) 0 else shift
         teclado?.shift = shift
     }
@@ -567,6 +601,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 val t = antes(2); t.length == 2 && t[1] == ' ' && (t[0].isLetterOrDigit() || t[0] in "\"')")
             }) {
             ic.beginBatchEdit(); ic.deleteSurroundingText(1, 0); ic.commitText(". ", 1); ic.endBatchEdit()
+            teclado?.respirarEspacio()
             ultimoEspacioMs = 0
             espacioAuto = false
             ultimaCorreccion = null
@@ -610,14 +645,17 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         val ctx = contextoPalabra()
         // Una palabra que ya estaba escrita y solo reabriste al borrar se respeta tal cual
         val respetar = reabierta
-        if (!vinoDeslizado && sugerir && corregir && !respetar) {
+        // Atajo de texto ("bd" → "Buenos días")
+        val atajo = if (!vinoDeslizado && !respetar && campo == Distribuciones.CAMPO_TEXTO && sugerir) Atajos.expandir(cfg.atajos, escrito) else null
+        if (atajo != null) resultado = atajo
+        else if (!vinoDeslizado && sugerir && corregir && !respetar) {
             val p = propuestaPara(escrito, ctx)
             p?.autocorregir?.let { resultado = it }
         }
         // Dos palabras seguidas que se corrigen juntas ("a sido" → "ha sido")
         var anteriorNueva: String? = null
         var anteriorVieja: String? = null
-        if (corregir && !respetar && ctx.isNotEmpty() && Cerebro.motor != null) {
+        if (atajo == null && corregir && !respetar && ctx.isNotEmpty() && Cerebro.motor != null) {
             val conf = Cerebro.motor?.errores?.confusion(ctx.last(), resultado)
             if (conf != null) {
                 val previo = antes(ctx.last().length + 1 + escrito.length)
@@ -651,12 +689,14 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             ic.commitText(resultado + separador, 1)
         }
         ic.endBatchEdit()
-        aprenderPalabra(resultado, ctx)
+        if (atajo == null) aprenderPalabra(resultado, ctx)
         ultimaCorreccion = if (resultado != escrito || anteriorNueva != null) {
             val puesta = if (anteriorNueva != null) "$anteriorNueva $resultado" else resultado
             val original = if (anteriorVieja != null) "$anteriorVieja $escrito" else escrito
-            Correccion(original, puesta, separador)
+            Correccion(original, puesta, separador, atajo != null)
         } else null
+        // La palabra corregida se ilumina en la barra (tocarla la deshace)
+        barra?.avisarCorreccion(ultimaCorreccion?.puesta)
         reiniciarPalabra()
         refrescar()
     }
@@ -707,10 +747,11 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 for (i in ultima.indices) ponerToque(i, Float.NaN, Float.NaN)
                 ic.setComposingText(palabra, 1)
                 ic.endBatchEdit()
-                Cerebro.motor?.aprendido?.let {
+                if (!corr.atajo) Cerebro.motor?.aprendido?.let {
                     it.rechazar(corr.original.substringAfterLast(' '), corr.puesta.substringAfterLast(' '))
                     if (aprender) it.agregar(ultima)
                 }
+                barra?.avisarCorreccion(null)
                 ultimaCorreccion = null
                 reabierta = true   // la dejaste como la escribiste: no se vuelve a corregir
                 pedirSugerencias()
@@ -848,7 +889,17 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         val chip = chipTexto?.takeIf { SystemClock.uptimeMillis() - chipMs < 60_000 && cfg.portapapeles }
         if (chip == null) chipTexto = null
         b.chip(chip)
+        if (palabra.isNotEmpty()) b.avisarCorreccion(null)
         if (palabra.isNotEmpty() && sugerir) {
+            // Un atajo va al centro y se pone solo con espacio
+            if (!reabierta && !vinoDeslizado && campo == Distribuciones.CAMPO_TEXTO) {
+                val exp = Atajos.expandir(cfg.atajos, palabra.toString())
+                if (exp != null) {
+                    val resto = propuesta?.takeIf { propuestaDe == palabra.toString() }?.opciones?.map { it.texto }?.filter { it != exp } ?: emptyList()
+                    b.mostrarSugerencias(listOf(exp) + resto, palabra.toString(), true)
+                    return
+                }
+            }
             val p = propuesta?.takeIf { propuestaDe == palabra.toString() }
             if (p == null) { b.mostrarSugerencias(emptyList(), palabra.toString(), false); return }
             val ops = p.opciones.map { it.texto }.toMutableList()
@@ -888,7 +939,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             val escrito = palabra.toString()
             ic.commitText("$texto ", 1)
             if (esLiteral && aprender) Cerebro.motor?.aprendido?.agregar(texto)
-            ultimaCorreccion = if (texto != escrito && !esLiteral) Correccion(escrito, texto, " ") else null
+            ultimaCorreccion = if (texto != escrito && !esLiteral) Correccion(escrito, texto, " ", Atajos.expandir(cfg.atajos, escrito) == texto) else null
         } else {
             val previo = antes(1)
             val pre = if (previo.isNotEmpty() && previo != " " && previo != "\n") " " else ""
@@ -896,7 +947,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             ultimaCorreccion = null
         }
         ic.endBatchEdit()
-        aprenderPalabra(texto, ctx)
+        if (ultimaCorreccion?.atajo != true) aprenderPalabra(texto, ctx)
         reiniciarPalabra()
         espacioAuto = true
         refrescar()
@@ -1248,7 +1299,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             val sensible = clip.description?.extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE) == true
             val t = clip.getItemAt(0).coerceToText(this)?.toString() ?: return@OnPrimaryClipChangedListener
             if (t.isBlank()) return@OnPrimaryClipChangedListener
-            if (!sensible && !esClave()) portapapeles.agregar(t)
+            if (!sensible && !esClave() && !privado) portapapeles.agregar(t)
             chipTexto = if (sensible) "••••••" else t
             chipSensible = if (sensible) t else null
             chipMs = SystemClock.uptimeMillis()
@@ -1328,6 +1379,12 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     }
 
     override fun respuesta(tipo: Respuesta.Tipo) = respuesta.tocar(tipo)
+
+    override fun deshacerCorreccion() {
+        val corr = ultimaCorreccion ?: return
+        if (palabra.isNotEmpty() || antes(corr.puesta.length + corr.separador.length) != corr.puesta + corr.separador) return
+        try { borrarTexto() } catch (e: Throwable) { Registro.anotar("deshacer corrección", e) }
+    }
 }
 
 /** Fondo del teclado: negro, esquinas de arriba curvas y filo del color de la app */

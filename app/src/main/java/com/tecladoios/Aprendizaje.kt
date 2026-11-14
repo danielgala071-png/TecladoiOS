@@ -146,17 +146,44 @@ class Aprendizaje(private val archivo: File) {
     fun guardar() {
         try {
             val tmp = File(archivo.parentFile, archivo.name + ".tmp")
-            tmp.bufferedWriter(Charsets.UTF_8).use { w ->
-                w.write("#TPA2\n")
-                for (p in propias.values) w.write("P\t${p.texto}\t${p.veces}\t${if (p.fija) 1 else 0}\n")
-                for ((k, v) in uso) w.write("U\t$k\t$v\n")
-                for ((k, m) in siguientes) for ((s, v) in m) w.write("S\t$k\t$s\t$v\n")
-                for (r in rechazadas) w.write("R\t$r\n")
-                for (x in eliminadas) w.write("X\t$x\n")
-            }
+            tmp.bufferedWriter(Charsets.UTF_8).use { w -> w.write("#TPA2\n"); escribir(w) }
             if (!tmp.renameTo(archivo)) { archivo.delete(); tmp.renameTo(archivo) }
             cambios = 0
         } catch (e: Throwable) { Registro.anotar("guardar aprendizaje", e) }
+    }
+
+    /** Todo lo aprendido, en el mismo formato del archivo (para la copia de seguridad) */
+    @Synchronized
+    fun escribir(w: java.io.Writer) {
+        for (p in propias.values) w.write("P\t${p.texto}\t${p.veces}\t${if (p.fija) 1 else 0}\n")
+        for ((k, v) in uso) w.write("U\t$k\t$v\n")
+        for ((k, m) in siguientes) for ((s, v) in m) w.write("S\t$k\t$s\t$v\n")
+        for (r in rechazadas) w.write("R\t$r\n")
+        for (x in eliminadas) w.write("X\t$x\n")
+    }
+
+    /** Suma una línea de una copia de seguridad a lo que ya sabe (gana el número mayor) */
+    @Synchronized
+    fun mezclar(l: String): Boolean {
+        val p = l.split('\t')
+        when (p[0]) {
+            "P" -> if (p.size >= 4) {
+                val k = Texto.normal(p[1]); val v = p[2].toIntOrNull() ?: 1
+                val ya = propias[k]
+                if (ya == null) propias[k] = Propia(p[1], v, p[3] == "1")
+                else { ya.veces = maxOf(ya.veces, v); if (p[3] == "1") ya.fija = true }
+            } else return false
+            "U" -> if (p.size >= 3) uso[p[1]] = maxOf(uso[p[1]] ?: 0, p[2].toIntOrNull() ?: 1) else return false
+            "S" -> if (p.size >= 4) {
+                val m = siguientes.getOrPut(p[1]) { HashMap(4) }
+                m[p[2]] = maxOf(m[p[2]] ?: 0, p[3].toIntOrNull() ?: 1)
+            } else return false
+            "R" -> if (p.size >= 2) rechazadas.add(p[1]) else return false
+            "X" -> if (p.size >= 2) eliminadas.add(p[1]) else return false
+            else -> return false
+        }
+        cambios++
+        return true
     }
 
     @Synchronized
