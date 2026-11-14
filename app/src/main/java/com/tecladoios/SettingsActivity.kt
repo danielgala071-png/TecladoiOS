@@ -218,7 +218,8 @@ class SettingsActivity : Activity() {
         deslizador(tec, "Altura", Ajustes.ALTURA, 75, 135, 100) { "$it %" }
         deslizador(tec, "Espacio debajo del teclado", Ajustes.MARGEN_ABAJO, 0, 120, 0) { "$it" }
         deslizador(tec, "Ancho", Ajustes.ANCHO, 70, 100, 100) { "$it %" }
-        interruptor(tec, "Vidrio (desenfoque detrás)", Ajustes.VIDRIO, true, "Android 12 o más nuevo. Si lo apagas, el vidrio queda sólido")
+        interruptor(tec, "Escribir al tocar", Ajustes.AL_TOCAR, true, "La letra sale apenas tocas (más rápido a dos dedos)")
+        interruptor(tec, "Vidrio con desenfoque", Ajustes.VIDRIO, false, "Android 12+. Desenfoca lo que hay detrás (gasta un poco más). Apagado: negro AMOLED")
         deslizador(tec, "Mantener presionado", Ajustes.RETARDO_LARGA, 150, 700, 320) { "$it ms" }
 
         val son = seccion("Sonido y vibración")

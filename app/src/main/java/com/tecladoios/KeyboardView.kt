@@ -37,6 +37,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         fun volverLetras()
         fun unaMano(accion: Int)
         fun respuesta(tipo: Respuesta.Tipo)
+        /** Quita la última letra escrita (para cambiarla por una tilde al mantener presionado) */
+        fun deshacerLetra()
     }
 
     var oyente: Oyente? = null
@@ -214,6 +216,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     private inner class Dedo(val id: Int) {
         var tecla: Colocada? = null
+        /** La letra ya se escribió al tocar (no se vuelve a escribir al soltar) */
+        var emitida = false
+        /** Estaba en mayúscula al tocar (para la tilde, si se cambia) */
+        var mayus = false
         var x0 = 0f; var y0 = 0f; var x = 0f; var y = 0f
         var modo = Modo.NORMAL
         var acumX = 0f; var acumY = 0f
@@ -322,7 +328,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             val tipo = o.tecla?.tecla?.tipo
             if (tipo == K.TEXTO) {
                 removeCallbacks(o.larga)
-                emitir(o)
+                if (o.emitida) { o.tecla?.let { liberar(it) } } else emitir(o)
                 o.modo = Modo.HECHO
             } else if (tipo == K.ESPACIO) {
                 removeCallbacks(o.larga)
@@ -346,6 +352,14 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 mostrarGlobo(c)
                 if (t.variantes.isNotEmpty()) postDelayed(dd.larga, retardo)
                 if (t.esLetra && dd.n == 0) dd.punto(x, y)
+                // Las letras se escriben en el instante en que tocas (no al levantar el dedo):
+                // a dos pulgares se siente inmediato, como un teclado físico
+                if (t.esLetra && config?.alTocar != false) {
+                    dd.mayus = shift > 0
+                    aprenderDesvio(t.texto[0], x, y, c.dibujo)
+                    oyente?.tecla(t.texto, x, y, true)
+                    dd.emitida = true
+                }
             }
             K.BORRAR -> {
                 oyente?.codigo(K.BORRAR)
@@ -373,6 +387,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 val t = dd.tecla?.tecla ?: return
                 when (t.tipo) {
                     K.TEXTO -> {
+                        if (dd.emitida) return   // ya se escribió al tocar
                         if (t.esLetra) dd.punto(x, y)
                         val lejos = dx * dx + dy * dy > anchoTecla * anchoTecla * 0.5625f
                         if (lejos && t.esLetra && cuantos == 1 && cfg?.deslizar != false && distribucion.nombre == "abc") {
@@ -455,7 +470,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             K.TEXTO -> if (t.variantes.isNotEmpty()) {
                 dd.modo = Modo.OPCIONES
                 capa.ocultarGlobo()
-                val lista = if (shift > 0) t.variantes.map { if (it.length == 1) it.uppercase() else it } else t.variantes
+                // Si la letra ya se escribió al tocar, se quita: la reemplaza la que elijas
+                if (dd.emitida) oyente?.deshacerLetra()
+                val mayus = if (dd.emitida) dd.mayus else shift > 0
+                val lista = if (mayus) t.variantes.map { if (it.length == 1) it.uppercase() else it } else t.variantes
                 capa.mostrarOpciones(rectEnCapa(c.dibujo), lista, 0)
                 oyente?.respuesta(Respuesta.Tipo.FUNCION)
             }
@@ -485,7 +503,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         when (dd.modo) {
             Modo.NORMAL -> if (c != null) {
                 when (c.tecla.tipo) {
-                    K.TEXTO -> emitir(dd)
+                    K.TEXTO -> if (dd.emitida) capa.ocultarGlobo() else emitir(dd)
                     K.ESPACIO, K.INTRO, K.EMOJI -> oyente?.codigo(c.tecla.tipo)
                 }
             }
@@ -497,6 +515,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 val elegida = capa.elegida()
                 capa.ocultarOpciones()
                 if (elegida != null) oyente?.tecla(elegida, dd.x0, dd.y0, false)
+                else if (dd.emitida) dd.tecla?.tecla?.let { t ->
+                    // No eligió ninguna: vuelve la letra que había tocado
+                    oyente?.tecla(if (dd.mayus) t.texto.uppercase() else t.texto, dd.x0, dd.y0, true)
+                }
             }
             Modo.BORRAR_SEL -> oyente?.terminarSeleccionBorrar(dd.palabras > 0)
             Modo.CAMBIO_123 -> if (c != null && c.tecla.tipo == K.TEXTO) {
@@ -796,6 +818,12 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private val sombraHundida = android.graphics.LinearGradient(0f, 0f, 0f, 1f,
         intArrayOf(0x73000000, 0x26000000, 0x00000000), floatArrayOf(0f, 0.35f, 1f), android.graphics.Shader.TileMode.CLAMP)
     private val pinturaHundida = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = sombraHundida }
+    // Onda de luz que nace del dedo (azul → violeta, se abre y se apaga en un cuarto de segundo)
+    private val ondaShader = android.graphics.RadialGradient(0f, 0f, 1f,
+        intArrayOf(0x8C7AA8FF.toInt(), 0x4D5E5CE6, 0x005E5CE6), floatArrayOf(0f, 0.55f, 1f), android.graphics.Shader.TileMode.CLAMP)
+    private val pinturaOnda = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = ondaShader }
+    private val matrizOnda = android.graphics.Matrix()
+    private val ONDA = 260f
     private val filoBajo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
 
     /**
@@ -847,6 +875,17 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             filoBajo.alpha = (0x38 * l).toInt()
             c.drawLine(rr.left + rad, rr.bottom - dp(0.6f), rr.right - rad, rr.bottom - dp(0.6f), filoBajo)
             c.restore()
+        }
+        // Onda de luz desde la yema del dedo (en la mayúscula blanca no hace falta)
+        val tOnda = ((ahora - p.t0) / ONDA).coerceIn(0f, 1f)
+        if (tOnda < 1f && !(k.tecla.tipo == K.SHIFT && shift > 0)) {
+            val eo = 1f - (1f - tOnda) * (1f - tOnda)
+            val alcance = maxOf(rr.width(), rr.height()) * (0.25f + 0.95f * eo)
+            matrizOnda.setScale(alcance, alcance)
+            matrizOnda.postTranslate(p.x.coerceIn(rr.left, rr.right), p.y.coerceIn(rr.top, rr.bottom))
+            ondaShader.setLocalMatrix(matrizOnda)
+            pinturaOnda.alpha = (255 * (1f - tOnda)).toInt().coerceIn(0, 255)
+            c.save(); c.clipPath(camino); c.drawRect(rr, pinturaOnda); c.restore()
         }
         if (k.tecla.tipo == K.SHIFT && shift > 0) {
             c.save(); c.scale(s, s, cx, cy); c.translate(0f, cy - r.centerY()); flechaNegra(c, k); c.restore()
@@ -976,7 +1015,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 if (terminado(e.value, ahora)) { it.remove(); continue }
                 dibujarPulso(c, e.key, e.value, ahora, fondo, letras)
             }
-            if (pulsos.values.any { it.suelta != 0L || ahora - it.t0 < BAJAR }) postInvalidateOnAnimation()
+            if (pulsos.values.any { it.suelta != 0L || ahora - it.t0 < maxOf(BAJAR, ONDA) }) postInvalidateOnAnimation()
         }
 
         // Estela al deslizar (se afina hacia el final, como una pincelada)

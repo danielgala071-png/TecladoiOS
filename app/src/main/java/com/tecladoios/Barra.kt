@@ -239,7 +239,8 @@ class Barra(context: Context) : View(context) {
                 val desdeVacio = celdaPrevia[i] == null
                 celdaMs[i] = ahora + if (desdeVacio) RETRASO_CELDA[i] else RETRASO_CELDA[i] / 2
                 // Fundido cortito como el iPhone (al aparecer, sube apenas)
-                celdaDura[i] = if (desdeVacio) 140f else 90f
+                // Mientras escribes, las palabras cambian al instante (sin esperar ningún fundido)
+                celdaDura[i] = if (desdeVacio) 120f else 0f
                 celdaSube[i] = if (desdeVacio) dp(3f) else 0f
                 celdaPrevia[i] = celdas[i]
             }

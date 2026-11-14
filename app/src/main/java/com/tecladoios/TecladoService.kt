@@ -865,6 +865,24 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         refrescar()
     }
 
+    /** Quita la última letra escrita, sin tocar correcciones (para cambiarla por una tilde) */
+    override fun deshacerLetra() {
+        try {
+            val ic = ic() ?: return
+            marcarEdicion()
+            if (palabra.isNotEmpty()) {
+                val quitar = if (palabra.length >= 2 && Character.isSurrogatePair(palabra[palabra.length - 2], palabra[palabra.length - 1])) 2 else 1
+                palabra.setLength(palabra.length - quitar)
+                if (palabra.isEmpty()) {
+                    ic.beginBatchEdit(); ic.setComposingText("", 1); ic.finishComposingText(); ic.endBatchEdit()
+                    reiniciarPalabra()
+                } else ic.setComposingText(palabra, 1)
+            } else {
+                ic.beginBatchEdit(); ic.finishComposingText(); ic.deleteSurroundingText(1, 0); ic.endBatchEdit()
+            }
+        } catch (e: Throwable) { Registro.anotar("deshacer", e) }
+    }
+
     /** Eliminar una sugerencia: sale de la barra y del cerebro (se recupera en Ajustes) */
     override fun olvidar(texto: String) {
         val m = Cerebro.motor ?: return

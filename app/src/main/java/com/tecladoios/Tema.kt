@@ -16,10 +16,11 @@ class Tema(val acento: Int = ROJO) {
     // Grafito neutro para las letras; las teclas de función llevan un leve tinte vino
     // Vidrio: blanco translúcido (letras un poco más claras que las de función)
     // Letras más claras y teclas de función bien distintas (como el iPhone oscuro)
-    val tecla = 0x3DFFFFFF
-    val teclaFuncion = 0x1AFFFFFF
-    val teclaPresionada = 0x73FFFFFF
-    val funcionPresionada = 0x4DFFFFFF
+    // Vidrio grafito con un tono frío apenas visible (sobre el negro AMOLED se ve premium)
+    val tecla = 0x40E8EEFF
+    val teclaFuncion = 0x1FC8D0F0
+    val teclaPresionada = 0x80EEF2FF.toInt()
+    val funcionPresionada = 0x55D8DEFF
     val brillo = 0x1CFFFFFF
     val texto = 0xFFF5F5F7.toInt()
     val textoSuave = 0xB3EBEBF5.toInt()
@@ -28,21 +29,27 @@ class Tema(val acento: Int = ROJO) {
     val barra = 0x00000000
     val globo = 0xF5505057.toInt()
     /** Fondo sin desenfoque (teléfonos que no lo permiten o con ahorro de batería) */
-    val tarjeta = 0xFF1A1A1E.toInt()
+    /** Negro AMOLED: los píxeles se apagan y no gastan batería */
+    val tarjeta = 0xFF000000.toInt()
     /** Tinte oscuro encima del desenfoque */
     val tarjetaVidrio = 0xBF141418.toInt()
     val bordeTecla = 0x14FFFFFF
     val bordePanel = acento
     val rojo = ROJO
-    val rojoOscuro = 0xFFB3121F.toInt()
-    val brilloRojo = 0x66FF2D3A                  // resplandor rojo semitransparente
+    val rojoOscuro = 0xFF3634A3.toInt()
+    val brilloRojo = 0x665E5CE6                  // resplandor del acento, semitransparente
     val estela = ROJO
     val introActivo = ROJO
 
     companion object {
         const val AZUL = 0xFF0A84FF.toInt()
-        /** Rojo vivo del teclado (combina con el negro AMOLED) */
-        const val ROJO = 0xFFFF2D3A.toInt()
+        /**
+         * Acento del teclado: violeta azulado (combina con el negro AMOLED y el vidrio). El
+         * nombre quedó de antes; ya no es rojo.
+         */
+        const val ROJO = 0xFF5E5CE6.toInt()
+        /** Segundo tono del acento (degradado azul → violeta) */
+        const val AZUL_ACENTO = 0xFF0A84FF.toInt()
         /** Detalles en plata (sin el color de cada app) */
         const val PLATA = 0xFFC7C7CF.toInt()
 

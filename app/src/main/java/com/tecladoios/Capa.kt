@@ -49,7 +49,7 @@ class Capa(context: Context) : View(context) {
     private var apareceMs = 0L
     private var seVaMs = 0L
     // Como el iPhone: el globo aparece al instante y se va en un suspiro
-    private val APARECE = 110f
+    private val APARECE = 80f
     private val SE_VA = 90f
 
     fun mostrarGlobo(r: RectF, texto: String) {
@@ -196,15 +196,21 @@ class Capa(context: Context) : View(context) {
             c.drawRoundRect(caja, 8 * d, 8 * d, sombra); c.restore()
             pintura.color = tema.globo
             c.drawRoundRect(caja, 8 * d, 8 * d, pintura)
-            borde.color = tema.bordeTecla; borde.strokeWidth = 1f * d
+            // Filo de luz del vidrio
+            borde.shader = android.graphics.LinearGradient(0f, caja.top, 0f, caja.bottom,
+                intArrayOf(0x66FFFFFF, 0x10FFFFFF, 0x1AFFFFFF), floatArrayOf(0f, 0.5f, 1f), android.graphics.Shader.TileMode.CLAMP)
+            borde.strokeWidth = 0.9f * d
             c.drawRoundRect(caja, 8 * d, 8 * d, borde)
+            borde.shader = null
             letraP.textSize = minOf(caja.height() * 0.5f, anchoOpcion * 0.62f)
             for ((i, o) in opciones.withIndex()) {
                 val x0 = caja.left + 4 * d + anchoOpcion * i
                 if (i == seleccion) {
-                    // Opción elegida: pastilla blanca con letra negra (sin color de app)
-                    pintura.color = tema.rojo
-                    c.drawRoundRect(x0 + 1 * d, caja.top + 5 * d, x0 + anchoOpcion - 1 * d, caja.bottom - 5 * d, 5 * d, 5 * d, pintura)
+                    // Opción elegida: pastilla con el degradado azul → violeta del teclado
+                    pintura.shader = android.graphics.LinearGradient(x0, caja.top, x0 + anchoOpcion, caja.bottom,
+                        Tema.AZUL_ACENTO, Tema.ROJO, android.graphics.Shader.TileMode.CLAMP)
+                    c.drawRoundRect(x0 + 1 * d, caja.top + 5 * d, x0 + anchoOpcion - 1 * d, caja.bottom - 5 * d, 6 * d, 6 * d, pintura)
+                    pintura.shader = null
                 }
                 letraP.color = tema.texto
                 val tam = if (o.length > 2) letraP.textSize * 0.62f else letraP.textSize
