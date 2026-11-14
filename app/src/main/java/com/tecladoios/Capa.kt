@@ -49,7 +49,7 @@ class Capa(context: Context) : View(context) {
     private var apareceMs = 0L
     private var seVaMs = 0L
     // Como el iPhone: el globo aparece al instante y se va en un suspiro
-    private val APARECE = 90f
+    private val APARECE = 110f
     private val SE_VA = 90f
 
     fun mostrarGlobo(r: RectF, texto: String) {
@@ -147,9 +147,11 @@ class Capa(context: Context) : View(context) {
             val subeLetra: Float
             if (globo) {
                 // Aparece rapidísimo creciendo apenas desde la tecla
+                // Brota de la tecla con un pequeño rebote (como el globo del iPhone)
                 val t = ((ahora - apareceMs) / APARECE).coerceIn(0f, 1f)
-                val e = 1f - (1f - t) * (1f - t)
-                alfa = 0.5f + 0.5f * e; escala = 0.92f + 0.08f * e; subeLetra = (1f - e) * 3f * d
+                val u = t - 1f
+                val e = 1f + 2.0f * u * u * u + 1.0f * u * u
+                alfa = (0.4f + 1.2f * t).coerceAtMost(1f); escala = 0.86f + 0.14f * e; subeLetra = (1f - e) * 4f * d
                 if (t < 1f) postInvalidateOnAnimation()
             } else {
                 // Y se va desvaneciendo en un suspiro

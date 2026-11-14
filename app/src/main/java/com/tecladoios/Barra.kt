@@ -3,6 +3,7 @@ package com.tecladoios
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.text.TextUtils
@@ -67,8 +68,12 @@ class Barra(context: Context) : View(context) {
     private var resultados: List<String> = emptyList()
     private var corrimiento = 0f
 
+    /** Palabra que mantuviste presionada: la barra pregunta si eliminarla */
+    private var porEliminar: String? = null
+
     fun mostrarSugerencias(lista: List<String>, literalEntreComillas: String?, autocorrige: Boolean) {
         val nuevas = lista.take(3)
+        if (porEliminar != null && (nuevas != sugerencias || literalEntreComillas != literal)) porEliminar = null
         if (nuevas == sugerencias && literalEntreComillas == literal && (autocorrige && lista.isNotEmpty()) == (destacada >= 0)) return
         val cambiaModo = sugerencias.isEmpty() && literal == null
         sugerencias = nuevas; literal = literalEntreComillas
@@ -148,10 +153,36 @@ class Barra(context: Context) : View(context) {
 
     private fun dibujarContenido(c: Canvas, w: Float, h: Float) {
         texto.textSize = dp(16.5f); fuerte.textSize = dp(16.5f)
-        linea.color = tema.separador; linea.strokeWidth = dp(1f)
+        linea.color = tema.separador; linea.strokeWidth = dp(0.8f); linea.strokeCap = Paint.Cap.ROUND
         if (buscando) { dibujarBusqueda(c, w, h); return }
+        porEliminar?.let { dibujarEliminar(c, w, h, it); return }
         if ((sugerencias.isNotEmpty() || literal != null) && !verHerramientas) { dibujarSugerencias(c, w, h); return }
         dibujarHerramientas(c, w, h)
+    }
+
+    /** «¿Eliminar "palabra"?» con Cancelar y Eliminar (como Gboard) */
+    private fun dibujarEliminar(c: Canvas, w: Float, h: Float, palabra: String) {
+        val bh = h - dp(12f)
+        val anchoBoton = dp(92f)
+        val eliminar = RectF(w - dp(8f) - anchoBoton, (h - bh) / 2, w - dp(8f), (h + bh) / 2)
+        val cancelar = RectF(eliminar.left - dp(8f) - anchoBoton, eliminar.top, eliminar.left - dp(8f), eliminar.bottom)
+        texto.textAlign = Paint.Align.LEFT
+        texto.textSize = dp(14.5f); texto.color = tema.texto
+        val pregunta = TextUtils.ellipsize("¿Eliminar «$palabra»?", texto, cancelar.left - dp(22f), TextUtils.TruncateAt.MIDDLE).toString()
+        c.drawText(pregunta, dp(14f), h / 2 + texto.textSize * 0.36f, texto)
+        texto.textAlign = Paint.Align.CENTER
+        val apretado = { r: RectF -> tocando && toqueX >= r.left && toqueX <= r.right }
+        relleno.color = if (apretado(cancelar)) 0x42FFFFFF else 0x1FFFFFFF
+        c.drawRoundRect(cancelar, bh / 2, bh / 2, relleno)
+        relleno.color = if (apretado(eliminar)) 0xFFC81E2B.toInt() else 0xFFFF3B30.toInt()
+        c.drawRoundRect(eliminar, bh / 2, bh / 2, relleno)
+        fuerte.textSize = dp(14.5f); fuerte.color = 0xFFFFFFFF.toInt()
+        c.drawText("Cancelar", cancelar.centerX(), h / 2 + fuerte.textSize * 0.36f, fuerte)
+        c.drawText("Eliminar", eliminar.centerX(), h / 2 + fuerte.textSize * 0.36f, fuerte)
+        texto.textSize = dp(16.5f); fuerte.textSize = dp(16.5f)
+        zonas.add(RectF(cancelar.left - dp(4f), 0f, cancelar.right + dp(4f), h) to { porEliminar = null; invalidate() })
+        zonas.add(RectF(eliminar.left - dp(4f), 0f, w, h) to { porEliminar = null; oyente?.olvidar(palabra); invalidate() })
+        zonas.add(RectF(0f, 0f, cancelar.left - dp(4f), h) to { porEliminar = null; invalidate() })
     }
 
     // Cada casilla anima su palabra al cambiar: la del centro primero y luego los costados
@@ -164,7 +195,7 @@ class Barra(context: Context) : View(context) {
     // Destello de la palabra que elegiste
     private var elegidaMs = 0L
     private var elegidaCelda = -1
-    private val DESTELLO = 340f
+    private val DESTELLO = 260f
 
     private fun dibujarSugerencias(c: Canvas, w: Float, h: Float) {
         // Orden: [izquierda, centro (la mejor), derecha]
@@ -193,27 +224,30 @@ class Barra(context: Context) : View(context) {
         val ancho = anchoUtil / 3
         val desplazamiento = boton + dp(4f)
         var seguir = false
-        // Casilla bajo el dedo: una cápsula tenue mientras lo mantienes
+        // La palabra que se pondrá sola va en una cápsula de vidrio (como el iPhone)
+        if (destacada >= 0 && celdas[1] != null) {
+            val cxD = ancho + ancho / 2
+            val medio = minOf(ancho / 2 - dp(4f), fuerte.measureText(celdas[1]!!) / 2 + dp(16f))
+            r.set(cxD - medio, dp(6f), cxD + medio, h - dp(6f))
+            capsula(c, r, 0x2EFFFFFF)
+        }
+        // Casilla bajo el dedo: cápsula de vidrio mientras lo mantienes
         if (tocando && !arrastrando && toqueX >= desplazamiento) {
             val i = ((toqueX - desplazamiento) / ancho).toInt().coerceIn(0, 2)
             if (celdas[i] != null) {
-                relleno.color = 0x1FFFFFFF
-                r.set(i * ancho + dp(5f), dp(5f), (i + 1) * ancho - dp(5f), h - dp(5f))
-                c.drawRoundRect(r, r.height() / 2, r.height() / 2, relleno)
+                r.set(i * ancho + dp(4f), dp(5f), (i + 1) * ancho - dp(4f), h - dp(5f))
+                capsula(c, r, 0x29FFFFFF)
             }
         }
-        // Destello rojo detrás de la palabra elegida (se abre y se apaga)
+        // Al elegir: la cápsula se enciende y se apaga (vidrio, cortito)
         if (elegidaCelda in 0..2) {
             val t = ((ahora - elegidaMs) / DESTELLO).coerceIn(0f, 1f)
             if (t < 1f) {
                 val u = 1f - t
-                val e = 1f - u * u * u
-                relleno.color = 0xFFFF2D3A.toInt(); relleno.alpha = (0x55 * u * u).toInt()
                 val cxD = elegidaCelda * ancho + ancho / 2
-                val medio = (ancho / 2 - dp(6f)) * (0.7f + 0.3f * e)
-                r.set(cxD - medio, dp(5f) + dp(2f) * (1f - e), cxD + medio, h - dp(5f) - dp(2f) * (1f - e))
-                c.drawRoundRect(r, r.height() / 2, r.height() / 2, relleno)
-                relleno.alpha = 255
+                val medio = ancho / 2 - dp(4f) * (1f + t)
+                r.set(cxD - medio, dp(5f), cxD + medio, h - dp(5f))
+                capsula(c, r, ((0x55 * u * u).toInt() shl 24) or 0xFFFFFF)
                 seguir = true
             } else elegidaCelda = -1
         }
@@ -223,8 +257,9 @@ class Barra(context: Context) : View(context) {
                 // Entrar desde vacío se nota más; cambiar mientras escribes es más corto y sutil
                 val desdeVacio = celdaPrevia[i] == null
                 celdaMs[i] = ahora + if (desdeVacio) RETRASO_CELDA[i] else RETRASO_CELDA[i] / 2
-                celdaDura[i] = 0f   // sin animación: las palabras cambian al instante, como el iPhone
-                celdaSube[i] = if (desdeVacio) dp(7f) else dp(3.5f)
+                // Fundido cortito como el iPhone (al aparecer, sube apenas)
+                celdaDura[i] = if (desdeVacio) 140f else 90f
+                celdaSube[i] = if (desdeVacio) dp(3f) else 0f
                 celdaPrevia[i] = celdas[i]
             }
         }
@@ -239,29 +274,43 @@ class Barra(context: Context) : View(context) {
             val ec = 1f - uc * uc * uc
             c.save()
             c.translate(0f, celdaSube[i] * (1f - ec))
-            val escalaC = 0.94f + 0.06f * ec
+            val escalaC = 0.97f + 0.03f * ec
             c.scale(escalaC, escalaC, x0 + ancho / 2, h / 2)
             // Sin cápsula ni color: la palabra que se pondrá sola brilla (blanco intenso con un
             // halo suave) y las demás quedan en un blanco más tenue
             p.color = if (destacadaAqui) 0xFFFFFFFF.toInt() else 0xBFEBEBF5.toInt()
             val mostrado = if (esLiteral[i]) "«$s»" else s
             val corto = TextUtils.ellipsize(mostrado, p, ancho - dp(22f), TextUtils.TruncateAt.MIDDLE).toString()
-            if (destacadaAqui) p.setShadowLayer(dp(8f), 0f, 0f, 0xB3FF2D3A.toInt())
             val alfaBase = p.alpha
             p.alpha = (alfaBase * (0.15f + 0.85f * ec)).toInt()
             c.drawText(corto, x0 + ancho / 2, h / 2 + p.textSize * 0.36f, p)
             p.alpha = alfaBase
-            if (destacadaAqui) p.clearShadowLayer()
             c.restore()
             val rr = RectF(desplazamiento + x0, 0f, desplazamiento + x0 + ancho, h)
             val lit = esLiteral[i]
-            zonas.add(rr to { oyente?.elegir(s, lit) })
-            if (!lit) zonasLargas.add(rr to { oyente?.olvidar(s) })
+            val celda = i
+            zonas.add(rr to { elegidaCelda = celda; elegidaMs = android.os.SystemClock.uptimeMillis(); oyente?.elegir(s, lit) })
+            if (!lit) zonasLargas.add(rr to { porEliminar = s; invalidate() })
         }
         // Separadores: no se dibujan junto a una casilla vacía
         for (i in 1..2) if (celdas[i - 1] != null && celdas[i] != null) c.drawLine(i * ancho, h * 0.3f, i * ancho, h * 0.7f, linea)
         c.restore()
         if (seguir) postInvalidateOnAnimation()
+    }
+
+    /** Cápsula de vidrio: relleno translúcido y filo de luz arriba */
+    private val filoCapsula = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private fun capsula(c: Canvas, rect: RectF, color: Int) {
+        val rad = rect.height() / 2
+        relleno.color = color
+        c.drawRoundRect(rect, rad, rad, relleno)
+        val a = Color.alpha(color)
+        filoCapsula.strokeWidth = dp(0.8f)
+        filoCapsula.shader = android.graphics.LinearGradient(0f, rect.top, 0f, rect.bottom,
+            intArrayOf(((a * 1.8f).toInt().coerceAtMost(255) shl 24) or 0xFFFFFF, 0x00FFFFFF, ((a / 3) shl 24) or 0xFFFFFF),
+            floatArrayOf(0f, 0.55f, 1f), android.graphics.Shader.TileMode.CLAMP)
+        c.drawRoundRect(rect.left + dp(0.4f), rect.top + dp(0.4f), rect.right - dp(0.4f), rect.bottom - dp(0.4f), rad, rad, filoCapsula)
+        filoCapsula.shader = null
     }
 
     private fun dibujarHerramientas(c: Canvas, w: Float, h: Float) {

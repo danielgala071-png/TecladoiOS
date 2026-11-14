@@ -19,6 +19,8 @@ class Aprendizaje(private val archivo: File) {
     val siguientes = HashMap<String, HashMap<String, Int>>()
     /** Correcciones que deshiciste: "escrito>corregido" */
     val rechazadas = HashSet<String>()
+    /** Palabras que eliminaste de las sugerencias: no se sugieren ni se usan para corregir */
+    val eliminadas = HashSet<String>()
 
     @Volatile var cambios = 0
         private set
@@ -43,6 +45,7 @@ class Aprendizaje(private val archivo: File) {
     fun agregar(palabra: String, fija: Boolean = false) {
         val k = Texto.normal(palabra)
         if (k.isEmpty()) return
+        eliminadas.remove(k)   // si la agregas tú, vuelve a sugerirse
         val p = propias[k]
         if (p == null) propias[k] = Propia(palabra, 3, fija)
         else { p.veces = maxOf(p.veces, 3); if (fija) p.fija = true }
@@ -53,9 +56,23 @@ class Aprendizaje(private val archivo: File) {
     fun quitar(palabra: String) {
         val k = Texto.normal(palabra)
         propias.remove(k); uso.remove(k)
-        for (m in siguientes.values) m.remove(palabra)
+        for (m in siguientes.values) m.keys.removeAll { Texto.normal(it) == k }
         cambios++
     }
+
+    /** Eliminar de las sugerencias y del cerebro (también palabras del diccionario) */
+    @Synchronized
+    fun eliminar(palabra: String) {
+        quitar(palabra)
+        eliminadas.add(Texto.normal(palabra))
+        cambios++
+    }
+
+    @Synchronized
+    fun restaurar(clave: String) { eliminadas.remove(Texto.normal(clave)); cambios++ }
+
+    @Synchronized
+    fun eliminada(clave: String) = eliminadas.isNotEmpty() && eliminadas.contains(clave)
 
     /** ¿Ya la usaste lo suficiente como para sugerirla y no corregirla? */
     @Synchronized
@@ -120,7 +137,7 @@ class Aprendizaje(private val archivo: File) {
 
     @Synchronized
     fun borrarTodo() {
-        propias.clear(); uso.clear(); siguientes.clear(); rechazadas.clear()
+        propias.clear(); uso.clear(); siguientes.clear(); rechazadas.clear(); eliminadas.clear()
         cambios++
         try { archivo.delete() } catch (_: Throwable) { }
     }
@@ -135,6 +152,7 @@ class Aprendizaje(private val archivo: File) {
                 for ((k, v) in uso) w.write("U\t$k\t$v\n")
                 for ((k, m) in siguientes) for ((s, v) in m) w.write("S\t$k\t$s\t$v\n")
                 for (r in rechazadas) w.write("R\t$r\n")
+                for (x in eliminadas) w.write("X\t$x\n")
             }
             if (!tmp.renameTo(archivo)) { archivo.delete(); tmp.renameTo(archivo) }
             cambios = 0
@@ -153,6 +171,7 @@ class Aprendizaje(private val archivo: File) {
                         "U" -> if (p.size >= 3) uso[p[1]] = p[2].toIntOrNull() ?: 1
                         "S" -> if (p.size >= 4) siguientes.getOrPut(p[1]) { HashMap(4) }[p[2]] = p[3].toIntOrNull() ?: 1
                         "R" -> if (p.size >= 2) rechazadas.add(p[1])
+                        "X" -> if (p.size >= 2) eliminadas.add(p[1])
                     }
                 }
             }

@@ -767,18 +767,40 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
      * achicado (se hunde). Encima, la tecla se aclara y una luz roja se abre desde la yema
      * del dedo; al soltar vuelve con un resorte corto y la luz se apaga.
      */
+    // Profundidad al presionar: sombra interior arriba (la tecla se hunde en el vidrio) y la
+    // letra baja un poquito. Todo con un degradado ya armado: casi no gasta.
+    private val sombraHundida = android.graphics.LinearGradient(0f, 0f, 0f, 1f,
+        intArrayOf(0x73000000, 0x26000000, 0x00000000), floatArrayOf(0f, 0.35f, 1f), android.graphics.Shader.TileMode.CLAMP)
+    private val pinturaHundida = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = sombraHundida }
+    private val filoBajo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+
     private fun dibujarPulso(c: Canvas, k: Colocada, p: Pulso, ahora: Long, fondo: Bitmap, letras: Bitmap) {
         val l = luzDe(p, ahora)
         if (l <= 0.01f) return
         val r = k.dibujo
         val radio = radioDe(r)
-        // Solo el color de tecla apretada encima (sin hundir, sin brillos) y la letra encima
+        // Color de tecla apretada (el vidrio se aclara)
         relleno.shader = null
         relleno.color = colorTecla(k.tecla, true)
         relleno.alpha = (Color.alpha(relleno.color) * l).toInt().coerceIn(0, 255)
         c.drawRoundRect(r, radio, radio, relleno)
         relleno.alpha = 255
+        // Hundida: sombra interior desde arriba y un filo de luz abajo (como un botón presionado)
+        c.save()
+        camino.reset(); camino.addRoundRect(r, radio, radio, Path.Direction.CW)
+        c.clipPath(camino)
+        matrizLuz.setScale(1f, r.height() * 0.55f)
+        matrizLuz.postTranslate(0f, r.top)
+        sombraHundida.setLocalMatrix(matrizLuz)
+        pinturaHundida.alpha = (255 * l).toInt().coerceIn(0, 255)
+        c.drawRect(r.left, r.top, r.right, r.top + r.height() * 0.55f, pinturaHundida)
+        filoBajo.strokeWidth = dp(1.2f)
+        filoBajo.color = 0x2EFFFFFF
+        filoBajo.alpha = (0x2E * l).toInt()
+        c.drawLine(r.left + radio, r.bottom - dp(0.6f), r.right - radio, r.bottom - dp(0.6f), filoBajo)
+        c.restore()
         if (k.tecla.tipo == K.SHIFT && shift > 0) { flechaNegra(c, k); return }
+        // La letra encima (en su sitio: debajo hay vidrio translúcido, moverla dejaría un fantasma)
         src.set(r.left.toInt().coerceAtLeast(0), r.top.toInt().coerceAtLeast(0),
             (r.right + 1).toInt().coerceAtMost(letras.width), (r.bottom + 1).toInt().coerceAtMost(letras.height))
         dst.set(src)
@@ -936,11 +958,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             c.save()
             c.clipRect(0f, top, w, bot)
             // Cuerpos: la forma nueva aparece sobre la vieja (si cambian de ancho, se funden)
-            if (f < 1f) {
-                c.drawBitmap(viejoF, 0f, 0f, null)
-                pinturaNueva.alpha = (255 * e).toInt().coerceIn(0, 255)
-                c.drawBitmap(fondo, 0f, 0f, pinturaNueva)
-            } else c.drawBitmap(fondo, 0f, 0f, null)
+            // Las teclas no se cruzan (dos capas de vidrio translúcido juntas se veían más
+            // claras un instante): quedan fijas y solo cambian las letras
+            c.drawBitmap(fondo, 0f, 0f, null)
             // Destello que recorre las filas
             val destello = kotlin.math.sin(Math.PI * f).toFloat()
             if (false && destello > 0.02f) {

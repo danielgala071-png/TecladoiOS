@@ -865,14 +865,13 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         refrescar()
     }
 
+    /** Eliminar una sugerencia: sale de la barra y del cerebro (se recupera en Ajustes) */
     override fun olvidar(texto: String) {
         val m = Cerebro.motor ?: return
-        if (!m.dic.existe(Texto.normal(texto))) {
-            m.aprendido.quitar(texto)
-            Cerebro.guardar()
-            android.widget.Toast.makeText(this, "Se olvidó «$texto»", android.widget.Toast.LENGTH_SHORT).show()
-            pedirSugerencias()
-        }
+        m.aprendido.eliminar(texto)
+        Cerebro.guardar()
+        propuesta = null; propuestaDe = ""
+        if (palabra.isNotEmpty()) pedirSugerencias() else refrescar()
     }
 
     // ---------- Deslizar ----------

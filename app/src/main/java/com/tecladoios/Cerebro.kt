@@ -68,6 +68,19 @@ object Cerebro {
         return Motor(dic, Errores.cargar(c), aprendido, big, geo)
     }
 
+    private fun palabrasDeFrases(c: Context): List<String> {
+        val res = LinkedHashSet<String>()
+        for (l in lineas(c, "bigramas.txt")) {
+            val i = l.indexOf(':')
+            if (i <= 0) continue
+            for (parte in l.substring(0, i).split(' ') + l.substring(i + 1).split(',')) {
+                val w = parte.trim()
+                if (w.isNotEmpty() && w.all { it.isLetter() }) res.add(w)
+            }
+        }
+        return res.toList()
+    }
+
     private fun armarDiccionario(c: Context): Diccionario {
         val frecuentes = lineas(c, "frecuentes.txt")
         val peru = lineas(c, "peruano.txt")
@@ -85,6 +98,9 @@ object Cerebro {
         }
         if (!conFijas) principal.addAll(fijas)
         if (!conMedio) principal.addAll(medio)
+        // Toda palabra que el teclado puede predecir es válida (nunca se toma como error). Van
+        // al final: si ya estaban, no cambian su frecuencia; si faltaban, solo dejan de corregirse
+        principal.addAll(palabrasDeFrases(c))
         val ingles = lineas(c, "ingles.txt")
         val portugues = lineas(c, "portugues.txt")
         return Diccionario.armar(principal, listOf(ingles to 1.4f, portugues to 1.9f))

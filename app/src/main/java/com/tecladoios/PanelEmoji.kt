@@ -109,6 +109,7 @@ class PanelEmoji(context: Context) : View(context) {
         categorias = listOf(Categoria("USADOS RECIENTEMENTE", recientes())) + base
         celdaArmada = -1f
         corrimiento = 0f
+        indicadorX = -1f
         scroller.forceFinished(true)
         invalidate()
     }
@@ -404,13 +405,26 @@ class PanelEmoji(context: Context) : View(context) {
         val paso = (der - izq) / categorias.size
         val actual = categoriaActual()
         emojiP.textSize = minOf(paso * 0.58f, dp(19f))
+        // Indicador de vidrio que se desliza hasta la categoría actual
+        run {
+            val meta = izq + paso * actual + paso / 2
+            if (indicadorX < 0f) indicadorX = meta
+            val falta = meta - indicadorX
+            indicadorX += falta * 0.35f
+            if (kotlin.math.abs(falta) > 0.5f) postInvalidateOnAnimation() else indicadorX = meta
+            val cy = yAbajo + altoAbajo() / 2
+            val rad = minOf(paso * 0.48f, dp(17f))
+            relleno.color = if (deslizandoCat) 0x3DFFFFFF else 0x29FFFFFF
+            c.drawCircle(indicadorX, cy, rad, relleno)
+            filoIndicador.strokeWidth = dp(0.8f)
+            filoIndicador.shader = android.graphics.LinearGradient(0f, cy - rad, 0f, cy + rad,
+                intArrayOf(0x59FFFFFF, 0x00FFFFFF, 0x14FFFFFF), floatArrayOf(0f, 0.55f, 1f), android.graphics.Shader.TileMode.CLAMP)
+            c.drawCircle(indicadorX, cy, rad - dp(0.4f), filoIndicador)
+            filoIndicador.shader = null
+        }
         for (k in categorias.indices) {
             val cx = izq + paso * k + paso / 2
             val cy = yAbajo + altoAbajo() / 2
-            if (k == actual) {
-                relleno.color = 0x4DFF2D3A
-                c.drawCircle(cx, cy, minOf(paso * 0.46f, dp(16f)), relleno)
-            }
             val ic = when (k) { 0 -> "\uD83D\uDD52"; else -> categorias[k].emojis.firstOrNull() ?: "•" }
             emojiP.alpha = if (k == actual) 255 else 150
             dibujarEmoji(c, ic, cx, cy, emojiP.textSize, emojiP.alpha)
@@ -443,6 +457,24 @@ class PanelEmoji(context: Context) : View(context) {
     // ---------- Toques ----------
 
     private var x0 = 0f; private var y0 = 0f; private var ultX = 0f
+
+    // Deslizar el dedo por la barra de categorías (como el iPhone): salta de una a otra
+    private var deslizandoCat = false
+    private var movioCat = false
+    private var ultimaCat = -1
+    private var indicadorX = -1f
+    private val filoIndicador = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+
+    private fun categoriaEnBarra(x: Float): Int {
+        val izq = dp(100f); val der = width - dp(60f)
+        return ((x - izq) / ((der - izq) / categorias.size.coerceAtLeast(1))).toInt().coerceIn(0, categorias.size - 1)
+    }
+
+    private fun saltarA(k: Int) {
+        scroller.forceFinished(true)
+        corrimiento = (inicioX.getOrElse(k) { 0f } - dp(10f)).coerceIn(0f, maxCorrimiento())
+        invalidate()
+    }
     private var arrastrando = false
     private var velocidad: android.view.VelocityTracker? = null
     private var borrando = false
@@ -471,7 +503,10 @@ class PanelEmoji(context: Context) : View(context) {
                 scroller.forceFinished(true)
                 x0 = e.x; y0 = e.y; ultX = e.x; arrastrando = false
                 velocidad?.recycle(); velocidad = android.view.VelocityTracker.obtain(); velocidad?.addMovement(e)
-                if (e.y > h - altoAbajo() && e.x > width - dp(60f)) {
+                deslizandoCat = false; movioCat = false
+                if (e.y > h - altoAbajo() && e.x >= dp(100f) && e.x <= width - dp(60f) && categorias.isNotEmpty()) {
+                    deslizandoCat = true; ultimaCat = categoriaEnBarra(e.x); invalidate()
+                } else if (e.y > h - altoAbajo() && e.x > width - dp(60f)) {
                     borrando = true; oyente?.borrar(); oyente?.respuesta(Respuesta.Tipo.BORRAR)
                     postDelayed(repetirBorrar, 420L)
                 } else if (e.y < h - altoAbajo()) {
@@ -488,6 +523,14 @@ class PanelEmoji(context: Context) : View(context) {
                     if (i != tonoElegido) { tonoElegido = i; oyente?.respuesta(Respuesta.Tipo.SUAVE); invalidate() }
                     return true
                 }
+                if (deslizandoCat) {
+                    if (kotlin.math.abs(e.x - x0) > dp(6f)) movioCat = true
+                    if (movioCat) {
+                        val k = categoriaEnBarra(e.x)
+                        if (k != ultimaCat) { ultimaCat = k; saltarA(k); oyente?.respuesta(Respuesta.Tipo.SUAVE) }
+                    }
+                    return true
+                }
                 if (!arrastrando && kotlin.math.abs(e.x - x0) > dp(8f) && e.y < h - altoAbajo()) {
                     arrastrando = true; removeCallbacks(larga); presionado = null
                 }
@@ -498,6 +541,13 @@ class PanelEmoji(context: Context) : View(context) {
                 ultX = e.x
             }
             MotionEvent.ACTION_UP -> {
+                if (deslizandoCat) {
+                    val movio = movioCat
+                    deslizandoCat = false; movioCat = false
+                    velocidad?.recycle(); velocidad = null
+                    if (!movio) tocar(e.x, e.y) else invalidate()
+                    return true
+                }
                 removeCallbacks(larga); borrando = false; removeCallbacks(repetirBorrar)
                 presionado = null
                 val base = tonosDe
@@ -518,6 +568,7 @@ class PanelEmoji(context: Context) : View(context) {
                 invalidate()
             }
             MotionEvent.ACTION_CANCEL -> {
+                deslizandoCat = false; movioCat = false
                 removeCallbacks(larga); borrando = false; removeCallbacks(repetirBorrar); tonosDe = null; presionado = null
                 velocidad?.recycle(); velocidad = null; invalidate()
             }

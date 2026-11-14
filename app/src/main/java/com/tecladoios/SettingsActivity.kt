@@ -236,6 +236,8 @@ class SettingsActivity : Activity() {
         val dic = seccion("Diccionario personal")
         boton(dic, "Ver mis palabras") { verPalabras() }
         boton(dic, "Agregar una palabra") { agregarPalabra() }
+        boton(dic, "Eliminar una palabra", sub = "No se sugiere ni se usa para corregir. También: mantén presionada una sugerencia") { eliminarPalabra() }
+        boton(dic, "Palabras eliminadas", sub = "Toca una para que vuelva a sugerirse") { verEliminadas() }
         boton(dic, "Borrar todo lo aprendido", 0xFFFF453A.toInt()) {
             AlertDialog.Builder(this).setMessage("¿Borrar todas las palabras y costumbres que aprendió el teclado?")
                 .setPositiveButton("Borrar") { _, _ -> Cerebro.motor?.aprendido?.borrarTodo() }
@@ -294,6 +296,29 @@ class SettingsActivity : Activity() {
             .setItems(palabras.toTypedArray()) { _, i ->
                 AlertDialog.Builder(this).setMessage("¿Olvidar «${palabras[i]}»?")
                     .setPositiveButton("Olvidar") { _, _ -> m.aprendido.quitar(palabras[i]); Cerebro.guardar() }
+                    .setNegativeButton("Cancelar", null).show()
+            }.setNegativeButton("Cerrar", null).show()
+    }
+
+    private fun eliminarPalabra() = conMotor { m ->
+        val campo = EditText(this).apply { hint = "Palabra"; setPadding(dp(20f), dp(16f), dp(20f), dp(16f)) }
+        AlertDialog.Builder(this).setTitle("Eliminar palabra").setView(campo)
+            .setPositiveButton("Eliminar") { _, _ ->
+                val w = campo.text.toString().trim()
+                if (w.isNotEmpty() && !w.contains(' ')) { m.aprendido.eliminar(w); Cerebro.guardar() }
+            }.setNegativeButton("Cancelar", null).show()
+    }
+
+    private fun verEliminadas() = conMotor { m ->
+        val palabras = synchronized(m.aprendido) { m.aprendido.eliminadas.sorted() }
+        if (palabras.isEmpty()) {
+            AlertDialog.Builder(this).setMessage("No has eliminado ninguna palabra. Para eliminar una, mantén presionada la sugerencia en la barra del teclado.").setPositiveButton("OK", null).show()
+            return@conMotor
+        }
+        AlertDialog.Builder(this).setTitle("Palabras eliminadas (toca para recuperar)")
+            .setItems(palabras.toTypedArray()) { _, i ->
+                AlertDialog.Builder(this).setMessage("¿Volver a sugerir «${palabras[i]}»?")
+                    .setPositiveButton("Recuperar") { _, _ -> m.aprendido.restaurar(palabras[i]); Cerebro.guardar() }
                     .setNegativeButton("Cancelar", null).show()
             }.setNegativeButton("Cerrar", null).show()
     }

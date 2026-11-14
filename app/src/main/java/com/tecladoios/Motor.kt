@@ -272,6 +272,8 @@ class Motor(
         val conocido = if (!valida || formasExactas.isEmpty()) errores.buscar(clave) ?: errores.buscar(escrito.lowercase()) else null
         if (conocido != null && !aprendido.rechazada(escrito, conocido)) meter(conocido, -100f, true, false)
 
+        // Las que eliminaste no se sugieren ni corrigen (salvo que sea justo lo que escribiste)
+        if (aprendido.eliminadas.isNotEmpty()) lista.removeAll { val k = Texto.normal(it.texto); k != clave && aprendido.eliminada(k) }
         lista.sortBy { it.puntaje }
 
         // ¿Corregir solo?
@@ -410,9 +412,10 @@ class Motor(
         for (w in res.keys.toList()) res[w] = res[w]!! + 0.15f * bonoUso(Texto.normal(w))
         val anterior = contexto.lastOrNull()?.let { Texto.normal(it) }
         if (anterior != null) res.keys.removeAll { Texto.normal(it) == anterior }
+        if (aprendido.eliminadas.isNotEmpty()) res.keys.removeAll { aprendido.eliminada(Texto.normal(it)) }
         if (res.size < 3) {
             val base = if (inicioDeFrase || contexto.isEmpty()) INICIO else GENERALES
-            base.forEachIndexed { i, w -> if (!res.containsKey(w) && Texto.normal(w) != anterior) res[w] = 0.5f - i * 0.02f }
+            base.forEachIndexed { i, w -> if (!res.containsKey(w) && Texto.normal(w) != anterior && !aprendido.eliminada(Texto.normal(w))) res[w] = 0.5f - i * 0.02f }
         }
         val orden = res.entries.sortedByDescending { it.value }.map { it.key }
         val vistos = HashSet<String>()
