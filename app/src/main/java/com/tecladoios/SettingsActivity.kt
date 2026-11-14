@@ -213,10 +213,11 @@ class SettingsActivity : Activity() {
         interruptor(tec, "Símbolos en las teclas", Ajustes.PISTAS, false, "Mantén una letra para escribir su símbolo o tilde")
         interruptor(tec, "Vista previa al tocar", Ajustes.VISTA_PREVIA, true)
         interruptor(tec, "Detalles del color de la app", Ajustes.BORDES_APP, true, "Trazo al deslizar y tecla enviar")
-        interruptor(tec, "Barra de herramientas", Ajustes.BARRA_HERRAMIENTAS, true, "Emojis, portapapeles, edición, una mano, escanear y ajustes")
+        interruptor(tec, "Barra de herramientas", Ajustes.BARRA_HERRAMIENTAS, true, "Emojis, portapapeles, edición, una mano, tamaño y ajustes")
         opciones(tec, "Modo una mano", Ajustes.UNA_MANO, listOf("Apagado", "Izquierda", "Derecha"), 0)
         deslizador(tec, "Altura", Ajustes.ALTURA, 75, 135, 100) { "$it %" }
         deslizador(tec, "Espacio debajo del teclado", Ajustes.MARGEN_ABAJO, 0, 120, 0) { "$it" }
+        deslizador(tec, "Ancho", Ajustes.ANCHO, 70, 100, 100) { "$it %" }
         deslizador(tec, "Mantener presionado", Ajustes.RETARDO_LARGA, 150, 700, 320) { "$it ms" }
 
         val son = seccion("Sonido y vibración")

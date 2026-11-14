@@ -48,8 +48,8 @@ class Capa(context: Context) : View(context) {
     // Animación del globo: aparece creciendo un poco y se va desvaneciendo (muy corta)
     private var apareceMs = 0L
     private var seVaMs = 0L
-    private val APARECE = 100f
-    private val SE_VA = 140f
+    private val APARECE = 120f
+    private val SE_VA = 130f
 
     fun mostrarGlobo(r: RectF, texto: String) {
         val ahora = android.os.SystemClock.uptimeMillis()
@@ -75,8 +75,8 @@ class Capa(context: Context) : View(context) {
         if (der > width - 2 * d) { izq -= der - (width - 2 * d); der = width - 2 * d }
         val arriba = (tecla.top - alto).coerceAtLeast(1 * d)
         val cuello = tecla.top - tecla.height() * 0.12f
-        val rr = 10 * d
-        val rk = minOf(7.5f * d, tecla.height() * 0.17f)
+        val rr = 8 * d
+        val rk = minOf(5.5f * d, tecla.height() * 0.12f)
         forma.reset()
         forma.moveTo(tecla.left + rk, tecla.bottom)
         forma.quadTo(tecla.left, tecla.bottom, tecla.left, tecla.bottom - rk)
@@ -107,10 +107,15 @@ class Capa(context: Context) : View(context) {
         val arriba = (r.top - h - 6 * d).coerceAtLeast(2 * d)
         caja.set(izq, arriba, izq + w, arriba + h)
         tecla.set(r)
+        opcionesMs = android.os.SystemClock.uptimeMillis()
         invalidate()
     }
 
     fun hayOpciones() = opciones.isNotEmpty()
+
+    /** Las tildes y símbolos se despliegan desde la tecla (crecen desde abajo con un resorte) */
+    private var opcionesMs = 0L
+    private val DESPLIEGUE = 170f
 
     /** Elige la opción bajo el dedo (x en coordenadas de la capa) */
     fun moverSeleccion(x: Float, y: Float): Int {
@@ -132,18 +137,21 @@ class Capa(context: Context) : View(context) {
         if (visible && opciones.isEmpty() && !forma.isEmpty) {
             val alfa: Float
             val escala: Float
+            val subeLetra: Float
             if (globo) {
                 val t = ((ahora - apareceMs) / APARECE).coerceIn(0f, 1f)
-                // Aparece suave desde la tecla, sin rebote (salida cúbica: frena delicado al final)
-                val u = 1f - t
-                val e = 1f - u * u * u
-                alfa = 0.25f + 0.75f * e; escala = 0.94f + 0.06f * e
+                // Nace de la tecla con un resorte cortito: crece, se pasa apenas y se asienta
+                val u = t - 1f
+                val e = 1f + 2.2f * u * u * u + 1.2f * u * u
+                alfa = (0.2f + 1.6f * t).coerceAtMost(1f); escala = 0.86f + 0.14f * e
+                subeLetra = (1f - e) * 6f * d
                 if (t < 1f) postInvalidateOnAnimation()
             } else {
                 val t = ((ahora - seVaMs) / SE_VA).coerceIn(0f, 1f)
-                // Se desvanece despacio, encogiéndose apenas
+                // Se recoge hacia su tecla mientras se apaga
                 val u = 1f - t
-                alfa = u * u; escala = 1f - 0.03f * t
+                alfa = u * u; escala = 1f - 0.08f * t
+                subeLetra = -2f * d * t
                 postInvalidateOnAnimation()
             }
             val a = (alfa * 255).toInt()
@@ -162,25 +170,32 @@ class Capa(context: Context) : View(context) {
             letraP.color = tema.texto; letraP.alpha = a
             letraP.textSize = tecla.height() * 0.78f
             val cy = limites.top + (tecla.top - limites.top) * 0.5f
-            c.drawText(globoTexto, limites.centerX(), cy + letraP.textSize * 0.35f, letraP)
+            c.drawText(globoTexto, limites.centerX(), cy + letraP.textSize * 0.35f + subeLetra, letraP)
             c.restore()
             pintura.alpha = 255; letraP.alpha = 255
         }
         if (opciones.isNotEmpty()) {
+            val tA = ((ahora - opcionesMs) / DESPLIEGUE).coerceIn(0f, 1f)
+            val uA = tA - 1f
+            val eA = 1f + 2.2f * uA * uA * uA + 1.2f * uA * uA
+            if (tA < 1f) postInvalidateOnAnimation()
+            c.save()
+            c.scale(0.7f + 0.3f * eA, 0.55f + 0.45f * eA, tecla.centerX().coerceIn(caja.left, caja.right), caja.bottom)
+            c.saveLayerAlpha(caja.left - 8 * d, caja.top - 8 * d, caja.right + 8 * d, caja.bottom + 8 * d, (255 * minOf(1f, tA * 2f)).toInt())
             c.save(); c.translate(0f, 2f * d)
             sombra.alpha = 0x66
-            c.drawRoundRect(caja, 11 * d, 11 * d, sombra); c.restore()
+            c.drawRoundRect(caja, 8 * d, 8 * d, sombra); c.restore()
             pintura.color = tema.globo
-            c.drawRoundRect(caja, 11 * d, 11 * d, pintura)
+            c.drawRoundRect(caja, 8 * d, 8 * d, pintura)
             borde.color = tema.bordeTecla; borde.strokeWidth = 1f * d
-            c.drawRoundRect(caja, 11 * d, 11 * d, borde)
+            c.drawRoundRect(caja, 8 * d, 8 * d, borde)
             letraP.textSize = minOf(caja.height() * 0.5f, anchoOpcion * 0.62f)
             for ((i, o) in opciones.withIndex()) {
                 val x0 = caja.left + 4 * d + anchoOpcion * i
                 if (i == seleccion) {
                     // Opción elegida: pastilla blanca con letra negra (sin color de app)
                     pintura.color = tema.rojo
-                    c.drawRoundRect(x0 + 1 * d, caja.top + 5 * d, x0 + anchoOpcion - 1 * d, caja.bottom - 5 * d, 7 * d, 7 * d, pintura)
+                    c.drawRoundRect(x0 + 1 * d, caja.top + 5 * d, x0 + anchoOpcion - 1 * d, caja.bottom - 5 * d, 5 * d, 5 * d, pintura)
                 }
                 letraP.color = tema.texto
                 val tam = if (o.length > 2) letraP.textSize * 0.62f else letraP.textSize
@@ -189,6 +204,7 @@ class Capa(context: Context) : View(context) {
                 c.drawText(o, x0 + anchoOpcion / 2, caja.centerY() + tam * 0.36f, letraP)
                 letraP.textSize = previo
             }
+            c.restore(); c.restore()
         }
     }
 }

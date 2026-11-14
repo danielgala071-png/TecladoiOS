@@ -15,7 +15,7 @@ import kotlin.math.abs
  * Barra de arriba del teclado. Mientras escribes muestra tres sugerencias (la del centro es la
  * mejor, y se pinta del color de la app si se pondrá sola al tocar espacio; a la izquierda,
  * entre comillas, lo que escribiste tal cual). Sin escribir muestra las herramientas:
- * portapapeles, edición de texto, una mano, escanear texto y ajustes, más lo último que
+ * portapapeles, edición de texto, una mano, tamaño y ajustes, más lo último que
  * copiaste o tu captura reciente para enviarlos rápido.
  */
 class Barra(context: Context) : View(context) {
@@ -45,6 +45,14 @@ class Barra(context: Context) : View(context) {
     var tema = Tema(Tema.AZUL); set(v) { field = v; invalidate() }
     var herramientasActivas = true
 
+    /**
+     * La barra nunca se esconde: siempre muestra palabras. Las herramientas se abren con el
+     * botón de la izquierda (como en Gboard) y se cierran solas al seguir escribiendo.
+     */
+    private var verHerramientas = false
+
+    fun cerrarHerramientas() { if (verHerramientas) { verHerramientas = false; animar(180f, true) } }
+
     private val d = resources.displayMetrics.density
     private fun dp(v: Float) = v * d
 
@@ -65,12 +73,15 @@ class Barra(context: Context) : View(context) {
         val cambiaModo = sugerencias.isEmpty() && literal == null
         sugerencias = nuevas; literal = literalEntreComillas
         destacada = if (autocorrige && lista.isNotEmpty()) 0 else -1
-        animar(if (cambiaModo) 230f else 150f, cambiaModo)
+        // Al pasar de herramientas a sugerencias se cruza toda la barra; mientras escribes,
+        // cada palabra entra por su cuenta (ver dibujarSugerencias)
+        if (cambiaModo) animar(200f, true) else invalidate()
     }
 
     fun limpiar() {
         if (sugerencias.isEmpty() && literal == null) return
         sugerencias = emptyList(); literal = null; destacada = -1
+        for (i in 0 until 3) celdaPrevia[i] = null
         animar(230f, true)
     }
 
@@ -91,9 +102,11 @@ class Barra(context: Context) : View(context) {
 
     fun captura(b: Bitmap?) { captura = b; invalidate() }
 
-    fun busqueda(activa: Boolean, q: String, res: List<String>) {
-        buscando = activa; consulta = q; resultados = res; corrimiento = 0f; invalidate()
+    /** [recientes] = cuántos de [res] (los primeros) son tus usados recientemente */
+    fun busqueda(activa: Boolean, q: String, res: List<String>, recientes: Int = 0) {
+        buscando = activa; consulta = q; resultados = res; cuantosRecientes = recientes; corrimiento = 0f; invalidate()
     }
+    private var cuantosRecientes = 0
 
     // ---------- Dibujo ----------
 
@@ -107,7 +120,7 @@ class Barra(context: Context) : View(context) {
     private val zonas = ArrayList<Pair<RectF, () -> Any?>>()
     private val zonasLargas = ArrayList<Pair<RectF, () -> Any?>>()
 
-    private val HERRAMIENTAS = intArrayOf(H_EMOJI, H_PORTAPAPELES, H_EDITAR, H_UNA_MANO, H_TAMANO, H_ESCANEAR, H_AJUSTES)
+    private val HERRAMIENTAS = intArrayOf(H_EMOJI, H_PORTAPAPELES, H_EDITAR, H_UNA_MANO, H_TAMANO, H_AJUSTES)
 
     override fun onDraw(c: Canvas) {
         zonas.clear(); zonasLargas.clear()
@@ -130,9 +143,21 @@ class Barra(context: Context) : View(context) {
         texto.textSize = dp(16.5f); fuerte.textSize = dp(16.5f)
         linea.color = tema.separador; linea.strokeWidth = dp(1f)
         if (buscando) { dibujarBusqueda(c, w, h); return }
-        if (sugerencias.isNotEmpty() || literal != null) { dibujarSugerencias(c, w, h); return }
+        if ((sugerencias.isNotEmpty() || literal != null) && !verHerramientas) { dibujarSugerencias(c, w, h); return }
         dibujarHerramientas(c, w, h)
     }
+
+    // Cada casilla anima su palabra al cambiar: la del centro primero y luego los costados
+    private val celdaPrevia = arrayOfNulls<String>(3)
+    private val celdaMs = LongArray(3)
+    private val celdaDura = FloatArray(3)
+    private val celdaSube = FloatArray(3)
+    private val RETRASO_CELDA = longArrayOf(30L, 0L, 60L)
+
+    // Destello de la palabra que elegiste
+    private var elegidaMs = 0L
+    private var elegidaCelda = -1
+    private val DESTELLO = 340f
 
     private fun dibujarSugerencias(c: Canvas, w: Float, h: Float) {
         // Orden: [izquierda, centro (la mejor), derecha]
@@ -142,30 +167,111 @@ class Barra(context: Context) : View(context) {
         celdas[1] = mejor
         if (literal != null) { celdas[0] = literal; esLiteral[0] = true; celdas[2] = sugerencias.getOrNull(1) }
         else { celdas[0] = sugerencias.getOrNull(1); celdas[2] = sugerencias.getOrNull(2) }
-        val ancho = w / 3
+        // Botón de herramientas a la izquierda (cuatro puntitos, como Gboard)
+        val boton = dp(40f)
+        val ahora = android.os.SystemClock.uptimeMillis()
+        run {
+            val cx = boton / 2 + dp(2f); val cy = h / 2
+            val apretado = tocando && toqueX in 0f..boton
+            relleno.color = if (apretado) 0xFF4A1E24.toInt() else 0xFF1A1618.toInt()
+            c.drawCircle(cx, cy, dp(15f), relleno)
+            relleno.color = tema.textoSuave
+            val sep = dp(4.2f); val lado = dp(2.6f)
+            for (a in -1..1 step 2) for (b in -1..1 step 2)
+                c.drawRoundRect(cx + a * sep - lado, cy + b * sep - lado, cx + a * sep + lado, cy + b * sep + lado, dp(1.2f), dp(1.2f), relleno)
+            zonas.add(RectF(0f, 0f, boton + dp(4f), h) to { verHerramientas = true; animar(200f, true) })
+        }
+        c.save()
+        c.translate(boton + dp(4f), 0f)
+        val anchoUtil = w - boton - dp(4f)
+        val ancho = anchoUtil / 3
+        val desplazamiento = boton + dp(4f)
+        var seguir = false
+        // Casilla bajo el dedo: una cápsula tenue mientras lo mantienes
+        if (tocando && !arrastrando && toqueX >= desplazamiento) {
+            val i = ((toqueX - desplazamiento) / ancho).toInt().coerceIn(0, 2)
+            if (celdas[i] != null) {
+                relleno.color = 0x1FFFFFFF
+                r.set(i * ancho + dp(5f), dp(5f), (i + 1) * ancho - dp(5f), h - dp(5f))
+                c.drawRoundRect(r, r.height() / 2, r.height() / 2, relleno)
+            }
+        }
+        // Destello rojo detrás de la palabra elegida (se abre y se apaga)
+        if (elegidaCelda in 0..2) {
+            val t = ((ahora - elegidaMs) / DESTELLO).coerceIn(0f, 1f)
+            if (t < 1f) {
+                val u = 1f - t
+                val e = 1f - u * u * u
+                relleno.color = 0xFFFF2D3A.toInt(); relleno.alpha = (0x55 * u * u).toInt()
+                val cxD = elegidaCelda * ancho + ancho / 2
+                val medio = (ancho / 2 - dp(6f)) * (0.7f + 0.3f * e)
+                r.set(cxD - medio, dp(5f) + dp(2f) * (1f - e), cxD + medio, h - dp(5f) - dp(2f) * (1f - e))
+                c.drawRoundRect(r, r.height() / 2, r.height() / 2, relleno)
+                relleno.alpha = 255
+                seguir = true
+            } else elegidaCelda = -1
+        }
+        for (i in 0 until 3) {
+            val cambio = celdas[i] != celdaPrevia[i]
+            if (cambio) {
+                // Entrar desde vacío se nota más; cambiar mientras escribes es más corto y sutil
+                val desdeVacio = celdaPrevia[i] == null
+                celdaMs[i] = ahora + if (desdeVacio) RETRASO_CELDA[i] else RETRASO_CELDA[i] / 2
+                celdaDura[i] = if (desdeVacio) 230f else 150f
+                celdaSube[i] = if (desdeVacio) dp(7f) else dp(3.5f)
+                celdaPrevia[i] = celdas[i]
+            }
+        }
         for (i in 0 until 3) {
             val s = celdas[i] ?: continue
             val x0 = i * ancho
             val p = if (i == 1 && destacada >= 0) fuerte else texto
             val destacadaAqui = i == 1 && destacada >= 0
+            val tc = if (celdaDura[i] > 0f) ((ahora - celdaMs[i]) / celdaDura[i]).coerceIn(0f, 1f) else 1f
+            if (tc < 1f) seguir = true
+            val uc = 1f - tc
+            val ec = 1f - uc * uc * uc
+            c.save()
+            c.translate(0f, celdaSube[i] * (1f - ec))
+            val escalaC = 0.94f + 0.06f * ec
+            c.scale(escalaC, escalaC, x0 + ancho / 2, h / 2)
             // Sin cápsula ni color: la palabra que se pondrá sola brilla (blanco intenso con un
             // halo suave) y las demás quedan en un blanco más tenue
             p.color = if (destacadaAqui) 0xFFFFFFFF.toInt() else 0xBFEBEBF5.toInt()
             val mostrado = if (esLiteral[i]) "«$s»" else s
             val corto = TextUtils.ellipsize(mostrado, p, ancho - dp(22f), TextUtils.TruncateAt.MIDDLE).toString()
             if (destacadaAqui) p.setShadowLayer(dp(8f), 0f, 0f, 0xB3FF2D3A.toInt())
+            val alfaBase = p.alpha
+            p.alpha = (alfaBase * (0.15f + 0.85f * ec)).toInt()
             c.drawText(corto, x0 + ancho / 2, h / 2 + p.textSize * 0.36f, p)
+            p.alpha = alfaBase
             if (destacadaAqui) p.clearShadowLayer()
-            val rr = RectF(x0, 0f, x0 + ancho, h)
+            c.restore()
+            val rr = RectF(desplazamiento + x0, 0f, desplazamiento + x0 + ancho, h)
             val lit = esLiteral[i]
-            zonas.add(rr to { oyente?.elegir(s, lit) })
+            val celda = i
+            zonas.add(rr to { elegidaCelda = celda; elegidaMs = android.os.SystemClock.uptimeMillis(); oyente?.elegir(s, lit) })
             if (!lit) zonasLargas.add(rr to { oyente?.olvidar(s) })
         }
-        for (i in 1..2) c.drawLine(i * ancho, h * 0.28f, i * ancho, h * 0.72f, linea)
+        // Separadores: no se dibujan junto a una casilla vacía
+        for (i in 1..2) if (celdas[i - 1] != null && celdas[i] != null) c.drawLine(i * ancho, h * 0.3f, i * ancho, h * 0.7f, linea)
+        c.restore()
+        if (seguir) postInvalidateOnAnimation()
     }
 
     private fun dibujarHerramientas(c: Canvas, w: Float, h: Float) {
         var izq = dp(8f)
+        if (verHerramientas) {
+            // Volver a las palabras
+            val cx = dp(22f); val cy = h / 2
+            val apretado = tocando && toqueX in 0f..dp(42f)
+            relleno.color = if (apretado) 0xFF4A1E24.toInt() else 0xFF1A1618.toInt()
+            c.drawCircle(cx, cy, dp(15f), relleno)
+            icono.color = tema.textoSuave
+            Iconos.flecha(c, cx, cy, dp(30f), icono, 0f)
+            zonas.add(RectF(0f, 0f, dp(44f), h) to { verHerramientas = false; animar(200f, true) })
+            izq = dp(48f)
+        }
         // Chips: captura reciente y lo último copiado
         val cap = captura
         if (cap != null) {
@@ -208,7 +314,7 @@ class Barra(context: Context) : View(context) {
         }
         // Herramientas a la derecha
         var x = w - dp(4f) - espacioHerr
-        if (chip == null && cap == null) x = (w - espacioHerr) / 2f
+        if (chip == null && cap == null) x = maxOf(izq, (w - espacioHerr) / 2f)
         icono.color = tema.textoSuave
         val s = dp(30f)
         for (hId in herrs) {
@@ -227,7 +333,6 @@ class Barra(context: Context) : View(context) {
                 H_PORTAPAPELES -> Iconos.portapapeles(c, cx, cy, s, icono)
                 H_EDITAR -> Iconos.editar(c, cx, cy, s, icono)
                 H_UNA_MANO -> Iconos.unaMano(c, cx, cy, s, icono)
-                H_ESCANEAR -> Iconos.escanear(c, cx, cy, s, icono)
                 H_TAMANO -> Iconos.tamano(c, cx, cy, s, icono)
                 H_AJUSTES -> Iconos.engranaje(c, cx, cy, s, icono)
             }
@@ -259,15 +364,33 @@ class Barra(context: Context) : View(context) {
         c.clipRect(inicio, 0f, fin, h)
         texto.textSize = dp(26f)
         val celda = dp(42f)
+        val hueco = dp(22f)   // espacio entre «recientes» y los demás
+        val recientes = cuantosRecientes.coerceIn(0, resultados.size)
         var x = inicio - corrimiento
-        for (e in resultados) {
+        if (recientes > 0) {
+            // Relojito que marca el apartado de usados recientemente (como en el panel)
+            val chico = texto.textSize
+            texto.textSize = dp(13f); texto.alpha = 150
+            c.drawText("\uD83D\uDD52", x + dp(10f), h / 2 + texto.textSize * 0.36f, texto)
+            texto.alpha = 255; texto.textSize = chico
+            x += dp(22f)
+        }
+        for ((i, e) in resultados.withIndex()) {
+            if (i == recientes && recientes > 0) {
+                // Separador finito: después de tus recientes vienen los emojis normales
+                relleno.color = 0x33FFFFFF
+                val lx = x + hueco / 2
+                c.drawRect(lx - d * 0.5f, h * 0.25f, lx + d * 0.5f, h * 0.75f, relleno)
+                x += hueco
+            }
             if (x + celda > inicio && x < fin) {
                 c.drawText(e, x + celda / 2, h / 2 + texto.textSize * 0.36f, texto)
                 zonas.add(RectF(x, 0f, x + celda, h) to { oyente?.emojiBuscado(e) })
             }
             x += celda
         }
-        maxCorrimiento = (resultados.size * celda - (fin - inicio)).coerceAtLeast(0f)
+        val extra = if (recientes > 0) dp(22f) + hueco else 0f
+        maxCorrimiento = (resultados.size * celda + extra - (fin - inicio)).coerceAtLeast(0f)
         c.restore()
         texto.textSize = dp(16.5f)
     }

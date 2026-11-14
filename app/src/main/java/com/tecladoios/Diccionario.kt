@@ -20,7 +20,12 @@ class Diccionario private constructor(
     val terminal: IntArray,
     val mejor: IntArray,
     private val otras: HashMap<String, IntArray>,
+    /** Palabras que solo existen en otro idioma (inglés, portugués) */
+    private val extranjera: BooleanArray,
 ) {
+    /** La palabra solo es de otro idioma: no le gana a una del español salvo que la uses */
+    fun esExtranjera(id: Int): Boolean = id in extranjera.indices && extranjera[id]
+
     val total get() = palabras.size
 
     /** Costo por ser poco común (0 = de las más usadas) */
@@ -91,12 +96,13 @@ class Diccionario private constructor(
             }
             o.writeInt(otras.size)
             for ((k, ids) in otras) { o.writeUTF(k); o.writeInt(ids.size); for (i in ids) o.writeInt(i) }
+            o.write(ByteArray(extranjera.size) { if (extranjera[it]) 1 else 0 })
         }
         if (!tmp.renameTo(archivo)) { archivo.delete(); tmp.renameTo(archivo) }
     }
 
     companion object {
-        private const val MAGIA = 0x54504431  // "TPD1"
+        private const val MAGIA = 0x54504432  // "TPD2" (con la marca de otros idiomas)
 
         /** Lee el diccionario guardado; null si no existe, está dañado o es de otra versión */
         fun leer(archivo: java.io.File, marca: Long): Diccionario? {
@@ -118,8 +124,9 @@ class Diccionario private constructor(
                         val k = e.readUTF()
                         otras[k] = IntArray(e.readInt()) { e.readInt() }
                     }
+                    val extranjera = BooleanArray(n).also { val b = bytes(n); for (i in 0 until n) it[i] = b[i].toInt() != 0 }
                     val claves = Array(n) { val p = palabras[it]; val c = Texto.normal(p); if (c == p) p else c }
-                    Diccionario(palabras, claves, penal, letra, hijo, hermano, terminal, mejor, otras)
+                    Diccionario(palabras, claves, penal, letra, hijo, hermano, terminal, mejor, otras, extranjera)
                 }
             } catch (ex: Throwable) {
                 Registro.anotar("leer diccionario guardado", ex)
@@ -142,12 +149,17 @@ class Diccionario private constructor(
                 if (w.isNotEmpty() && !costo.containsKey(w))
                     costo[w] = (Math.log(r + 30.0).toFloat() - RAIZ_BASE)
             }
+            // Las del español (sin tildes ni mayúsculas) para saber cuáles son solo de otro idioma
+            val espanol = HashSet<String>(costo.size * 2)
+            for (w in costo.keys) espanol.add(Texto.normal(w))
+            val deFuera = HashSet<String>()
             for ((lista, extra) in otrosIdiomas) {
                 lista.forEachIndexed { r, w ->
                     if (w.isEmpty()) return@forEachIndexed
                     val c = Math.log(r * 3.0 + 30.0).toFloat() - RAIZ_BASE + extra
                     val previo = costo[w]
                     if (previo == null || c < previo) costo[w] = c
+                    if (Texto.normal(w) !in espanol) deFuera.add(w)
                 }
             }
             // 2) Número de cada palabra = su lugar por costo
@@ -156,6 +168,7 @@ class Diccionario private constructor(
             val palabras = Array(n) { ordenadas[it].key }
             val penal = FloatArray(n) { ordenadas[it].value }
             val claves = Array(n) { val p = palabras[it]; val c = Texto.normal(p); if (c == p) p else c }
+            val extranjera = BooleanArray(n) { palabras[it] in deFuera }
 
             // 3) Árbol: se meten las claves en orden alfabético
             val porClave = (0 until n).sortedWith { a, b -> claves[a].compareTo(claves[b]) }
@@ -216,7 +229,7 @@ class Diccionario private constructor(
             return Diccionario(
                 palabras, claves, penal,
                 letra.copyOf(nodos), hijo.copyOf(nodos), hermano.copyOf(nodos), terminal.copyOf(nodos),
-                mejor, otras
+                mejor, otras, extranjera
             )
         }
     }

@@ -94,7 +94,9 @@ class Motor(
             val ex = geo.centroX(e); val ey = geo.centroY(e)
             if (ex.isNaN()) 2f else geo.distancia(ex, ey, c)
         }
-        return ((d - 0.35f) * 0.75f).coerceIn(0.15f, 1.0f)
+        // Ajustado con el banco de pruebas (toques simulados a dos dedos): un toque que cae
+        // entre dos teclas cuesta un poco menos, como en el modelo de toques de Gboard
+        return ((d - 0.45f) * 0.75f).coerceIn(0.15f, 1.0f)
     }
 
     private fun costoSobra(i: Int): Float {
@@ -219,6 +221,11 @@ class Motor(
         val valida = formasExactas.isNotEmpty() || propia != null || contacto != null
 
         val ctxBono = mapaContexto(contexto)
+        // Otros idiomas (como Gboard multilingüe): una palabra en inglés o portugués solo
+        // compite de igual a igual si la frase ya va en ese idioma o si tú la usas
+        val ctxFuera = contexto.lastOrNull()?.let { u -> dic.id(u).let { it >= 0 && dic.esExtranjera(it) } } == true
+        fun extraFuera(id: Int, k: String): Float =
+            if (!ctxFuera && dic.esExtranjera(id) && aprendido.veces(k) <= 0) FUERA else 0f
         val lista = ArrayList<Opcion>(12)
         val vistos = HashSet<String>()
         fun meter(t: String, p: Float, corr: Boolean, comp: Boolean) {
@@ -231,7 +238,7 @@ class Motor(
             for (c in cands.values) {
                 val w = dic.palabras[c.id]
                 val k = dic.claves[c.id]
-                val p = puntaje(c.costo, dic.penal(c.id), (ctxBono[w.lowercase()] ?: 0f), bonoUso(k))
+                val p = puntaje(c.costo, dic.penal(c.id), (ctxBono[w.lowercase()] ?: 0f), bonoUso(k)) + extraFuera(c.id, k)
                 meter(w, p, k != clave, c.completa)
             }
             // Las más usadas que empiezan exactamente así ("ho" → hola, hoy, hora)
@@ -241,7 +248,7 @@ class Motor(
                     val k = dic.claves[id]
                     if (k != clave) {
                         val costo = 0.55f + 0.08f * (k.length - clave.length)
-                        meter(dic.palabras[id], puntaje(costo, dic.penal(id), (ctxBono[dic.palabras[id].lowercase()] ?: 0f), bonoUso(k)), false, true)
+                        meter(dic.palabras[id], puntaje(costo, dic.penal(id), (ctxBono[dic.palabras[id].lowercase()] ?: 0f), bonoUso(k)) + extraFuera(id, k), false, true)
                     }
                 }
             }
@@ -268,8 +275,15 @@ class Motor(
 
         // ¿Corregir solo?
         var auto: String? = null
+        var porVentaja: String? = null
+        // Nunca se corrige sola hacia una palabra de otro idioma que no usas
+        fun bloqueada(o: Opcion): Boolean {
+            if (ctxFuera) return false
+            val id = dic.id(o.texto)
+            return id >= 0 && dic.esExtranjera(id) && aprendido.veces(Texto.normal(o.texto)) <= 0
+        }
         if (corregir && soloLetras && clave.length >= 1) {
-            val mejor = lista.firstOrNull { !it.completa }
+            val mejor = lista.firstOrNull { !it.completa && !bloqueada(it) }
             if (conocido != null && !aprendido.rechazada(escrito, conocido)) {
                 auto = Texto.conMayusculas(conocido, escrito)
             } else if (!valida && mejor != null && mejor.esCorreccion) {
@@ -278,8 +292,18 @@ class Motor(
                 val penal = if (id >= 0) dic.penal(id) else 1.5f
                 // Puntaje de lo escrito si fuera una palabra rara: hay que superarlo
                 val umbral = 3.2f + 0.3f * clave.length
-                if (mejor.puntaje < umbral && penal < 9.5f && costoDe(mejor.texto, clave, xs, ys) <= costoMax &&
+                // Lo que el contexto apoya ("buenos d..." → días) se puede corregir con más confianza
+                val apoyo = (ctxBono[mejor.texto.lowercase()] ?: 0f).coerceAtMost(1.2f)
+                val costo = costoDe(mejor.texto, clave, xs, ys)
+                if (mejor.puntaje < umbral + apoyo && penal < 9.5f && costo <= costoMax + apoyo * 0.4f &&
                     !aprendido.rechazada(escrito, mejor.texto)) auto = mejor.texto
+                // Palabra larga muy mal tecleada (dos dedos rápido): si una opción le saca mucha
+                // ventaja a todas las demás, es esa (así decide Gboard: la más probable por lejos)
+                if (auto == null && clave.length >= 6 && penal < 9f && !aprendido.rechazada(escrito, mejor.texto)) {
+                    val segunda = lista.firstOrNull { it !== mejor && !it.completa && !bloqueada(it) }
+                    val ventaja = (segunda?.puntaje ?: (mejor.puntaje + 9f)) - mejor.puntaje
+                    if (ventaja >= 1.6f && mejor.puntaje < umbral + 2.5f && costo <= 2.4f + 0.12f * (clave.length - 6)) porVentaja = mejor.texto
+                }
             } else if (valida && formasExactas.isNotEmpty()) {
                 // Existe, pero quizás solo con tilde ("cancion" → "canción")
                 val forma = dic.palabras[formasExactas[0]]
@@ -289,6 +313,8 @@ class Motor(
             }
             // Palabras pegadas: "Yanpodemos" → "Ya podemos"
             if (auto == null && separarPegadas && !valida && clave.length >= 4) separar(clave, escrito)?.let { auto = it; meter(it, -1f, true, false); lista.sortBy { o -> o.puntaje } }
+            // Solo si no eran palabras pegadas: la opción que les saca mucha ventaja a las demás
+            if (auto == null) auto = porVentaja
         }
 
         // Las formas con tilde de lo escrito también se ofrecen (esta / está)
@@ -388,6 +414,8 @@ class Motor(
     }
 
     companion object {
+        /** Lo que pesa una palabra de otro idioma que no usas (frente a una del español) */
+        private const val FUERA = 2.4f
         private val LETRAS = CharArray(27) { i -> if (i < 14) 'a' + i else if (i == 14) 'ñ' else 'o' + (i - 15) }
         val INICIO = listOf("hola", "ya", "gracias", "buenos", "sí", "no", "estimado", "ok", "qué", "te", "yo", "bueno")
         val GENERALES = listOf("de", "que", "y", "la", "el", "en", "a", "no", "con", "para", "por", "me")
