@@ -66,16 +66,16 @@ class Respuesta(c: Context) {
 
     /**
      * Vibración al máximo del motor del celular y larga en cada tecla:
-     * - Letras y demás teclas: fuerza máxima, 30 ms (fuerte, sin gastar de más).
-     * - Espacio, mayúscula y borrar: fuerza máxima, 38 ms (un poco más largas).
+     * - Letras y demás teclas: fuerza máxima, 50 ms (parecido al largo de Gboard).
+     * - Espacio, mayúscula y borrar: fuerza máxima, 55 ms (apenas más largas).
      * Siempre es un pulso propio con largo exacto (los efectos del fabricante son muy cortos).
      */
     private fun armar() {
         if (efLetra != null) return
         try {
             val max = if (conAmplitud) 255 else VibrationEffect.DEFAULT_AMPLITUDE
-            efLetra = VibrationEffect.createOneShot(30L, max)
-            efFuerte = VibrationEffect.createOneShot(38L, max)
+            efLetra = VibrationEffect.createOneShot(50L, max)
+            efFuerte = VibrationEffect.createOneShot(55L, max)
             efSuave = VibrationEffect.createOneShot(14L, max)
         } catch (_: Throwable) { }
     }
