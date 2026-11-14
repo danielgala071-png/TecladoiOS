@@ -1,0 +1,36 @@
+name: Descomprimir zip subido
+on:
+  push:
+    branches: [ main ]
+    paths: [ '*.zip' ]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: write
+jobs:
+  descomprimir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Descomprimir y reemplazar el proyecto
+        run: |
+          set -e
+          ZIP="$(ls -t -- *.zip 2>/dev/null | head -1)"
+          if [ -z "$ZIP" ]; then echo "No hay zip"; exit 0; fi
+          rm -rf /tmp/nuevo && mkdir -p /tmp/nuevo
+          unzip -q -o "$ZIP" -d /tmp/nuevo
+          ORIGEN=/tmp/nuevo
+          if [ "$(ls -A /tmp/nuevo | wc -l)" -eq 1 ] && [ -d "/tmp/nuevo/$(ls -A /tmp/nuevo)" ]; then
+            ORIGEN="/tmp/nuevo/$(ls -A /tmp/nuevo)"
+          fi
+          if [ ! -f "$ORIGEN/settings.gradle.kts" ]; then echo "::error::El zip no es el proyecto"; exit 1; fi
+          rsync -a --delete --exclude '.git/' "$ORIGEN"/ ./
+          rm -f -- *.zip
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then git commit -m "Proyecto actualizado desde $ZIP"; git push; fi
+      - name: Mandar a compilar el APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run compilar.yml --ref main
