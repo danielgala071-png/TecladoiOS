@@ -25,7 +25,8 @@ class PanelEmoji(context: Context) : View(context) {
         fun respuesta(tipo: Respuesta.Tipo)
     }
 
-    class Categoria(val nombre: String, val emojis: List<String>)
+    /** Categoría con sus grupos ([grupos] = cuántos emojis tiene cada grupo, en orden) */
+    class Categoria(val nombre: String, val emojis: List<String>, val grupos: IntArray = intArrayOf(emojis.size))
 
     var oyente: Oyente? = null
     var tema = Tema(Tema.AZUL); set(v) { field = v; invalidate() }
@@ -45,14 +46,27 @@ class PanelEmoji(context: Context) : View(context) {
             val lista = ArrayList<Categoria>()
             try {
                 var nombre: String? = null
+                val emojis = ArrayList<String>()
+                val grupos = ArrayList<Int>()
+                fun cerrar() {
+                    val n = nombre ?: return
+                    val g = grupos.filter { it > 0 }
+                    if (emojis.isNotEmpty()) lista.add(Categoria(n, emojis.toList(), g.toIntArray()))
+                    emojis.clear(); grupos.clear()
+                }
                 c.assets.open("emojis.txt").bufferedReader().useLines { ls ->
                     for (l in ls) {
                         if (l.isEmpty() || l[0] == '#') continue
-                        if (l[0] == '@') { nombre = l.substring(1).trim(); continue }
-                        val n = nombre ?: continue
-                        lista.add(Categoria(n, l.trim().split(' ').filter { it.isNotEmpty() && p.hasGlyph(it) }))
+                        if (l[0] == '@') { cerrar(); nombre = l.substring(1).trim(); continue }
+                        if (l[0] == '%') { grupos.add(0); continue }
+                        if (nombre == null) continue
+                        if (grupos.isEmpty()) grupos.add(0)
+                        val nuevos = l.trim().split(' ').filter { it.isNotEmpty() && p.hasGlyph(it) }
+                        emojis.addAll(nuevos)
+                        grupos[grupos.size - 1] = grupos[grupos.size - 1] + nuevos.size
                     }
                 }
+                cerrar()
             } catch (e: Throwable) { Registro.anotar("emojis", e) }
             // Banderas: Perú primero
             val paises = listOf("PE") + Locale.getISOCountries().filter { it != "PE" }
@@ -99,19 +113,51 @@ class PanelEmoji(context: Context) : View(context) {
         invalidate()
     }
 
+    // Cada grupo de una categoría es un bloque aparte: empieza en su propia columna y se llena
+    // por filas (de izquierda a derecha), así los emojis parecidos quedan juntos y en orden.
+    private var bloqueX = Array(0) { FloatArray(0) }     // inicio de cada bloque (relativo a la sección)
+    private var bloqueIni = Array(0) { IntArray(0) }     // primer emoji del bloque
+    private var bloqueN = Array(0) { IntArray(0) }       // cuántos emojis tiene
+    private var bloqueCols = Array(0) { IntArray(0) }    // cuántas columnas ocupa
+    private val SEPARACION_GRUPO_DP = 16f
+
     private fun armarSecciones(cel: Float) {
         if (cel == celdaArmada) return
         celdaArmada = cel
         val n = categorias.size
         columnas = IntArray(n); inicioX = FloatArray(n)
+        bloqueX = Array(n) { FloatArray(0) }; bloqueIni = Array(n) { IntArray(0) }
+        bloqueN = Array(n) { IntArray(0) }; bloqueCols = Array(n) { IntArray(0) }
+        val colW = anchoCol(cel)
         var x = dp(10f)
         for ((k, cat) in categorias.withIndex()) {
             inicioX[k] = x
-            // Recientes vacío: un espacio para el aviso, sin pisar la sección que sigue
-            columnas[k] = if (cat.emojis.isEmpty()) 0 else (cat.emojis.size + FILAS - 1) / FILAS
+            val tamanos = if (k == 0 || cat.grupos.isEmpty()) intArrayOf(cat.emojis.size) else cat.grupos
+            val m = tamanos.size
+            val bx = FloatArray(m); val bi = IntArray(m); val bn = IntArray(m); val bc = IntArray(m)
+            var dentro = 0f; var ini = 0; var cols = 0
+            for (g in 0 until m) {
+                val cuantos = tamanos[g]
+                bx[g] = dentro; bi[g] = ini; bn[g] = cuantos
+                bc[g] = if (cuantos == 0) 0 else (cuantos + FILAS - 1) / FILAS
+                dentro += bc[g] * colW + (if (g < m - 1) SEPARACION_GRUPO_DP * d else 0f)
+                ini += cuantos; cols += bc[g]
+            }
+            bloqueX[k] = bx; bloqueIni[k] = bi; bloqueN[k] = bn; bloqueCols[k] = bc
+            // Recientes: siempre su casilla (al menos 6 columnas), aunque esté vacía
+            columnas[k] = cols
             x += anchoSeccion(k, cel) + SEPARACION_DP * d
         }
         anchoTotal = x
+    }
+
+    /** Emoji del bloque [g] de la categoría [k] en (columna, fila); null si ese lugar está vacío */
+    private fun emojiBloque(k: Int, g: Int, col: Int, fila: Int): String? {
+        val cols = bloqueCols[k][g]
+        if (col < 0 || col >= cols) return null
+        val i = fila * cols + col
+        if (i >= bloqueN[k][g]) return null
+        return categorias[k].emojis.getOrNull(bloqueIni[k][g] + i)
     }
 
     private fun recientes(): List<String> =
@@ -132,8 +178,11 @@ class PanelEmoji(context: Context) : View(context) {
 
     /** Ancho de cada sección; la de recientes siempre deja lugar para al menos 6 columnas */
     private fun anchoSeccion(k: Int, cel: Float): Float {
-        val cols = if (k == 0) maxOf(columnas[k], 6) else columnas[k]
-        return cols * anchoCol(cel)
+        if (k == 0) return maxOf(columnas[k], 6) * anchoCol(cel)
+        val bx = bloqueX.getOrNull(k) ?: return columnas[k] * anchoCol(cel)
+        if (bx.isEmpty()) return 0f
+        val ult = bx.size - 1
+        return bx[ult] + bloqueCols[k][ult] * anchoCol(cel)
     }
     private fun altoAbajo() = dp(46f)
     private fun arribaGrilla() = dp(30f)
@@ -157,12 +206,17 @@ class PanelEmoji(context: Context) : View(context) {
         val cel = celda()
         val ax = x + corrimiento
         val fila = ((y - arribaGrilla()) / cel).toInt().coerceIn(0, FILAS - 1)
+        val colW = anchoCol(cel)
         for (k in categorias.indices) {
-            val ancho = columnas[k] * anchoCol(cel)
-            if (ax >= inicioX[k] && ax < inicioX[k] + ancho) {
-                val col = ((ax - inicioX[k]) / anchoCol(cel)).toInt()
-                return categorias[k].emojis.getOrNull(col * FILAS + fila)
+            val rel = ax - inicioX[k]
+            if (rel < 0 || rel >= anchoSeccion(k, cel)) continue
+            val bx = bloqueX[k]
+            for (g in bx.indices) {
+                val desde = bx[g]
+                if (rel >= desde && rel < desde + bloqueCols[k][g] * colW)
+                    return emojiBloque(k, g, ((rel - desde) / colW).toInt(), fila)
             }
+            return null
         }
         return null
     }
@@ -238,19 +292,31 @@ class PanelEmoji(context: Context) : View(context) {
                 }
                 continue
             }
-            val ancho = columnas[k] * colW
+            val ancho = anchoSeccion(k, cel)
             if (x0 > w || x0 + ancho < 0) continue
-            val primera = ((-x0) / colW).toInt().coerceAtLeast(0)
-            val ultima = minOf(columnas[k] - 1, ((w - x0) / colW).toInt())
-            for (col in primera..ultima) for (fila in 0 until FILAS) {
-                val e = cat.emojis.getOrNull(col * FILAS + fila) ?: break
-                val cx = x0 + col * colW + colW / 2
-                val cy = arribaGrilla() + fila * cel + cel / 2
-                if (e == presionado) {
-                    relleno.color = 0x22FFFFFF
-                    c.drawRoundRect(cx - cel * 0.46f, cy - cel * 0.46f, cx + cel * 0.46f, cy + cel * 0.46f, dp(10f), dp(10f), relleno)
+            val bx = bloqueX[k]
+            for (g in bx.indices) {
+                val gx = x0 + bx[g]
+                val cols = bloqueCols[k][g]
+                if (gx > w || gx + cols * colW < 0) continue
+                // Línea finita entre grupos (separa sin recargar)
+                if (g > 0) {
+                    relleno.color = 0x1AFFFFFF
+                    val lx = gx - SEPARACION_GRUPO_DP * d / 2
+                    c.drawRect(lx - d * 0.35f, arribaGrilla() + cel * 0.6f, lx + d * 0.35f, arribaGrilla() + cel * (FILAS - 0.6f), relleno)
                 }
-                c.drawText(e, cx, cy + emojiP.textSize * 0.35f, emojiP)
+                val primera = ((-gx) / colW).toInt().coerceAtLeast(0)
+                val ultima = minOf(cols - 1, ((w - gx) / colW).toInt())
+                for (col in primera..ultima) for (fila in 0 until FILAS) {
+                    val e = emojiBloque(k, g, col, fila) ?: continue
+                    val cx = gx + col * colW + colW / 2
+                    val cy = arribaGrilla() + fila * cel + cel / 2
+                    if (e == presionado) {
+                        relleno.color = 0x22FFFFFF
+                        c.drawRoundRect(cx - cel * 0.46f, cy - cel * 0.46f, cx + cel * 0.46f, cy + cel * 0.46f, dp(10f), dp(10f), relleno)
+                    }
+                    c.drawText(e, cx, cy + emojiP.textSize * 0.35f, emojiP)
+                }
             }
         }
         c.restore()
