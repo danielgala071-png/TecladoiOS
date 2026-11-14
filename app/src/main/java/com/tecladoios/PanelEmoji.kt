@@ -105,15 +105,13 @@ class PanelEmoji(context: Context) : View(context) {
 
     /** Vuelve a leer los recientes y arma las secciones (cada categoría con su título) */
     fun refrescar() {
-        // Sin separar por categorías: tus recientes y luego TODOS los emojis seguidos, en orden
-        // (caritas, gestos, personas, animales, comida…). Abajo quedan atajos para saltar.
+        // Como el iPhone: tus usados recientemente y luego cada categoría con su título, todo
+        // seguido al deslizar (sin cortes dentro de cada categoría)
         val base = cargar(context)
-        val todos = ArrayList<String>(4000)
-        val inicios = IntArray(base.size)
-        for ((i, cat) in base.withIndex()) { inicios[i] = todos.size; todos.addAll(cat.emojis) }
-        inicioCat = inicios
         atajos = base.map { it.emojis.firstOrNull() ?: "•" }
-        categorias = listOf(Categoria("USADOS RECIENTEMENTE", recientes()), Categoria("EMOJIS", todos))
+        inicioCat = IntArray(0)
+        categorias = listOf(Categoria("Usados recientemente", recientes())) +
+            base.map { Categoria(nombreBonito(it.nombre), it.emojis) }
         celdaArmada = -1f
         corrimiento = 0f
         indicadorX = -1f
@@ -126,6 +124,10 @@ class PanelEmoji(context: Context) : View(context) {
     private var atajos: List<String> = emptyList()
     /** Posición de cada atajo: 0 = recientes, luego cada grupo */
     private var paradasX = FloatArray(0)
+
+    /** «EMOTICONOS Y PERSONAS» → «Emoticonos y personas» (los títulos del iPhone) */
+    private fun nombreBonito(n: String): String =
+        n.lowercase(java.util.Locale("es")).replaceFirstChar { it.uppercaseChar() }
 
     // Cada grupo de una categoría es un bloque aparte: empieza en su propia columna y se llena
     // por filas (de izquierda a derecha), así los emojis parecidos quedan juntos y en orden.
@@ -163,10 +165,8 @@ class PanelEmoji(context: Context) : View(context) {
             x += anchoSeccion(k, cel) + SEPARACION_DP * d
         }
         anchoTotal = x
-        // Atajos: recientes y el inicio de cada grupo dentro de «todos»
-        paradasX = FloatArray(1 + inicioCat.size)
-        paradasX[0] = inicioX.getOrElse(0) { 0f }
-        for (j in inicioCat.indices) paradasX[j + 1] = inicioX.getOrElse(1) { 0f } + (inicioCat[j] / FILAS) * colW
+        // Atajos de abajo: el inicio de cada sección
+        paradasX = inicioX.copyOf()
     }
 
     /** Emoji del bloque [g] de la categoría [k] en (columna, fila); null si ese lugar está vacío */
@@ -305,6 +305,7 @@ class PanelEmoji(context: Context) : View(context) {
         c.drawBitmap(bmp, cx - bmp.width / 2f, cy - bmp.height / 2f, pintaImagen)
     }
     private val titulo = Paint(Paint.ANTI_ALIAS_FLAG).apply { Fuentes.aplicar(this, 600); letterSpacing = 0.03f }
+    private val grises = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply { setSaturation(0f) })
     private val aviso = Paint(Paint.ANTI_ALIAS_FLAG).apply { Fuentes.aplicar(this, 400) }
     private val boton = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 500) }
     private val icono = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -446,8 +447,11 @@ class PanelEmoji(context: Context) : View(context) {
             val cx = izq + paso * k + paso / 2
             val cy = yAbajo + altoAbajo() / 2
             val ic = when (k) { 0 -> "\uD83D\uDD52"; else -> atajos.getOrElse(k - 1) { "•" } }
-            emojiP.alpha = if (k == actual) 255 else 150
+            // Íconos de categoría en gris como el iPhone; la actual, a color
+            pintaImagen.colorFilter = if (k == actual) null else grises
+            emojiP.alpha = if (k == actual) 255 else 165
             dibujarEmoji(c, ic, cx, cy, emojiP.textSize, emojiP.alpha)
+            pintaImagen.colorFilter = null
         }
         emojiP.alpha = 255
         icono.color = tema.texto

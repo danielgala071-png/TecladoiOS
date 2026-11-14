@@ -314,11 +314,22 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     private fun bajar(id: Int, x: Float, y: Float) {
-        // Si otro dedo sigue en una tecla, esa tecla se escribe ya (dos pulgares rápidos)
-        for (o in dedos.values) if (o.modo == Modo.NORMAL && o.tecla?.tecla?.tipo == K.TEXTO) {
-            removeCallbacks(o.larga)
-            emitir(o)
-            o.modo = Modo.HECHO
+        // Si otro dedo sigue en una tecla, esa tecla se escribe ya (dos pulgares rápidos). Antes
+        // solo pasaba con letras: si el pulgar del ESPACIO se soltaba después de tocar la
+        // siguiente letra, la letra salía antes que el espacio ("holaq ue"). Ahora el espacio
+        // también se escribe en el momento en que el otro dedo baja, en el orden real.
+        for (o in dedos.values) if (o.modo == Modo.NORMAL) {
+            val tipo = o.tecla?.tecla?.tipo
+            if (tipo == K.TEXTO) {
+                removeCallbacks(o.larga)
+                emitir(o)
+                o.modo = Modo.HECHO
+            } else if (tipo == K.ESPACIO) {
+                removeCallbacks(o.larga)
+                oyente?.codigo(K.ESPACIO)
+                o.tecla?.let { liberar(it) }
+                o.modo = Modo.HECHO
+            }
         }
         val dd = Dedo(id)
         dd.x0 = x; dd.y0 = y; dd.x = x; dd.y = y
@@ -590,6 +601,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private val HUNDIR = 1f
     private val VOLVER = 1f
     private val APAGAR = 200f   // al soltar sube con un rebote cortito y el brillo se apaga
+    private val BAJAR = 55f     // se hunde en un instante (se siente, pero no retrasa nada)
     private val EXPANDIR = 1f
     private val HUNDIMIENTO = 0f
 
@@ -625,7 +637,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val p = pulsos[c] ?: return
         if (p.suelta == 0L) {
             val ahora = SystemClock.uptimeMillis()
-            p.nivel = 1f
+            // Desde lo que alcanzó a hundirse (un toque rapidísimo no salta)
+            p.nivel = suave(((ahora - p.t0) / BAJAR).coerceIn(0f, 1f)).coerceAtLeast(0.6f)
             p.suelta = ahora
         }
         invalidate()
@@ -677,42 +690,53 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private fun radioDe(r: RectF) = minOf(dp(8.5f), r.height() * 0.18f)
 
     /**
-     * Tecla de vidrio líquido. Se dibuja UNA vez en la imagen guardada, así que la
-     * profundidad no gasta nada al escribir:
-     * - sombra suave solo por fuera (no ensucia el vidrio),
-     * - cuerpo translúcido apenas más claro arriba,
-     * - filo de luz: brillante en el canto de arriba y casi invisible abajo (refracción).
+     * Tecla de vidrio líquido con volumen. Se dibuja UNA vez en la imagen guardada, así que
+     * todo esto no gasta nada al escribir:
+     * - doble sombra suave solo por fuera (la tecla flota sobre el fondo),
+     * - cuerpo translúcido,
+     * - cúpula de luz arriba (como una gota de vidrio) y un brillo de refracción en la base,
+     * - filo luminoso: fuerte en el canto de arriba, tenue a los lados, un poco abajo.
      */
     private fun dibujarCuerpo(c: Canvas, k: Colocada) {
         val r = k.dibujo
         val radio = radioDe(r)
         val color = colorTecla(k.tecla, false)
-        // Sombra por fuera de la tecla
+        val blanca = k.tecla.tipo == K.SHIFT && shift > 0
         camino.reset(); camino.addRoundRect(r, radio, radio, Path.Direction.CW)
+        // Sombras por fuera
         c.save()
         c.clipOutPath(camino)
-        sombra.color = 0x66000000
-        c.drawRoundRect(r.left + dp(0.5f), r.top + dp(1.6f), r.right - dp(0.5f), r.bottom + dp(1.6f), radio, radio, sombra)
+        sombra.color = 0x33000000
+        c.drawRoundRect(r.left - dp(0.5f), r.top + dp(2.5f), r.right + dp(0.5f), r.bottom + dp(3.5f), radio + dp(1f), radio + dp(1f), sombra)
+        sombra.color = 0x59000000
+        c.drawRoundRect(r.left + dp(0.3f), r.top + dp(1.2f), r.right - dp(0.3f), r.bottom + dp(1.4f), radio, radio, sombra)
         c.restore()
-        // Cuerpo de vidrio
-        relleno.color = 0xFFFFFFFF.toInt()
-        val a = Color.alpha(color)
-        relleno.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.bottom,
-            Tema.mezclar(0xFFFFFFFF.toInt(), color, 0f).let { (minOf(255, a + 0x0C) shl 24) or (it and 0xFFFFFF) },
-            (maxOf(0, a - 0x06) shl 24) or (color and 0xFFFFFF),
-            android.graphics.Shader.TileMode.CLAMP)
-        c.drawRoundRect(r, radio, radio, relleno)
+        // Cuerpo
         relleno.shader = null
-        // Filo de luz (canto de arriba brillante, abajo casi nada)
-        if (!(k.tecla.tipo == K.SHIFT && shift > 0)) {
-            brillo.strokeWidth = dp(0.8f)
+        relleno.color = color
+        c.drawRoundRect(r, radio, radio, relleno)
+        if (!blanca) {
+            c.save()
+            c.clipPath(camino)
+            // Cúpula de luz arriba
+            relleno.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.55f,
+                0x24FFFFFF, 0x00FFFFFF, android.graphics.Shader.TileMode.CLAMP)
+            c.drawRect(r.left, r.top, r.right, r.top + r.height() * 0.55f, relleno)
+            // Refracción en la base
+            relleno.shader = android.graphics.LinearGradient(0f, r.bottom - r.height() * 0.28f, 0f, r.bottom,
+                0x00FFFFFF, 0x12FFFFFF, android.graphics.Shader.TileMode.CLAMP)
+            c.drawRect(r.left, r.bottom - r.height() * 0.28f, r.right, r.bottom, relleno)
+            relleno.shader = null
+            c.restore()
+            // Filo luminoso
+            brillo.strokeWidth = dp(0.9f)
             brillo.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.bottom,
-                intArrayOf(0x52FFFFFF, 0x0DFFFFFF, 0x14FFFFFF), floatArrayOf(0f, 0.55f, 1f),
+                intArrayOf(0x73FFFFFF, 0x14FFFFFF, 0x0AFFFFFF, 0x1FFFFFFF), floatArrayOf(0f, 0.3f, 0.7f, 1f),
                 android.graphics.Shader.TileMode.CLAMP)
-            c.drawRoundRect(r.left + dp(0.4f), r.top + dp(0.4f), r.right - dp(0.4f), r.bottom - dp(0.4f), radio, radio, brillo)
+            c.drawRoundRect(r.left + dp(0.45f), r.top + dp(0.45f), r.right - dp(0.45f), r.bottom - dp(0.45f), radio, radio, brillo)
             brillo.shader = null
         }
-        if (k.tecla.tipo == K.SHIFT && shift > 0) flechaNegra(c, k)
+        if (blanca) flechaNegra(c, k)
     }
 
     /** Flecha rellena negra de la mayúscula activa (con rayita debajo si está fija) */
@@ -783,9 +807,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val r = k.dibujo
         val l = luzDe(p, ahora)
         // Hundimiento: apretada = 1; al soltar vuelve con un rebote amortiguado
-        val h = if (p.suelta == 0L) 1f else {
+        val h = if (p.suelta == 0L) suave(((ahora - p.t0) / BAJAR).coerceIn(0f, 1f)) else {
             val t = ((ahora - p.suelta) / APAGAR).coerceIn(0f, 1f)
-            (1f - t) * kotlin.math.cos(t * 4.2f) * (1f - t * 0.3f)
+            p.nivel * (1f - t) * kotlin.math.cos(t * 4.2f) * (1f - t * 0.3f)
         }
         val s = 1f - 0.05f * h
         val cx = r.centerX(); val cy = r.centerY() + dp(1f) * h
@@ -952,7 +976,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 if (terminado(e.value, ahora)) { it.remove(); continue }
                 dibujarPulso(c, e.key, e.value, ahora, fondo, letras)
             }
-            if (pulsos.values.any { it.suelta != 0L }) postInvalidateOnAnimation()
+            if (pulsos.values.any { it.suelta != 0L || ahora - it.t0 < BAJAR }) postInvalidateOnAnimation()
         }
 
         // Estela al deslizar (se afina hacia el final, como una pincelada)

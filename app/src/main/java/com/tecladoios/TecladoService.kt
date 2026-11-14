@@ -986,6 +986,9 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 // cursor: si la palabra sigue ahí, era un aviso atrasado y se ignora; si no, se
                 // suelta. Antes se ignoraba a ciegas y, si enviabas rápido, la palabra enviada
                 // volvía a aparecer al escribir la siguiente letra.
+                // Escribiendo rápido llegan muchos avisos atrasados con la palabra aún abierta:
+                // esos se ignoran sin preguntarle nada a la app (preguntar cada vez trababa)
+                if (nuestra && candidatesStart >= 0 && newSelStart == newSelEnd) return
                 if (nuestra && newSelStart == newSelEnd && newSelEnd > 0 && antes(palabra.length) == palabra.toString()) return
                 currentInputConnection?.finishComposingText()
                 reiniciarPalabra()

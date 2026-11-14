@@ -224,32 +224,13 @@ class Barra(context: Context) : View(context) {
         val ancho = anchoUtil / 3
         val desplazamiento = boton + dp(4f)
         var seguir = false
-        // La palabra que se pondrá sola va en una cápsula de vidrio (como el iPhone)
-        if (destacada >= 0 && celdas[1] != null) {
-            val cxD = ancho + ancho / 2
-            val medio = minOf(ancho / 2 - dp(4f), fuerte.measureText(celdas[1]!!) / 2 + dp(16f))
-            r.set(cxD - medio, dp(6f), cxD + medio, h - dp(6f))
-            capsula(c, r, 0x47FFFFFF)
-        }
-        // Casilla bajo el dedo: cápsula de vidrio mientras lo mantienes
-        if (tocando && !arrastrando && toqueX >= desplazamiento) {
-            val i = ((toqueX - desplazamiento) / ancho).toInt().coerceIn(0, 2)
-            if (celdas[i] != null) {
-                r.set(i * ancho + dp(4f), dp(5f), (i + 1) * ancho - dp(4f), h - dp(5f))
-                capsula(c, r, 0x29FFFFFF)
-            }
-        }
-        // Al elegir: la cápsula se enciende y se apaga (vidrio, cortito)
+        // Sin cápsulas: la palabra destacada, la que tocas y la que eliges solo brillan más
+        val celdaTocada = if (tocando && !arrastrando && toqueX >= desplazamiento)
+            ((toqueX - desplazamiento) / ancho).toInt().coerceIn(0, 2) else -1
+        var brilloElegida = 0f
         if (elegidaCelda in 0..2) {
             val t = ((ahora - elegidaMs) / DESTELLO).coerceIn(0f, 1f)
-            if (t < 1f) {
-                val u = 1f - t
-                val cxD = elegidaCelda * ancho + ancho / 2
-                val medio = ancho / 2 - dp(4f) * (1f + t)
-                r.set(cxD - medio, dp(5f), cxD + medio, h - dp(5f))
-                capsula(c, r, ((0x80 * u * u).toInt() shl 24) or 0xFFFFFF)
-                seguir = true
-            } else elegidaCelda = -1
+            if (t < 1f) { brilloElegida = (1f - t) * (1f - t); seguir = true } else elegidaCelda = -1
         }
         for (i in 0 until 3) {
             val cambio = celdas[i] != celdaPrevia[i]
@@ -278,14 +259,24 @@ class Barra(context: Context) : View(context) {
             c.scale(escalaC, escalaC, x0 + ancho / 2, h / 2)
             // Sin cápsula ni color: la palabra que se pondrá sola brilla (blanco intenso con un
             // halo suave) y las demás quedan en un blanco más tenue
-            // Todas bien legibles; la que se pondrá sola, blanca y en negrita dentro de su cápsula
-            p.color = if (destacadaAqui) 0xFFFFFFFF.toInt() else 0xF0F2F2F7.toInt()
+            // Todas legibles; la que se pondrá sola (o la que tocas) blanca con un reflejo de luz
+            val brillaTocada = i == celdaTocada
+            val brillaElegida = if (i == elegidaCelda) brilloElegida else 0f
+            p.color = if (destacadaAqui || brillaTocada || brillaElegida > 0f) 0xFFFFFFFF.toInt() else 0xD9EBEBF5.toInt()
+            val halo = when {
+                brillaElegida > 0f -> brillaElegida
+                destacadaAqui -> 0.75f
+                brillaTocada -> 0.55f
+                else -> 0f
+            }
+            if (halo > 0f) p.setShadowLayer(dp(5f) + dp(7f) * halo, 0f, 0f, ((0xCC * halo).toInt() shl 24) or 0xFFFFFF)
             val mostrado = if (esLiteral[i]) "«$s»" else s
             val corto = TextUtils.ellipsize(mostrado, p, ancho - dp(22f), TextUtils.TruncateAt.MIDDLE).toString()
             val alfaBase = p.alpha
             p.alpha = (alfaBase * (0.15f + 0.85f * ec)).toInt()
             c.drawText(corto, x0 + ancho / 2, h / 2 + p.textSize * 0.36f, p)
             p.alpha = alfaBase
+            if (halo > 0f) p.clearShadowLayer()
             c.restore()
             val rr = RectF(desplazamiento + x0, 0f, desplazamiento + x0 + ancho, h)
             val lit = esLiteral[i]
