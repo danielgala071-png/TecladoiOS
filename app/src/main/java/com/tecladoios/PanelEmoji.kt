@@ -109,8 +109,7 @@ class PanelEmoji(context: Context) : View(context) {
             inicioX[k] = x
             // Recientes vacío: un espacio para el aviso, sin pisar la sección que sigue
             columnas[k] = if (cat.emojis.isEmpty()) 0 else (cat.emojis.size + FILAS - 1) / FILAS
-            val ancho = if (cat.emojis.isEmpty()) dp(170f) else columnas[k] * cel
-            x += ancho + SEPARACION_DP * d
+            x += anchoSeccion(k, cel) + SEPARACION_DP * d
         }
         anchoTotal = x
     }
@@ -126,7 +125,16 @@ class PanelEmoji(context: Context) : View(context) {
 
     // ---------- Medidas ----------
 
-    private val SEPARACION_DP = 22f
+    private val SEPARACION_DP = 30f
+
+    /** Columna un poco más ancha que alta: los emojis respiran como en el iPhone */
+    private fun anchoCol(cel: Float) = cel * 1.12f
+
+    /** Ancho de cada sección; la de recientes siempre deja lugar para al menos 6 columnas */
+    private fun anchoSeccion(k: Int, cel: Float): Float {
+        val cols = if (k == 0) maxOf(columnas[k], 6) else columnas[k]
+        return cols * anchoCol(cel)
+    }
     private fun altoAbajo() = dp(46f)
     private fun arribaGrilla() = dp(30f)
     private fun celda() = (height - altoAbajo() - arribaGrilla() - dp(4f)) / FILAS.toFloat()
@@ -150,9 +158,9 @@ class PanelEmoji(context: Context) : View(context) {
         val ax = x + corrimiento
         val fila = ((y - arribaGrilla()) / cel).toInt().coerceIn(0, FILAS - 1)
         for (k in categorias.indices) {
-            val ancho = columnas[k] * cel
+            val ancho = columnas[k] * anchoCol(cel)
             if (ax >= inicioX[k] && ax < inicioX[k] + ancho) {
-                val col = ((ax - inicioX[k]) / cel).toInt()
+                val col = ((ax - inicioX[k]) / anchoCol(cel)).toInt()
                 return categorias[k].emojis.getOrNull(col * FILAS + fila)
             }
         }
@@ -195,7 +203,7 @@ class PanelEmoji(context: Context) : View(context) {
         // Títulos: cada sección tiene el suyo; el de la sección actual se queda pegado a la izquierda
         titulo.textSize = dp(12f); titulo.color = tema.textoSuave
         for (k in categorias.indices) {
-            val ancho = if (columnas[k] == 0) dp(170f) else columnas[k] * cel
+            val ancho = anchoSeccion(k, cel)
             val x0 = inicioX[k] - corrimiento
             if (x0 > w || x0 + ancho < 0) continue
             val nombre = categorias[k].nombre
@@ -207,26 +215,36 @@ class PanelEmoji(context: Context) : View(context) {
         }
 
         // Emojis (solo las columnas visibles)
-        emojiP.textSize = cel * 0.76f
+        emojiP.textSize = cel * 0.68f
+        val colW = anchoCol(cel)
         c.save()
         c.clipRect(0f, arribaGrilla() - dp(2f), w, yAbajo)
         for ((k, cat) in categorias.withIndex()) {
             val x0 = inicioX[k] - corrimiento
             if (cat.emojis.isEmpty()) {
-                if (x0 < w && x0 + dp(170f) > 0) {
-                    aviso.textSize = dp(13.5f); aviso.color = tema.textoSuave
-                    c.drawText("Aquí aparecerán", x0 + dp(4f), arribaGrilla() + cel * 1.2f, aviso)
-                    c.drawText("tus emojis", x0 + dp(4f), arribaGrilla() + cel * 1.2f + dp(18f), aviso)
+                val anchoR = anchoSeccion(k, cel)
+                if (x0 < w && x0 + anchoR > 0) {
+                    // Aviso centrado en el espacio reservado, con un marco punteado tenue
+                    r.set(x0 + dp(2f), arribaGrilla() + dp(4f), x0 + anchoR - dp(2f), arribaGrilla() + cel * FILAS - dp(6f))
+                    relleno.style = Paint.Style.STROKE; relleno.strokeWidth = d
+                    relleno.color = 0x24FFFFFF
+                    relleno.pathEffect = android.graphics.DashPathEffect(floatArrayOf(dp(5f), dp(4f)), 0f)
+                    c.drawRoundRect(r, dp(14f), dp(14f), relleno)
+                    relleno.pathEffect = null; relleno.style = Paint.Style.FILL
+                    aviso.textSize = dp(13.5f); aviso.color = tema.textoSuave; aviso.textAlign = Paint.Align.CENTER
+                    c.drawText("Aquí aparecerán", r.centerX(), r.centerY() - dp(4f), aviso)
+                    c.drawText("tus emojis", r.centerX(), r.centerY() + dp(14f), aviso)
+                    aviso.textAlign = Paint.Align.LEFT
                 }
                 continue
             }
-            val ancho = columnas[k] * cel
+            val ancho = columnas[k] * colW
             if (x0 > w || x0 + ancho < 0) continue
-            val primera = ((-x0) / cel).toInt().coerceAtLeast(0)
-            val ultima = minOf(columnas[k] - 1, ((w - x0) / cel).toInt())
+            val primera = ((-x0) / colW).toInt().coerceAtLeast(0)
+            val ultima = minOf(columnas[k] - 1, ((w - x0) / colW).toInt())
             for (col in primera..ultima) for (fila in 0 until FILAS) {
                 val e = cat.emojis.getOrNull(col * FILAS + fila) ?: break
-                val cx = x0 + col * cel + cel / 2
+                val cx = x0 + col * colW + colW / 2
                 val cy = arribaGrilla() + fila * cel + cel / 2
                 if (e == presionado) {
                     relleno.color = 0x22FFFFFF

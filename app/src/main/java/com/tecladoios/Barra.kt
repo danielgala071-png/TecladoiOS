@@ -146,7 +146,13 @@ class Barra(context: Context) : View(context) {
             val p = if (i == 1 && destacada >= 0) fuerte else texto
             p.color = if (i == 1 && destacada >= 0) tema.acento else tema.texto
             val mostrado = if (esLiteral[i]) "«$s»" else s
-            val corto = TextUtils.ellipsize(mostrado, p, ancho - dp(14f), TextUtils.TruncateAt.MIDDLE).toString()
+            val corto = TextUtils.ellipsize(mostrado, p, ancho - dp(22f), TextUtils.TruncateAt.MIDDLE).toString()
+            if (i == 1 && destacada >= 0) {
+                // La palabra que se pondrá sola va en una cápsula suave del color de la app
+                val pw = minOf(p.measureText(corto) + dp(26f), ancho - dp(8f))
+                relleno.color = Tema.mezclar(tema.acento, 0xFF000000.toInt(), 0.2f)
+                c.drawRoundRect(x0 + ancho / 2 - pw / 2, h / 2 - dp(15f), x0 + ancho / 2 + pw / 2, h / 2 + dp(15f), dp(15f), dp(15f), relleno)
+            }
             c.drawText(corto, x0 + ancho / 2, h / 2 + p.textSize * 0.36f, p)
             val rr = RectF(x0, 0f, x0 + ancho, h)
             val lit = esLiteral[i]
@@ -205,6 +211,9 @@ class Barra(context: Context) : View(context) {
         val s = dp(30f)
         for (hId in herrs) {
             val cx = x + anchoHerr / 2; val cy = h / 2
+            // Cada herramienta en un botón redondo oscuro
+            relleno.color = 0xFF1C1C1E.toInt()
+            c.drawCircle(cx, cy, dp(17f), relleno)
             when (hId) {
                 H_EMOJI -> Iconos.cara(c, cx, cy, s, icono)
                 H_PORTAPAPELES -> Iconos.portapapeles(c, cx, cy, s, icono)

@@ -148,10 +148,16 @@ class Capa(context: Context) : View(context) {
             val a = (alfa * 255).toInt()
             c.save()
             c.scale(escala, escala, tecla.centerX(), tecla.bottom)
-            sombra.alpha = (a * 0.4f).toInt()
-            c.save(); c.translate(0f, 1.5f * d); c.drawPath(forma, sombra); c.restore()
-            pintura.color = tema.globo; pintura.alpha = a
+            sombra.alpha = (a * 0.55f).toInt()
+            c.save(); c.translate(0f, 3f * d); c.drawPath(forma, sombra); c.restore()
+            // Globo con un degradado suave (más claro arriba) y filo de luz
+            pintura.shader = android.graphics.LinearGradient(0f, limites.top, 0f, tecla.bottom,
+                Tema.mezclar(0xFFFFFFFF.toInt(), tema.globo, 0.08f), tema.globo, android.graphics.Shader.TileMode.CLAMP)
+            pintura.alpha = a
             c.drawPath(forma, pintura)
+            pintura.shader = null
+            brilloG.color = 0x24FFFFFF; brilloG.alpha = (0x24 * alfa).toInt()
+            c.drawPath(forma, brilloG)
             letraP.color = tema.texto; letraP.alpha = a
             letraP.textSize = tecla.height() * 0.78f
             val cy = limites.top + (tecla.top - limites.top) * 0.5f

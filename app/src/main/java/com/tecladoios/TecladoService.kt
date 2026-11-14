@@ -935,11 +935,13 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     }
 
     private fun mostrarPanel(p: Panel) {
+        val antes = panel
         panel = p
-        teclado?.visibility = if (p == Panel.TECLADO) View.VISIBLE else View.INVISIBLE
-        panelEmoji?.visibility = if (p == Panel.EMOJI) View.VISIBLE else View.GONE
-        panelEdicion?.visibility = if (p == Panel.EDICION) View.VISIBLE else View.GONE
-        panelCopiado?.visibility = if (p == Panel.PORTAPAPELES) View.VISIBLE else View.GONE
+        val animar = antes != p && marco?.isShown == true
+        transicion(teclado, p == Panel.TECLADO, View.INVISIBLE, animar)
+        transicion(panelEmoji, p == Panel.EMOJI, View.GONE, animar)
+        transicion(panelEdicion, p == Panel.EDICION, View.GONE, animar)
+        transicion(panelCopiado, p == Panel.PORTAPAPELES, View.GONE, animar)
         when (p) {
             Panel.EMOJI -> { soltarComposicion(); panelEmoji?.refrescar() }
             Panel.PORTAPAPELES -> { panelCopiado?.activo = cfg.portapapeles; panelCopiado?.elementos = portapapeles.elementos() }
@@ -948,6 +950,32 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         }
         teclado?.cancelarTodo()
         actualizarBarra()
+    }
+
+    /**
+     * Cambio de panel con transición: el que entra aparece subiendo apenas y el que sale se
+     * desvanece rápido. Usa las animaciones de Android (en la GPU: casi no gasta).
+     */
+    private fun transicion(v: View?, mostrar: Boolean, oculto: Int, animar: Boolean) {
+        v ?: return
+        v.animate().cancel()
+        val dy = 10 * resources.displayMetrics.density
+        if (mostrar) {
+            if (v.visibility == View.VISIBLE && v.alpha == 1f) return
+            v.visibility = View.VISIBLE
+            if (animar) {
+                v.alpha = 0f; v.translationY = dy
+                v.animate().alpha(1f).translationY(0f).setDuration(190L)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator(1.6f)).withLayer().start()
+            } else { v.alpha = 1f; v.translationY = 0f }
+        } else {
+            if (v.visibility != View.VISIBLE) return
+            if (animar) {
+                v.animate().alpha(0f).setDuration(110L).withLayer().withEndAction {
+                    v.visibility = oculto; v.alpha = 1f; v.translationY = 0f
+                }.start()
+            } else v.visibility = oculto
+        }
     }
 
     override fun abc() {

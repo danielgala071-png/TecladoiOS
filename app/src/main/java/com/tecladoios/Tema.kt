@@ -18,7 +18,7 @@ class Tema(val acento: Int) {
     val teclaFuncion = 0xFF2B2B2E.toInt()   // shift, borrar, 123, intro (más oscuras)
     val teclaPresionada = 0xFF6E6E73.toInt()
     val funcionPresionada = 0xFF4E4E52.toInt()  // al presionar toma el tono de las letras
-    val brillo = 0x00FFFFFF                 // sin reflejos: teclas planas
+    val brillo = 0x1CFFFFFF                 // filo de luz finísimo arriba de cada tecla (relieve)
     val texto = 0xFFFFFFFF.toInt()
     val textoSuave = 0x99FFFFFF.toInt()
     val pista = 0x80FFFFFF.toInt()

@@ -45,7 +45,15 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     val geo = Cerebro.geo
 
     var distribucion: Distribucion = Distribuciones.crear(Distribuciones.LETRAS, 0, false)
-        set(v) { field = v; reacomodar(); ensuciar() }
+        set(v) {
+            // Transición: la distribución anterior se desvanece encima de la nueva (abc ↔ 123)
+            if (field.nombre != v.nombre && cache != null && isShown) {
+                anterior?.recycle()
+                anterior = cache; cache = null
+                cambioMs = SystemClock.uptimeMillis()
+            }
+            field = v; reacomodar(); ensuciar()
+        }
 
     /** 0 minúsculas, 1 mayúscula, 2 bloqueo */
     var shift = 0; set(v) { if (field != v) { field = v; ensuciar() } }
@@ -306,6 +314,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val c = buscar(x, y) ?: run { dd.modo = Modo.HECHO; return }
         dd.tecla = c
         presionadas.add(c)
+        encendidas[c] = SystemClock.uptimeMillis()
         val t = c.tecla
         oyente?.respuesta(tipoRespuesta(t))
         val retardo = (config?.retardoLarga ?: 320).toLong()
@@ -486,7 +495,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             removeCallbacks(dd.larga); removeCallbacks(dd.repetir)
             if (dd.modo == Modo.BORRAR_SEL) oyente?.terminarSeleccionBorrar(false)
         }
-        dedos.clear(); presionadas.clear(); apagando.clear(); modoTrackpad = false
+        dedos.clear(); presionadas.clear(); apagando.clear(); encendidas.clear(); modoTrackpad = false
         capa.ocultarGlobo(); capa.ocultarOpciones()
         invalidate()
     }
@@ -496,6 +505,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         cancelarTodo()
         // La imagen guardada se suelta: el teclado escondido no ocupa memoria
         cache?.recycle(); cache = null; sucio = true
+        anterior?.recycle(); anterior = null
     }
 
     // ---------- Dibujo ----------
@@ -519,15 +529,20 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private var cache: Bitmap? = null
     private var sucio = true
     private val apagando = HashMap<Colocada, Long>()
-    private val DURACION_APAGADO = 140f
+    private val DURACION_APAGADO = 190f
+    private val encendidas = HashMap<Colocada, Long>()
+    private var anterior: Bitmap? = null
+    private var cambioMs = 0L
+    private val pinturaAnterior = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val DURACION_CAMBIO = 150f
+    private val DURACION_ENCENDIDO = 70f
 
     private fun ensuciar() { sucio = true; invalidate() }
 
     private fun prepararPinturas() {
         borde.strokeWidth = dp(0.6f)
         borde.color = tema.bordeTecla
-        brillo.strokeWidth = dp(1f)
-        sombra.color = 0xFF000000.toInt()
+        brillo.strokeWidth = dp(0.8f)
         letra.textSize = altoFila * 0.46f
         chica.textSize = minOf(altoFila * 0.29f, dp(16f))
         pista.textSize = altoFila * 0.19f
@@ -553,14 +568,28 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val t = k.tecla
         val r = k.dibujo
         // Esquinas bien redondeadas, como las teclas de vidrio
-        val radio = minOf(dp(7.5f), r.height() * 0.17f)
-        if (!apretada) c.drawRoundRect(r.left, r.top + dp(0.7f), r.right, r.bottom + dp(0.7f), radio, radio, sombra)
-        relleno.color = colorTecla(t, apretada)
-        relleno.alpha = (relleno.alpha * fondo).toInt().coerceIn(0, 255)
-        c.drawRoundRect(r, radio, radio, relleno)
+        val radio = minOf(dp(8f), r.height() * 0.18f)
+        val base = colorTecla(t, apretada)
+        if (!apretada) {
+            // Sombra en dos capas: da profundidad, como una tecla física (se dibuja una sola vez)
+            sombra.color = 0x66000000
+            c.drawRoundRect(r.left, r.top + dp(1.6f), r.right, r.bottom + dp(1.6f), radio, radio, sombra)
+            sombra.color = 0xFF000000.toInt()
+            c.drawRoundRect(r.left, r.top + dp(0.8f), r.right, r.bottom + dp(0.8f), radio, radio, sombra)
+            // Degradado vertical apenas visible: más luz arriba, más sombra abajo
+            relleno.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.bottom,
+                Tema.mezclar(0xFFFFFFFF.toInt(), base, 0.07f), Tema.mezclar(0xFF000000.toInt(), base, 0.06f),
+                android.graphics.Shader.TileMode.CLAMP)
+            c.drawRoundRect(r, radio, radio, relleno)
+            relleno.shader = null
+        } else {
+            relleno.color = base
+            relleno.alpha = (relleno.alpha * fondo).toInt().coerceIn(0, 255)
+            c.drawRoundRect(r, radio, radio, relleno)
+        }
         // Reflejo fino en el borde de arriba (efecto vidrio)
         if (Color.alpha(tema.brillo) > 0 && !(t.tipo == K.SHIFT && shift > 0) && !(t.tipo == K.INTRO && introDestacado)) {
-            brillo.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.5f,
+            brillo.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.35f,
                 tema.brillo, 0x00FFFFFF, android.graphics.Shader.TileMode.CLAMP)
             brillo.alpha = (255 * fondo).toInt().coerceIn(0, 255)
             c.drawRoundRect(r.left + dp(0.5f), r.top + dp(0.5f), r.right - dp(0.5f), r.bottom - dp(0.5f), radio, radio, brillo)
@@ -626,9 +655,28 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             sucio = false
         }
         c.drawBitmap(bmp, 0f, 0f, null)
+        val previa = anterior
+        if (previa != null) {
+            val t = (SystemClock.uptimeMillis() - cambioMs) / DURACION_CAMBIO
+            if (t >= 1f || previa.width != width || previa.height != height) { previa.recycle(); anterior = null }
+            else {
+                pinturaAnterior.alpha = (255 * (1f - suave(t))).toInt()
+                c.drawBitmap(previa, 0f, 0f, pinturaAnterior)
+                postInvalidateOnAnimation()
+            }
+        }
 
         // Teclas presionadas (encima) y las que se están soltando, apagándose suave
-        for (k in presionadas) dibujarTecla(c, k, true, 1f)
+        val ahoraP = SystemClock.uptimeMillis()
+        var animando = false
+        for (k in presionadas) {
+            // Al presionar, la tecla se ilumina en un instante (no de golpe)
+            val t0 = encendidas[k] ?: ahoraP
+            val t = ((ahoraP - t0) / DURACION_ENCENDIDO).coerceIn(0f, 1f)
+            if (t < 1f) animando = true
+            dibujarTecla(c, k, true, suave(t).coerceAtLeast(0.35f))
+        }
+        if (animando) postInvalidateOnAnimation()
         if (apagando.isNotEmpty()) {
             val ahora = SystemClock.uptimeMillis()
             val it = apagando.entries.iterator()
