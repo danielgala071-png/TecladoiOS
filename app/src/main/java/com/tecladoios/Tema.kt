@@ -15,21 +15,22 @@ class Tema(val acento: Int = ROJO) {
     val fondoAbajo = 0xFF000000.toInt()
     // Grafito neutro para las letras; las teclas de función llevan un leve tinte vino
     // Vidrio: blanco translúcido (letras un poco más claras que las de función)
-    val tecla = 0x30FFFFFF
-    val teclaFuncion = 0x17FFFFFF
-    val teclaPresionada = 0x66FFFFFF
-    val funcionPresionada = 0x42FFFFFF
+    // Letras más claras y teclas de función bien distintas (como el iPhone oscuro)
+    val tecla = 0x3DFFFFFF
+    val teclaFuncion = 0x1AFFFFFF
+    val teclaPresionada = 0x73FFFFFF
+    val funcionPresionada = 0x4DFFFFFF
     val brillo = 0x1CFFFFFF
     val texto = 0xFFF5F5F7.toInt()
-    val textoSuave = 0x99EBEBF5.toInt()
+    val textoSuave = 0xB3EBEBF5.toInt()
     val pista = 0x80EBEBF5.toInt()
     val separador = 0x24FFFFFF
     val barra = 0x00000000
     val globo = 0xF5505057.toInt()
     /** Fondo sin desenfoque (teléfonos que no lo permiten o con ahorro de batería) */
-    val tarjeta = 0xFF17171A.toInt()
+    val tarjeta = 0xFF1A1A1E.toInt()
     /** Tinte oscuro encima del desenfoque */
-    val tarjetaVidrio = 0xB314141A.toInt()
+    val tarjetaVidrio = 0xBF141418.toInt()
     val bordeTecla = 0x14FFFFFF
     val bordePanel = acento
     val rojo = ROJO

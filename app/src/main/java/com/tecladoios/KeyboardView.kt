@@ -589,7 +589,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     // Como el iPhone: la tecla cambia de color al instante al tocarla y vuelve en un suspiro
     private val HUNDIR = 1f
     private val VOLVER = 1f
-    private val APAGAR = 140f   // al soltar, el brillo del vidrio se apaga suave
+    private val APAGAR = 200f   // al soltar sube con un rebote cortito y el brillo se apaga
     private val EXPANDIR = 1f
     private val HUNDIMIENTO = 0f
 
@@ -774,36 +774,65 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private val pinturaHundida = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = sombraHundida }
     private val filoBajo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
 
+    /**
+     * Tecla apretada con profundidad real: se hunde (más chica, sin su sombra), el vidrio se
+     * aclara con una sombra interior arriba y un filo de luz abajo. Al soltar sube con un
+     * rebote cortito. Se copia del dibujo guardado: casi no gasta.
+     */
     private fun dibujarPulso(c: Canvas, k: Colocada, p: Pulso, ahora: Long, fondo: Bitmap, letras: Bitmap) {
-        val l = luzDe(p, ahora)
-        if (l <= 0.01f) return
         val r = k.dibujo
+        val l = luzDe(p, ahora)
+        // Hundimiento: apretada = 1; al soltar vuelve con un rebote amortiguado
+        val h = if (p.suelta == 0L) 1f else {
+            val t = ((ahora - p.suelta) / APAGAR).coerceIn(0f, 1f)
+            (1f - t) * kotlin.math.cos(t * 4.2f) * (1f - t * 0.3f)
+        }
+        val s = 1f - 0.05f * h
+        val cx = r.centerX(); val cy = r.centerY() + dp(1f) * h
         val radio = radioDe(r)
-        // Color de tecla apretada (el vidrio se aclara)
-        relleno.shader = null
-        relleno.color = colorTecla(k.tecla, true)
-        relleno.alpha = (Color.alpha(relleno.color) * l).toInt().coerceIn(0, 255)
-        c.drawRoundRect(r, radio, radio, relleno)
-        relleno.alpha = 255
-        // Hundida: sombra interior desde arriba y un filo de luz abajo (como un botón presionado)
+        // Cuerpo hundido (sin sombra: está pegado al fondo)
+        rr.set(cx - r.width() / 2 * s, cy - r.height() / 2 * s, cx + r.width() / 2 * s, cy + r.height() / 2 * s)
+        val rad = radio * s
+        val m = dp(2.5f)
+        src.set((r.left - m).toInt().coerceAtLeast(0), (r.top - m).toInt().coerceAtLeast(0),
+            (r.right + m).toInt().coerceAtMost(fondo.width), (r.bottom + m * 1.4f).toInt().coerceAtMost(fondo.height))
+        dst.set(cx + (src.left - r.centerX()) * s, cy + (src.top - r.centerY()) * s,
+            cx + (src.right - r.centerX()) * s, cy + (src.bottom - r.centerY()) * s)
+        camino.reset(); camino.addRoundRect(rr, rad, rad, Path.Direction.CW)
         c.save()
-        camino.reset(); camino.addRoundRect(r, radio, radio, Path.Direction.CW)
-        c.clipPath(camino)
-        matrizLuz.setScale(1f, r.height() * 0.55f)
-        matrizLuz.postTranslate(0f, r.top)
-        sombraHundida.setLocalMatrix(matrizLuz)
-        pinturaHundida.alpha = (255 * l).toInt().coerceIn(0, 255)
-        c.drawRect(r.left, r.top, r.right, r.top + r.height() * 0.55f, pinturaHundida)
-        filoBajo.strokeWidth = dp(1.2f)
-        filoBajo.color = 0x2EFFFFFF
-        filoBajo.alpha = (0x2E * l).toInt()
-        c.drawLine(r.left + radio, r.bottom - dp(0.6f), r.right - radio, r.bottom - dp(0.6f), filoBajo)
+        if (h > 0.05f) c.clipPath(camino)   // hundida: sin la sombra de afuera
+        c.drawBitmap(fondo, src, dst, pinturaBmp)
         c.restore()
-        if (k.tecla.tipo == K.SHIFT && shift > 0) { flechaNegra(c, k); return }
-        // La letra encima (en su sitio: debajo hay vidrio translúcido, moverla dejaría un fantasma)
+        if (l > 0.01f) {
+            // El vidrio se aclara
+            relleno.shader = null
+            relleno.color = colorTecla(k.tecla, true)
+            relleno.alpha = (Color.alpha(relleno.color) * l).toInt().coerceIn(0, 255)
+            c.drawRoundRect(rr, rad, rad, relleno)
+            relleno.alpha = 255
+            // Sombra interior arriba y filo de luz abajo
+            c.save()
+            c.clipPath(camino)
+            matrizLuz.setScale(1f, rr.height() * 0.55f)
+            matrizLuz.postTranslate(0f, rr.top)
+            sombraHundida.setLocalMatrix(matrizLuz)
+            pinturaHundida.alpha = (255 * l).toInt().coerceIn(0, 255)
+            c.drawRect(rr.left, rr.top, rr.right, rr.top + rr.height() * 0.55f, pinturaHundida)
+            filoBajo.strokeWidth = dp(1.2f)
+            filoBajo.color = 0x38FFFFFF
+            filoBajo.alpha = (0x38 * l).toInt()
+            c.drawLine(rr.left + rad, rr.bottom - dp(0.6f), rr.right - rad, rr.bottom - dp(0.6f), filoBajo)
+            c.restore()
+        }
+        if (k.tecla.tipo == K.SHIFT && shift > 0) {
+            c.save(); c.scale(s, s, cx, cy); c.translate(0f, cy - r.centerY()); flechaNegra(c, k); c.restore()
+            return
+        }
+        // La letra se hunde con su tecla
         src.set(r.left.toInt().coerceAtLeast(0), r.top.toInt().coerceAtLeast(0),
             (r.right + 1).toInt().coerceAtMost(letras.width), (r.bottom + 1).toInt().coerceAtMost(letras.height))
-        dst.set(src)
+        dst.set(cx + (src.left - r.centerX()) * s, cy + (src.top - r.centerY()) * s,
+            cx + (src.right - r.centerX()) * s, cy + (src.bottom - r.centerY()) * s)
         pinturaLetras.color = tema.texto
         c.drawBitmap(letras, src, dst, pinturaLetras)
     }
@@ -898,6 +927,13 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 guardarLibre(viejoF); guardarLibre(viejoL)
             } else cambiando = true
         }
+        // Las teclas apretadas se recortan de la imagen guardada: así se pueden dibujar
+        // hundidas sin que la tecla quieta se vea debajo del vidrio
+        c.save()
+        for ((k, p) in pulsos) if (!terminado(p, ahora)) {
+            val r = k.dibujo
+            c.clipOutRect(r.left - dp(2.5f), r.top - dp(2.5f), r.right + dp(2.5f), r.bottom + dp(3.5f))
+        }
         if (cambiando && viejoF != null && viejoL != null) {
             dibujarCambio(c, (ahora - cambioMs).toFloat(), filas, fondo, letras, viejoF, viejoL)
             postInvalidateOnAnimation()
@@ -906,6 +942,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             pinturaLetras.color = tema.texto
             c.drawBitmap(letras, 0f, 0f, pinturaLetras)
         }
+        c.restore()
 
         // Teclas apretadas y las que vuelven a su lugar
         if (pulsos.isNotEmpty()) {

@@ -105,14 +105,27 @@ class PanelEmoji(context: Context) : View(context) {
 
     /** Vuelve a leer los recientes y arma las secciones (cada categoría con su título) */
     fun refrescar() {
+        // Sin separar por categorías: tus recientes y luego TODOS los emojis seguidos, en orden
+        // (caritas, gestos, personas, animales, comida…). Abajo quedan atajos para saltar.
         val base = cargar(context)
-        categorias = listOf(Categoria("USADOS RECIENTEMENTE", recientes())) + base
+        val todos = ArrayList<String>(4000)
+        val inicios = IntArray(base.size)
+        for ((i, cat) in base.withIndex()) { inicios[i] = todos.size; todos.addAll(cat.emojis) }
+        inicioCat = inicios
+        atajos = base.map { it.emojis.firstOrNull() ?: "•" }
+        categorias = listOf(Categoria("USADOS RECIENTEMENTE", recientes()), Categoria("EMOJIS", todos))
         celdaArmada = -1f
         corrimiento = 0f
         indicadorX = -1f
         scroller.forceFinished(true)
         invalidate()
     }
+
+    /** Dónde empieza cada grupo dentro de la lista de todos (para los atajos de abajo) */
+    private var inicioCat = IntArray(0)
+    private var atajos: List<String> = emptyList()
+    /** Posición de cada atajo: 0 = recientes, luego cada grupo */
+    private var paradasX = FloatArray(0)
 
     // Cada grupo de una categoría es un bloque aparte: empieza en su propia columna y se llena
     // por filas (de izquierda a derecha), así los emojis parecidos quedan juntos y en orden.
@@ -150,13 +163,19 @@ class PanelEmoji(context: Context) : View(context) {
             x += anchoSeccion(k, cel) + SEPARACION_DP * d
         }
         anchoTotal = x
+        // Atajos: recientes y el inicio de cada grupo dentro de «todos»
+        paradasX = FloatArray(1 + inicioCat.size)
+        paradasX[0] = inicioX.getOrElse(0) { 0f }
+        for (j in inicioCat.indices) paradasX[j + 1] = inicioX.getOrElse(1) { 0f } + (inicioCat[j] / FILAS) * colW
     }
 
     /** Emoji del bloque [g] de la categoría [k] en (columna, fila); null si ese lugar está vacío */
     private fun emojiBloque(k: Int, g: Int, col: Int, fila: Int): String? {
         val cols = bloqueCols[k][g]
         if (col < 0 || col >= cols) return null
-        val i = fila * cols + col
+        // Por columnas (de arriba abajo y luego a la derecha), como el iPhone: el orden se lee
+        // de corrido al deslizar
+        val i = col * FILAS + fila
         if (i >= bloqueN[k][g]) return null
         return categorias[k].emojis.getOrNull(bloqueIni[k][g] + i)
     }
@@ -197,8 +216,8 @@ class PanelEmoji(context: Context) : View(context) {
     private fun categoriaActual(): Int {
         val x = corrimiento + width * 0.3f
         var i = 0
-        for (k in inicioX.indices) if (inicioX[k] <= x) i = k
-        return if (corrimiento >= maxCorrimiento() - 1f && maxCorrimiento() > 0f) inicioX.size - 1 else i
+        for (k in paradasX.indices) if (paradasX[k] <= x) i = k
+        return if (corrimiento >= maxCorrimiento() - 1f && maxCorrimiento() > 0f) (paradasX.size - 1).coerceAtLeast(0) else i
     }
 
     private fun emojiEn(x: Float, y: Float): String? {
@@ -402,7 +421,8 @@ class PanelEmoji(context: Context) : View(context) {
         icono.color = tema.textoSuave
         Iconos.lupa(c, dp(80f), yAbajo + altoAbajo() / 2, dp(30f), icono)
         val izq = dp(100f); val der = w - dp(60f)
-        val paso = (der - izq) / categorias.size
+        val paradas = paradasX.size.coerceAtLeast(1)
+        val paso = (der - izq) / paradas
         val actual = categoriaActual()
         emojiP.textSize = minOf(paso * 0.58f, dp(19f))
         // Indicador de vidrio que se desliza hasta la categoría actual
@@ -422,10 +442,10 @@ class PanelEmoji(context: Context) : View(context) {
             c.drawCircle(indicadorX, cy, rad - dp(0.4f), filoIndicador)
             filoIndicador.shader = null
         }
-        for (k in categorias.indices) {
+        for (k in 0 until paradas) {
             val cx = izq + paso * k + paso / 2
             val cy = yAbajo + altoAbajo() / 2
-            val ic = when (k) { 0 -> "\uD83D\uDD52"; else -> categorias[k].emojis.firstOrNull() ?: "•" }
+            val ic = when (k) { 0 -> "\uD83D\uDD52"; else -> atajos.getOrElse(k - 1) { "•" } }
             emojiP.alpha = if (k == actual) 255 else 150
             dibujarEmoji(c, ic, cx, cy, emojiP.textSize, emojiP.alpha)
         }
@@ -467,12 +487,13 @@ class PanelEmoji(context: Context) : View(context) {
 
     private fun categoriaEnBarra(x: Float): Int {
         val izq = dp(100f); val der = width - dp(60f)
-        return ((x - izq) / ((der - izq) / categorias.size.coerceAtLeast(1))).toInt().coerceIn(0, categorias.size - 1)
+        val n = paradasX.size.coerceAtLeast(1)
+        return ((x - izq) / ((der - izq) / n)).toInt().coerceIn(0, n - 1)
     }
 
     private fun saltarA(k: Int) {
         scroller.forceFinished(true)
-        corrimiento = (inicioX.getOrElse(k) { 0f } - dp(10f)).coerceIn(0f, maxCorrimiento())
+        corrimiento = (paradasX.getOrElse(k) { 0f } - dp(10f)).coerceIn(0f, maxCorrimiento())
         invalidate()
     }
     private var arrastrando = false
@@ -584,9 +605,9 @@ class PanelEmoji(context: Context) : View(context) {
                 x < dp(98f) -> { oyente?.respuesta(Respuesta.Tipo.FUNCION); oyente?.buscar() }
                 x < width - dp(60f) -> {
                     val izq = dp(100f); val der = width - dp(60f)
-                    val k = ((x - izq) / ((der - izq) / categorias.size)).toInt().coerceIn(0, categorias.size - 1)
-                    // Desliza suave hasta la categoría
-                    val destino = (inicioX.getOrElse(k) { 0f } - dp(10f)).coerceIn(0f, maxCorrimiento())
+                    val k = categoriaEnBarra(x)
+                    // Desliza suave hasta ese grupo
+                    val destino = (paradasX.getOrElse(k) { 0f } - dp(10f)).coerceIn(0f, maxCorrimiento())
                     scroller.forceFinished(true)
                     scroller.startScroll(corrimiento.toInt(), 0, (destino - corrimiento).toInt(), 0, 320)
                     oyente?.respuesta(Respuesta.Tipo.SUAVE)

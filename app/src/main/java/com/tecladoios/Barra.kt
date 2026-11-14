@@ -152,7 +152,7 @@ class Barra(context: Context) : View(context) {
     }
 
     private fun dibujarContenido(c: Canvas, w: Float, h: Float) {
-        texto.textSize = dp(16.5f); fuerte.textSize = dp(16.5f)
+        texto.textSize = dp(17.5f); fuerte.textSize = dp(17.5f)
         linea.color = tema.separador; linea.strokeWidth = dp(0.8f); linea.strokeCap = Paint.Cap.ROUND
         if (buscando) { dibujarBusqueda(c, w, h); return }
         porEliminar?.let { dibujarEliminar(c, w, h, it); return }
@@ -229,7 +229,7 @@ class Barra(context: Context) : View(context) {
             val cxD = ancho + ancho / 2
             val medio = minOf(ancho / 2 - dp(4f), fuerte.measureText(celdas[1]!!) / 2 + dp(16f))
             r.set(cxD - medio, dp(6f), cxD + medio, h - dp(6f))
-            capsula(c, r, 0x2EFFFFFF)
+            capsula(c, r, 0x47FFFFFF)
         }
         // Casilla bajo el dedo: cápsula de vidrio mientras lo mantienes
         if (tocando && !arrastrando && toqueX >= desplazamiento) {
@@ -247,7 +247,7 @@ class Barra(context: Context) : View(context) {
                 val cxD = elegidaCelda * ancho + ancho / 2
                 val medio = ancho / 2 - dp(4f) * (1f + t)
                 r.set(cxD - medio, dp(5f), cxD + medio, h - dp(5f))
-                capsula(c, r, ((0x55 * u * u).toInt() shl 24) or 0xFFFFFF)
+                capsula(c, r, ((0x80 * u * u).toInt() shl 24) or 0xFFFFFF)
                 seguir = true
             } else elegidaCelda = -1
         }
@@ -278,7 +278,8 @@ class Barra(context: Context) : View(context) {
             c.scale(escalaC, escalaC, x0 + ancho / 2, h / 2)
             // Sin cápsula ni color: la palabra que se pondrá sola brilla (blanco intenso con un
             // halo suave) y las demás quedan en un blanco más tenue
-            p.color = if (destacadaAqui) 0xFFFFFFFF.toInt() else 0xBFEBEBF5.toInt()
+            // Todas bien legibles; la que se pondrá sola, blanca y en negrita dentro de su cápsula
+            p.color = if (destacadaAqui) 0xFFFFFFFF.toInt() else 0xF0F2F2F7.toInt()
             val mostrado = if (esLiteral[i]) "«$s»" else s
             val corto = TextUtils.ellipsize(mostrado, p, ancho - dp(22f), TextUtils.TruncateAt.MIDDLE).toString()
             val alfaBase = p.alpha
