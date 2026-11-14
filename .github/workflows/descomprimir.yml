@@ -24,7 +24,7 @@ jobs:
             ORIGEN="/tmp/nuevo/$(ls -A /tmp/nuevo)"
           fi
           if [ ! -f "$ORIGEN/settings.gradle.kts" ]; then echo "::error::El zip no es el proyecto"; exit 1; fi
-          rsync -a --delete --exclude '.git/' "$ORIGEN"/ ./
+          rsync -a --delete --exclude '.git/' --exclude '.github/' "$ORIGEN"/ ./
           rm -f -- *.zip
           git config user.name "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
