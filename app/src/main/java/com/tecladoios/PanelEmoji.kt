@@ -402,7 +402,7 @@ class PanelEmoji(context: Context) : View(context) {
             val cx = izq + paso * k + paso / 2
             val cy = yAbajo + altoAbajo() / 2
             if (k == actual) {
-                relleno.color = 0x2EFFFFFF
+                relleno.color = 0x4DFF2D3A
                 c.drawCircle(cx, cy, minOf(paso * 0.46f, dp(16f)), relleno)
             }
             val ic = when (k) { 0 -> "\uD83D\uDD52"; else -> categorias[k].emojis.firstOrNull() ?: "•" }

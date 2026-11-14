@@ -157,7 +157,7 @@ class Capa(context: Context) : View(context) {
             pintura.alpha = a
             c.drawPath(forma, pintura)
             pintura.shader = null
-            brilloG.color = 0x24FFFFFF; brilloG.alpha = (0x24 * alfa).toInt()
+            brilloG.color = 0x59FF2D3A; brilloG.alpha = (0x59 * alfa).toInt()
             c.drawPath(forma, brilloG)
             letraP.color = tema.texto; letraP.alpha = a
             letraP.textSize = tecla.height() * 0.78f
@@ -179,10 +179,10 @@ class Capa(context: Context) : View(context) {
                 val x0 = caja.left + 4 * d + anchoOpcion * i
                 if (i == seleccion) {
                     // Opción elegida: pastilla blanca con letra negra (sin color de app)
-                    pintura.color = 0xFFF5F5F7.toInt()
+                    pintura.color = tema.rojo
                     c.drawRoundRect(x0 + 1 * d, caja.top + 5 * d, x0 + anchoOpcion - 1 * d, caja.bottom - 5 * d, 7 * d, 7 * d, pintura)
                 }
-                letraP.color = if (i == seleccion) 0xFF000000.toInt() else tema.texto
+                letraP.color = tema.texto
                 val tam = if (o.length > 2) letraP.textSize * 0.62f else letraP.textSize
                 val previo = letraP.textSize
                 letraP.textSize = tam

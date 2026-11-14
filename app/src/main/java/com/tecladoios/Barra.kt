@@ -153,7 +153,7 @@ class Barra(context: Context) : View(context) {
             p.color = if (destacadaAqui) 0xFFFFFFFF.toInt() else 0xBFEBEBF5.toInt()
             val mostrado = if (esLiteral[i]) "«$s»" else s
             val corto = TextUtils.ellipsize(mostrado, p, ancho - dp(22f), TextUtils.TruncateAt.MIDDLE).toString()
-            if (destacadaAqui) p.setShadowLayer(dp(7f), 0f, 0f, 0x8CFFFFFF.toInt())
+            if (destacadaAqui) p.setShadowLayer(dp(8f), 0f, 0f, 0xB3FF2D3A.toInt())
             c.drawText(corto, x0 + ancho / 2, h / 2 + p.textSize * 0.36f, p)
             if (destacadaAqui) p.clearShadowLayer()
             val rr = RectF(x0, 0f, x0 + ancho, h)
@@ -215,7 +215,7 @@ class Barra(context: Context) : View(context) {
             val cx = x + anchoHerr / 2; val cy = h / 2
             // Cada herramienta en un botón redondo oscuro
             val apretado = toqueX in x..(x + anchoHerr) && tocando
-            relleno.color = if (apretado) 0xFF3A3A3D.toInt() else 0xFF1C1C1E.toInt()
+            relleno.color = if (apretado) 0xFF4A1E24.toInt() else 0xFF1A1618.toInt()
             c.drawCircle(cx, cy, dp(17f), relleno)
             // Aro de luz finísimo: el botón se ve con relieve
             linea.color = 0x1AFFFFFF; linea.strokeWidth = d * 0.7f

@@ -59,7 +59,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private var panelCopiado: PanelPortapapeles? = null
     private var ajusteTamano: AjusteTamano? = null
     private var tema = Tema(Tema.AZUL)
-    private var acentoApp = Tema.PLATA
+    private var acentoApp = Tema.ROJO
 
     // Estado de la escritura
     private val palabra = StringBuilder()
@@ -218,7 +218,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         // Color de la app
         val pkg = info.packageName
         // Sin el color de cada app: el teclado siempre igual, negro AMOLED con detalles en plata
-        aplicarTema(Tema.PLATA)
+        aplicarTema(Tema.ROJO)
         actualizarShift()
         revisarCaptura(info)
         actualizarBarra()
@@ -294,7 +294,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     private fun aplicarTema(acento: Int) {
         acentoApp = acento
-        val t = Tema(Tema.PLATA)
+        val t = Tema(Tema.ROJO)
         tema = t
         marco?.tema = t; teclado?.tema = t; barra?.tema = t; capa?.tema = t
         panelEmoji?.tema = t; panelEdicion?.tema = t; panelCopiado?.tema = t; ajusteTamano?.tema = t
@@ -1227,8 +1227,19 @@ class Marco(c: Context) : FrameLayout(c) {
         fondo.shader = null
         fondo.color = tema.tarjeta
         c.drawPath(forma, fondo)
-        // Filo de luz finísimo arriba de la tarjeta (detalle premium)
-        borde.color = 0x1AFFFFFF; borde.strokeWidth = 0.7f * d
+        // Filo rojo arriba que se apaga hacia los lados, con un resplandor suave hacia abajo
+        val cx = w / 2f
+        borde.shader = android.graphics.LinearGradient(0f, 0f, w, 0f,
+            intArrayOf(0x00FF2D3A, 0xCCFF2D3A.toInt(), 0x00FF2D3A), floatArrayOf(0.08f, 0.5f, 0.92f),
+            android.graphics.Shader.TileMode.CLAMP)
+        borde.strokeWidth = 1.2f * d
+        c.drawLine(r.left + arriba, r.top + 0.6f * d, r.right - arriba, r.top + 0.6f * d, borde)
+        borde.shader = null
+        fondo.shader = android.graphics.RadialGradient(cx, 0f, w * 0.45f, 0x26FF2D3A, 0x00FF2D3A,
+            android.graphics.Shader.TileMode.CLAMP)
+        c.save(); c.clipPath(forma); c.drawRect(0f, 0f, w, 26 * d, fondo); c.restore()
+        fondo.shader = null
+        borde.color = 0x14FFFFFF; borde.strokeWidth = 0.7f * d
         c.drawArc(r.left, r.top, r.left + 2 * arriba, r.top + 2 * arriba, 180f, 90f, false, borde)
         c.drawLine(r.left + arriba, r.top, r.right - arriba, r.top, borde)
         c.drawArc(r.right - 2 * arriba, r.top, r.right, r.top + 2 * arriba, 270f, 90f, false, borde)

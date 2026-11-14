@@ -11,29 +11,34 @@ import java.util.concurrent.Executors
  * con teclas como las del iPhone en modo oscuro: letras gris oscuro, teclas de función más
  * oscuras y texto blanco. El color de la app queda solo en el filo y los detalles.
  */
-class Tema(val acento: Int = PLATA) {
+class Tema(val acento: Int = ROJO) {
     val fondo = 0xFF000000.toInt()
     val fondoAbajo = 0xFF000000.toInt()
-    // Grafito con un leve tono frío: sobre negro puro se ve elegante y no cansa la vista
-    val tecla = 0xFF3A3A40.toInt()          // letras
-    val teclaFuncion = 0xFF26262B.toInt()   // shift, borrar, 123, intro
-    val teclaPresionada = 0xFF5A5A62.toInt()
-    val funcionPresionada = 0xFF42424A.toInt()
-    val brillo = 0x1CFFFFFF                 // filo de luz finísimo arriba de cada tecla (relieve)
-    val texto = 0xFFF5F5F7.toInt()          // blanco suave (menos duro que el blanco puro)
+    // Grafito neutro para las letras; las teclas de función llevan un leve tinte vino
+    val tecla = 0xFF38383E.toInt()
+    val teclaFuncion = 0xFF2A2124.toInt()
+    val teclaPresionada = 0xFF5A4348.toInt()     // al presionar, el gris toma un toque rojo
+    val funcionPresionada = 0xFF4A2E33.toInt()
+    val brillo = 0x1CFFFFFF
+    val texto = 0xFFF5F5F7.toInt()
     val textoSuave = 0x99EBEBF5.toInt()
     val pista = 0x80EBEBF5.toInt()
     val separador = 0x24FFFFFF
     val barra = 0x00000000
-    val globo = 0xFF4C4C54.toInt()
-    val tarjeta = 0xFF000000.toInt()        // negro puro: AMOLED total
+    val globo = 0xFF46464D.toInt()
+    val tarjeta = 0xFF000000.toInt()
     val bordeTecla = 0x14FFFFFF
     val bordePanel = acento
-    val estela = 0xCCF5F5F7.toInt()         // trazo de deslizar: blanco perla
-    val introActivo = 0xFF55555E.toInt()    // tecla enviar/buscar: grafito más claro, sin color
+    val rojo = ROJO
+    val rojoOscuro = 0xFFB3121F.toInt()
+    val brilloRojo = 0x66FF2D3A                  // resplandor rojo semitransparente
+    val estela = ROJO
+    val introActivo = ROJO
 
     companion object {
         const val AZUL = 0xFF0A84FF.toInt()
+        /** Rojo vivo del teclado (combina con el negro AMOLED) */
+        const val ROJO = 0xFFFF2D3A.toInt()
         /** Detalles en plata (sin el color de cada app) */
         const val PLATA = 0xFFC7C7CF.toInt()
 
