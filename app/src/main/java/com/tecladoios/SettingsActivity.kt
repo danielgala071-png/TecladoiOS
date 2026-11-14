@@ -219,6 +219,7 @@ class SettingsActivity : Activity() {
         deslizador(tec, "Espacio debajo del teclado", Ajustes.MARGEN_ABAJO, 0, 120, 0) { "$it" }
         deslizador(tec, "Ancho", Ajustes.ANCHO, 70, 100, 100) { "$it %" }
         interruptor(tec, "Escribir al tocar", Ajustes.AL_TOCAR, true, "La letra sale apenas tocas (más rápido a dos dedos)")
+        interruptor(tec, "¿ y ¡ automáticos", Ajustes.SIGNOS_INICIO, true, "Al cerrar con ? o ! se pone ¿ o ¡ al inicio de la frase")
         interruptor(tec, "Vidrio con desenfoque", Ajustes.VIDRIO, false, "Android 12+. Desenfoca lo que hay detrás (gasta un poco más). Apagado: negro AMOLED")
         deslizador(tec, "Mantener presionado", Ajustes.RETARDO_LARGA, 150, 700, 320) { "$it ms" }
 

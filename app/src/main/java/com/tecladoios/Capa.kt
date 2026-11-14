@@ -22,6 +22,58 @@ class Capa(context: Context) : View(context) {
     private val letraP = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 400) }
     private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val sombra = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x66000000 }
+    private val pintaGlobo = Paint(Paint.FILTER_BITMAP_FLAG)
+    /** Margen alrededor del globo guardado (para el aura y la sombra), en dp */
+    private val MARGEN = 18f
+    /** Globos ya armados, por tecla y letra (los más usados se quedan) */
+    private val globos = object : LinkedHashMap<String, android.graphics.Bitmap>(48, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, android.graphics.Bitmap>?) = size > 48
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        super.onSizeChanged(w, h, ow, oh)
+        globos.clear()
+    }
+
+    private fun imagenGlobo(): android.graphics.Bitmap? {
+        val clave = "${limites.left.toInt()},${limites.top.toInt()},${limites.right.toInt()},${tecla.bottom.toInt()},$globoTexto"
+        globos[clave]?.let { return it }
+        return try {
+            val m = MARGEN * d
+            val w = (limites.width() + 2 * m).toInt().coerceAtLeast(1)
+            val h = (tecla.bottom - limites.top + 2 * m).toInt().coerceAtLeast(1)
+            val b = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+            val c = Canvas(b)
+            c.translate(m - limites.left, m - limites.top)
+            sombra.alpha = 0x8C
+            c.save(); c.translate(0f, 3f * d); c.drawPath(forma, sombra); c.restore()
+            aura.alpha = 0xBF
+            c.drawPath(forma, aura)
+            pintura.shader = android.graphics.LinearGradient(0f, limites.top, 0f, tecla.bottom,
+                0xFF3A3C4E.toInt(), 0xFF262844.toInt(), android.graphics.Shader.TileMode.CLAMP)
+            pintura.alpha = 255
+            c.drawPath(forma, pintura)
+            pintura.shader = null
+            brilloG.shader = android.graphics.LinearGradient(0f, limites.top, 0f, tecla.bottom,
+                intArrayOf(0x8CFFFFFF.toInt(), 0x337A8CFF, 0x997A8CFF.toInt()), floatArrayOf(0f, 0.6f, 1f), android.graphics.Shader.TileMode.CLAMP)
+            brilloG.alpha = 255
+            c.drawPath(forma, brilloG)
+            brilloG.shader = null
+            letraP.color = tema.texto; letraP.alpha = 255
+            letraP.textSize = tecla.height() * 0.78f
+            letraP.setShadowLayer(9f * d, 0f, 0f, 0xD9A0AAFF.toInt())
+            val cy = limites.top + (tecla.top - limites.top) * 0.5f
+            c.drawText(globoTexto, limites.centerX(), cy + letraP.textSize * 0.35f, letraP)
+            letraP.clearShadowLayer()
+            globos[clave] = b
+            b
+        } catch (e: Throwable) { Registro.anotar("globo", e); null }
+    }
+    // Globo retroiluminado: aura violeta difuminada alrededor
+    private val aura = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xBF5E5CE6.toInt()
+        maskFilter = android.graphics.BlurMaskFilter(14f * resources.displayMetrics.density, android.graphics.BlurMaskFilter.Blur.OUTER)
+    }
     private val brilloG = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.2f * resources.displayMetrics.density }
 
     // Globo
@@ -159,29 +211,17 @@ class Capa(context: Context) : View(context) {
                 alfa = 1f - t; escala = 1f - 0.04f * t; subeLetra = 0f
                 postInvalidateOnAnimation()
             }
-            val a = (alfa * 255).toInt()
+            // El globo (sombra, aura difuminada, vidrio, filo y letra brillante) se arma UNA vez
+            // por tecla y se guarda: después cada cuadro solo lo copia. El aura difuminada era lo
+            // más caro de dibujar y se repetía en cada cuadro mientras la tecla estaba apretada.
+            val img = imagenGlobo()
             c.save()
             c.scale(escala, escala, tecla.centerX(), tecla.bottom)
-            sombra.alpha = (a * 0.55f).toInt()
-            c.save(); c.translate(0f, 3f * d); c.drawPath(forma, sombra); c.restore()
-            // Globo con un degradado suave (más claro arriba) y filo de luz
-            pintura.shader = android.graphics.LinearGradient(0f, limites.top, 0f, tecla.bottom,
-                Tema.mezclar(0xFFFFFFFF.toInt(), tema.globo, 0.08f), tema.globo, android.graphics.Shader.TileMode.CLAMP)
-            pintura.alpha = a
-            c.drawPath(forma, pintura)
-            pintura.shader = null
-            // Filo de luz del vidrio (brillante arriba)
-            brilloG.shader = android.graphics.LinearGradient(0f, limites.top, 0f, tecla.bottom,
-                intArrayOf(0x66FFFFFF, 0x10FFFFFF, 0x10FFFFFF), floatArrayOf(0f, 0.4f, 1f), android.graphics.Shader.TileMode.CLAMP)
-            brilloG.alpha = (255 * alfa).toInt()
-            c.drawPath(forma, brilloG)
-            brilloG.shader = null
-            letraP.color = tema.texto; letraP.alpha = a
-            letraP.textSize = tecla.height() * 0.78f
-            val cy = limites.top + (tecla.top - limites.top) * 0.5f
-            c.drawText(globoTexto, limites.centerX(), cy + letraP.textSize * 0.35f + subeLetra, letraP)
+            if (img != null) {
+                pintaGlobo.alpha = (alfa * 255).toInt().coerceIn(0, 255)
+                c.drawBitmap(img, limites.left - MARGEN * d, limites.top - MARGEN * d + subeLetra * 0.3f, pintaGlobo)
+            }
             c.restore()
-            pintura.alpha = 255; letraP.alpha = 255
         }
         if (opciones.isNotEmpty()) {
             val tA = ((ahora - opcionesMs) / DESPLIEGUE).coerceIn(0f, 1f)

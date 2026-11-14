@@ -46,11 +46,13 @@ android {
         debug {
             isDebuggable = false
             isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.getByName("fija")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.getByName("fija")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

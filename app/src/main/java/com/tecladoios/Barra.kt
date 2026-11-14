@@ -277,6 +277,20 @@ class Barra(context: Context) : View(context) {
             p.alpha = (alfaBase * (0.15f + 0.85f * ec)).toInt()
             c.drawText(corto, x0 + ancho / 2, h / 2 + p.textSize * 0.36f, p)
             p.alpha = alfaBase
+            // Línea de luz azul → violeta bajo la palabra principal (más fuerte al elegirla)
+            val fuerza = maxOf(if (destacadaAqui) 0.55f else 0f, brillaElegida)
+            if (fuerza > 0f) {
+                val medio = minOf(p.measureText(corto) * 0.42f, ancho / 2 - dp(10f))
+                val yl = h / 2 + p.textSize * 0.36f + dp(7f)
+                // Degradado armado una vez; aquí solo se estira a la palabra
+                matrizLinea.setScale(medio * 2f, 1f)
+                matrizLinea.postTranslate(x0 + ancho / 2 - medio, 0f)
+                degradadoLinea.setLocalMatrix(matrizLinea)
+                lineaLuz.shader = degradadoLinea
+                lineaLuz.alpha = (255 * fuerza).toInt().coerceIn(0, 255)
+                lineaLuz.setShadowLayer(dp(6f) + dp(6f) * fuerza, 0f, 0f, 0xE65E5CE6.toInt())
+                c.drawRoundRect(x0 + ancho / 2 - medio, yl, x0 + ancho / 2 + medio, yl + dp(2.5f), dp(1.25f), dp(1.25f), lineaLuz)
+            }
             if (halo > 0f) p.clearShadowLayer()
             c.restore()
             val rr = RectF(desplazamiento + x0, 0f, desplazamiento + x0 + ancho, h)
@@ -290,6 +304,12 @@ class Barra(context: Context) : View(context) {
         c.restore()
         if (seguir) postInvalidateOnAnimation()
     }
+
+    private val lineaLuz = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val degradadoLinea = android.graphics.LinearGradient(0f, 0f, 1f, 0f,
+        intArrayOf(0x000A84FF, 0xFF7A8CFF.toInt(), 0xFF5E5CE6.toInt(), 0x005E5CE6), floatArrayOf(0f, 0.3f, 0.7f, 1f),
+        android.graphics.Shader.TileMode.CLAMP)
+    private val matrizLinea = android.graphics.Matrix()
 
     /** Cápsula de vidrio: relleno translúcido y filo de luz arriba */
     private val filoCapsula = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }

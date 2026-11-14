@@ -314,6 +314,17 @@ class Motor(
                 if (!sinTilde && forma.lowercase() != escrito.lowercase() && !aprendido.rechazada(escrito, forma))
                     auto = Texto.conMayusculas(forma, escrito)
             }
+            // Nombres con mayúscula: si esa palabra solo existe como nombre propio (en el
+            // diccionario, en tus contactos o como tú la escribes), va con mayúscula: daniel → Daniel
+            if (auto == null && valida && escrito.none { it.isUpperCase() }) {
+                val nombre = when {
+                    formasExactas.isNotEmpty() && formasExactas.all { dic.palabras[it][0].isUpperCase() } -> dic.palabras[formasExactas[0]]
+                    formasExactas.isEmpty() && contacto != null && contacto.firstOrNull()?.isUpperCase() == true -> contacto
+                    formasExactas.isEmpty() && propia != null && propia.texto.firstOrNull()?.isUpperCase() == true -> propia.texto
+                    else -> null
+                }
+                if (nombre != null && nombre != escrito && Texto.normal(nombre) == clave && !aprendido.rechazada(escrito, nombre)) auto = nombre
+            }
             // Palabras pegadas: "Yanpodemos" → "Ya podemos"
             if (auto == null && separarPegadas && !valida && clave.length >= 4) separar(clave, escrito)?.let { auto = it; meter(it, -1f, true, false); lista.sortBy { o -> o.puntaje } }
             // Solo si no eran palabras pegadas: la opción que les saca mucha ventaja a las demás

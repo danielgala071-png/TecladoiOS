@@ -245,6 +245,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         teclado?.unaMano = cfg.unaMano
         barra?.herramientasActivas = cfg.barraHerramientas
         leerCampo(info)
+        // Al abrirse, las filas entran en cascada (una décima y media de segundo)
+        if (!restarting) teclado?.animarEntrada()
         // Algunas apps reinician el campo al enviar: si la palabra ya no está, se suelta
         if (restarting && palabra.isNotEmpty() &&
             (info.initialSelStart <= 0 || antes(palabra.length) != palabra.toString())) {
@@ -430,7 +432,42 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     // Un error al escribir se anota y no cierra el teclado
     override fun tecla(texto: String, x: Float, y: Float, esLetra: Boolean) {
-        try { teclaReal(texto, x, y, esLetra) } catch (e: Throwable) { Registro.anotar("tecla", e) }
+        try {
+            teclaReal(texto, x, y, esLetra)
+            if ((texto == "?" || texto == "!") && sugerir && cfg.signosInicio) signoDeApertura(texto[0])
+        } catch (e: Throwable) { Registro.anotar("tecla", e) }
+    }
+
+    /**
+     * ¿ y ¡ automáticos: al cerrar una frase con ? o !, si esa frase no tiene su signo de
+     * apertura, se pone al inicio de la frase ("Ya llegaste?" → "¿Ya llegaste?").
+     */
+    private fun signoDeApertura(cierre: Char) {
+        val apertura = if (cierre == '?') '¿' else '¡'
+        val ic = ic() ?: return
+        val t = antes(300)
+        val fin = t.lastIndexOf(cierre)
+        if (fin < 0 || t.length - fin > 2) return
+        // Si ya va un ? o ! justo antes (como "??" o "?!"), la frase ya se cerró antes
+        if (fin > 0 && (t[fin - 1] == '?' || t[fin - 1] == '!')) return
+        var i = fin - 1
+        while (i >= 0) {
+            val ch = t[i]
+            if (ch == apertura) return                       // ya lo tiene
+            if (ch == '.' || ch == '?' || ch == '!' || ch == '\n' || ch == '¿' || ch == '¡') break
+            i--
+        }
+        var inicio = i + 1
+        while (inicio < fin && t[inicio].isWhitespace()) inicio++
+        if (inicio >= fin || i < 0 && t.length >= 300) return  // frase demasiado larga para estar seguros
+        val trozo = t.substring(inicio)
+        if (trozo.length < 3 || trozo.none { it.isLetter() }) return
+        marcarEdicion()
+        ic.beginBatchEdit()
+        ic.finishComposingText()
+        ic.deleteSurroundingText(trozo.length, 0)
+        ic.commitText(apertura + trozo, 1)
+        ic.endBatchEdit()
     }
 
     private fun teclaReal(texto: String, x: Float, y: Float, esLetra: Boolean) {

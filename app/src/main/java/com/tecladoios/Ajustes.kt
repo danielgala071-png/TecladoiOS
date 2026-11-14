@@ -37,6 +37,7 @@ object Ajustes {
     const val ANCHO = "ancho"                // 70..100 (%), el teclado queda centrado
     const val VIDRIO = "vidrio"              // desenfoque real detrás del teclado (Android 12+)
     const val AL_TOCAR = "al_tocar"          // las letras se escriben al tocar (no al soltar)
+    const val SIGNOS_INICIO = "signos_inicio"  // ¿ y ¡ automáticos al cerrar la pregunta
     const val RETARDO_LARGA = "retardo_larga"// ms
     const val BORDES_APP = "bordes_app_v2"
     const val BARRA_HERRAMIENTAS = "barra_herramientas"
@@ -82,6 +83,7 @@ class Config(p: SharedPreferences) {
     val ancho = p.getInt(Ajustes.ANCHO, 100).coerceIn(70, 100)
     val vidrio = p.getBoolean(Ajustes.VIDRIO, false)
     val alTocar = p.getBoolean(Ajustes.AL_TOCAR, true)
+    val signosInicio = p.getBoolean(Ajustes.SIGNOS_INICIO, true)
     val retardoLarga = p.getInt(Ajustes.RETARDO_LARGA, 320).coerceIn(150, 800)
     val bordesApp = p.getBoolean(Ajustes.BORDES_APP, true)
     val barraHerramientas = p.getBoolean(Ajustes.BARRA_HERRAMIENTAS, true)
