@@ -97,8 +97,8 @@ class Barra(context: Context) : View(context) {
 
     // ---------- Dibujo ----------
 
-    private val texto = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 400) }
-    private val fuerte = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 600) }
+    private val texto = TextPaint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 400) }
+    private val fuerte = TextPaint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 600) }
     private val icono = Paint(Paint.ANTI_ALIAS_FLAG)
     private val linea = Paint(Paint.ANTI_ALIAS_FLAG)
     private val relleno = Paint(Paint.ANTI_ALIAS_FLAG)

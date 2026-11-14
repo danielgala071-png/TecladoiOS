@@ -224,6 +224,66 @@ class PanelEmoji(context: Context) : View(context) {
     // ---------- Dibujo ----------
 
     private val emojiP = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+
+    // ---------- Emojis ya dibujados (para deslizar fluido) ----------
+    //
+    // Dibujar un emoji a color es caro; al deslizar se repetía con cada emoji en cada cuadro y
+    // por eso se sentía lento. Ahora cada emoji se dibuja UNA vez en una imagen chiquita y luego
+    // solo se copia (muy rápido). Se guardan los más recientes, con un tope de memoria.
+    private val imagenes = object : android.util.LruCache<String, android.graphics.Bitmap>(10 * 1024) {
+        override fun sizeOf(key: String, value: android.graphics.Bitmap) = value.byteCount / 1024
+    }
+    private val pintaImagen = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val emojiDibujo = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+
+    private fun imagenEmoji(e: String, tam: Int): android.graphics.Bitmap? {
+        if (tam <= 0) return null
+        val clave = "$tam:$e"
+        imagenes.get(clave)?.let { return it }
+        return try {
+            val lado = (tam * 1.3f).toInt()
+            val bmp = android.graphics.Bitmap.createBitmap(lado, lado, android.graphics.Bitmap.Config.ARGB_8888)
+            val cv = Canvas(bmp)
+            emojiDibujo.textSize = tam.toFloat()
+            cv.drawText(e, lado / 2f, lado / 2f + tam * 0.35f, emojiDibujo)
+            imagenes.put(clave, bmp)
+            bmp
+        } catch (_: Throwable) { null }
+    }
+
+    @Volatile private var tamPrecalentado = -1
+
+    /**
+     * Apenas se abre el panel, deja listos en segundo plano los emojis de las primeras
+     * categorías: así el primer deslizamiento ya va fluido.
+     */
+    private fun precalentar(tam: Int) {
+        if (tam <= 0 || tam == tamPrecalentado) return
+        tamPrecalentado = tam
+        val lista = categorias.take(3).flatMap { it.emojis }.take(260)
+        Cerebro.hilo.execute {
+            for (e in lista) {
+                if (tamPrecalentado != tam) return@execute
+                if (imagenes.get("$tam:$e") == null) {
+                    try {
+                        val lado = (tam * 1.3f).toInt()
+                        val bmp = android.graphics.Bitmap.createBitmap(lado, lado, android.graphics.Bitmap.Config.ARGB_8888)
+                        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; textSize = tam.toFloat() }
+                        Canvas(bmp).drawText(e, lado / 2f, lado / 2f + tam * 0.35f, p)
+                        imagenes.put("$tam:$e", bmp)
+                    } catch (_: Throwable) { return@execute }
+                }
+            }
+        }
+    }
+
+    /** Dibuja el emoji centrado en (cx, cy) con alto de letra [tam], usando la imagen guardada */
+    private fun dibujarEmoji(c: Canvas, e: String, cx: Float, cy: Float, tam: Float, alfa: Int = 255) {
+        val bmp = imagenEmoji(e, tam.toInt())
+        if (bmp == null) { emojiP.textSize = tam; emojiP.alpha = alfa; c.drawText(e, cx, cy + tam * 0.35f, emojiP); emojiP.alpha = 255; return }
+        pintaImagen.alpha = alfa
+        c.drawBitmap(bmp, cx - bmp.width / 2f, cy - bmp.height / 2f, pintaImagen)
+    }
     private val titulo = Paint(Paint.ANTI_ALIAS_FLAG).apply { Fuentes.aplicar(this, 600); letterSpacing = 0.03f }
     private val aviso = Paint(Paint.ANTI_ALIAS_FLAG).apply { Fuentes.aplicar(this, 400) }
     private val boton = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 500) }
@@ -271,6 +331,7 @@ class PanelEmoji(context: Context) : View(context) {
         // Emojis (solo las columnas visibles)
         emojiP.textSize = cel * 0.68f
         val colW = anchoCol(cel)
+        precalentar(emojiP.textSize.toInt())
         c.save()
         c.clipRect(0f, arribaGrilla() - dp(2f), w, yAbajo)
         for ((k, cat) in categorias.withIndex()) {
@@ -315,7 +376,7 @@ class PanelEmoji(context: Context) : View(context) {
                         relleno.color = 0x22FFFFFF
                         c.drawRoundRect(cx - cel * 0.46f, cy - cel * 0.46f, cx + cel * 0.46f, cy + cel * 0.46f, dp(10f), dp(10f), relleno)
                     }
-                    c.drawText(e, cx, cy + emojiP.textSize * 0.35f, emojiP)
+                    dibujarEmoji(c, e, cx, cy, emojiP.textSize)
                 }
             }
         }
@@ -346,7 +407,7 @@ class PanelEmoji(context: Context) : View(context) {
             }
             val ic = when (k) { 0 -> "\uD83D\uDD52"; else -> categorias[k].emojis.firstOrNull() ?: "•" }
             emojiP.alpha = if (k == actual) 255 else 150
-            c.drawText(ic, cx, cy + emojiP.textSize * 0.35f, emojiP)
+            dibujarEmoji(c, ic, cx, cy, emojiP.textSize, emojiP.alpha)
         }
         emojiP.alpha = 255
         icono.color = tema.texto
@@ -490,5 +551,7 @@ class PanelEmoji(context: Context) : View(context) {
         super.onDetachedFromWindow()
         borrando = false; removeCallbacks(repetirBorrar); removeCallbacks(larga)
         velocidad?.recycle(); velocidad = null
+        // Teclado escondido: se sueltan las imágenes para no ocupar memoria
+        imagenes.evictAll(); tamPrecalentado = -1
     }
 }

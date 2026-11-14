@@ -247,9 +247,14 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         return (posA[0] - posB[0]).toFloat()
     }
 
+    private val rectCapa = RectF()
+
+    /** Rectángulo de la tecla en coordenadas de la capa (se reutiliza: la capa copia sus valores) */
     private fun rectEnCapa(r: RectF): RectF {
-        val dy = desplazamientoCapa(); val dx = desplazamientoCapaX()
-        return RectF(r.left + dx, r.top + dy, r.right + dx, r.bottom + dy)
+        getLocationInWindow(posA); capa.getLocationInWindow(posB)
+        val dx = (posA[0] - posB[0]).toFloat(); val dy = (posA[1] - posB[1]).toFloat()
+        rectCapa.set(r.left + dx, r.top + dy, r.right + dx, r.bottom + dy)
+        return rectCapa
     }
 
     private fun textoVisible(t: Tecla): String {
@@ -519,8 +524,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val sombra = Paint(Paint.ANTI_ALIAS_FLAG)
     private val brillo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
-    private val letra = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 400) }
-    private val chica = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 500) }
+    private val letra = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 400) }
+    private val chica = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 500) }
     private val pista = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 500) }
     private val icono = Paint(Paint.ANTI_ALIAS_FLAG)
     private val estela = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -587,6 +592,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 android.graphics.Shader.TileMode.CLAMP)
             c.drawRoundRect(r, radio, radio, relleno)
             relleno.shader = null
+            // Contorno de luz finísimo: bordes nítidos y aspecto premium (solo en la imagen guardada)
+            borde.color = 0x12FFFFFF
+            c.drawRoundRect(r.left + dp(0.3f), r.top + dp(0.3f), r.right - dp(0.3f), r.bottom - dp(0.3f), radio, radio, borde)
         } else {
             relleno.color = base
             relleno.alpha = (relleno.alpha * fondo).toInt().coerceIn(0, 255)
