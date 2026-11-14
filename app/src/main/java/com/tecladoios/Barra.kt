@@ -215,8 +215,14 @@ class Barra(context: Context) : View(context) {
         for (hId in herrs) {
             val cx = x + anchoHerr / 2; val cy = h / 2
             // Cada herramienta en un botón redondo oscuro
-            relleno.color = 0xFF1C1C1E.toInt()
+            val apretado = toqueX in x..(x + anchoHerr) && tocando
+            relleno.color = if (apretado) 0xFF3A3A3D.toInt() else 0xFF1C1C1E.toInt()
             c.drawCircle(cx, cy, dp(17f), relleno)
+            // Aro de luz finísimo: el botón se ve con relieve
+            linea.color = 0x1AFFFFFF; linea.strokeWidth = d * 0.7f
+            linea.style = Paint.Style.STROKE
+            c.drawCircle(cx, cy, dp(17f), linea)
+            linea.style = Paint.Style.FILL_AND_STROKE
             when (hId) {
                 H_EMOJI -> Iconos.cara(c, cx, cy, s, icono)
                 H_PORTAPAPELES -> Iconos.portapapeles(c, cx, cy, s, icono)
@@ -271,6 +277,8 @@ class Barra(context: Context) : View(context) {
 
     // ---------- Toques ----------
 
+    private var toqueX = -1f
+    private var tocando = false
     private var x0 = 0f
     private var ultX = 0f
     private var arrastrando = false
@@ -284,6 +292,7 @@ class Barra(context: Context) : View(context) {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 x0 = e.x; ultX = e.x; arrastrando = false; largaHecha = false
+                toqueX = e.x; tocando = true; invalidate()
                 postDelayed(larga, 550L)
             }
             MotionEvent.ACTION_MOVE -> {
@@ -296,12 +305,13 @@ class Barra(context: Context) : View(context) {
             }
             MotionEvent.ACTION_UP -> {
                 removeCallbacks(larga)
+                tocando = false; invalidate()
                 if (!arrastrando && !largaHecha) {
                     val z = zonas.firstOrNull { it.first.contains(e.x, e.y) }
                     if (z != null) { oyente?.respuesta(Respuesta.Tipo.LETRA); z.second() }
                 }
             }
-            MotionEvent.ACTION_CANCEL -> removeCallbacks(larga)
+            MotionEvent.ACTION_CANCEL -> { removeCallbacks(larga); tocando = false; invalidate() }
         }
         return true
     }

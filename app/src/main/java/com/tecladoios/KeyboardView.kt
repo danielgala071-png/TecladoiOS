@@ -578,7 +578,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             c.drawRoundRect(r.left, r.top + dp(1.6f), r.right, r.bottom + dp(1.6f), radio, radio, sombra)
             sombra.color = 0xFF000000.toInt()
             c.drawRoundRect(r.left, r.top + dp(0.8f), r.right, r.bottom + dp(0.8f), radio, radio, sombra)
-            // Degradado vertical apenas visible: más luz arriba, más sombra abajo
+            // Degradado vertical apenas visible: más luz arriba, más sombra abajo.
+            // La pintura vuelve a opacidad total: si quedaba la transparencia de una tecla
+            // presionada, las teclas guardadas salían negras (ese era el error).
+            relleno.color = 0xFFFFFFFF.toInt()
             relleno.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.bottom,
                 Tema.mezclar(0xFFFFFFFF.toInt(), base, 0.07f), Tema.mezclar(0xFF000000.toInt(), base, 0.06f),
                 android.graphics.Shader.TileMode.CLAMP)
