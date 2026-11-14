@@ -122,7 +122,13 @@ class Barra(context: Context) : View(context) {
 
     private val HERRAMIENTAS = intArrayOf(H_EMOJI, H_PORTAPAPELES, H_EDITAR, H_UNA_MANO, H_TAMANO, H_AJUSTES)
 
+    // Un error al dibujar se anota y no cierra el teclado
     override fun onDraw(c: Canvas) {
+        val n = c.save()
+        try { dibujarTodo(c) } catch (e: Throwable) { Registro.anotar("dibujo barra", e) } finally { c.restoreToCount(n) }
+    }
+
+    private fun dibujarTodo(c: Canvas) {
         zonas.clear(); zonasLargas.clear()
         val w = width.toFloat(); val h = height.toFloat()
         // Línea finísima que separa la barra de las teclas (detalle premium, casi invisible)

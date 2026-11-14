@@ -306,7 +306,13 @@ class PanelEmoji(context: Context) : View(context) {
         }
     }
 
+    // Un error al dibujar se anota y no cierra el teclado
     override fun onDraw(c: Canvas) {
+        val n = c.save()
+        try { dibujarTodo(c) } catch (e: Throwable) { Registro.anotar("dibujo emojis", e) } finally { c.restoreToCount(n) }
+    }
+
+    private fun dibujarTodo(c: Canvas) {
         if (categorias.isEmpty()) refrescar()
         val w = width.toFloat(); val h = height.toFloat()
         val cel = celda()

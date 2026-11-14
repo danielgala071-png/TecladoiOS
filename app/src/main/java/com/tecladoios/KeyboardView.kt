@@ -58,9 +58,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         }
 
     /** 0 minúsculas, 1 mayúscula, 2 bloqueo */
-    var shift = 0; set(v) { if (field != v) { field = v; ensuciar() } }
+    // La mayúscula solo cambia letras y el color de la tecla shift: no se redibuja todo
+    var shift = 0; set(v) { if (field != v) { field = v; letrasSucias = true; shiftSucia = true; invalidate() } }
     /** Texto de la tecla intro ("buscar", "enviar"...) o null para la flecha */
-    var textoIntro: String? = null; set(v) { if (field != v) { field = v; ensuciar() } }
+    var textoIntro: String? = null; set(v) { if (field != v) { field = v; letrasSucias = true; invalidate() } }
     var introDestacado = false; set(v) { if (field != v) { field = v; ensuciar() } }
     /** Altura en % mientras se ajusta el tamaño (null = la de los ajustes) */
     var alturaForzada: Int? = null; set(v) { if (field != v) { field = v; requestLayout() } }
@@ -544,8 +545,13 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private val camino = Path()
 
     private var cacheFondo: Bitmap? = null
+    /** Las letras van en una imagen de solo transparencia (4 veces más liviana): el color se pone al dibujarla */
     private var cacheLetras: Bitmap? = null
     private var sucio = true
+    private var letrasSucias = false
+    private var shiftSucia = false
+    private val borrador = Paint().apply { xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR) }
+    private val pinturaLetras = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFF5F5F7.toInt() }
     private var sepYActual = 0f
 
     // Imágenes de la distribución que se va (abc ↔ 123) y las que quedan libres para reusar
@@ -553,8 +559,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private var anteriorLetras: Bitmap? = null
     private val libres = ArrayList<Bitmap>(2)
     private var cambioMs = 0L
-    private val pinturaAnterior = Paint(Paint.FILTER_BITMAP_FLAG)
-    private val pinturaNueva = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val pinturaAnterior = Paint(Paint.FILTER_BITMAP_FLAG).apply { color = 0xFFF5F5F7.toInt() }
+    private val pinturaNueva = Paint(Paint.FILTER_BITMAP_FLAG).apply { color = 0xFFF5F5F7.toInt() }
     private val pinturaDestello = Paint(Paint.FILTER_BITMAP_FLAG).apply {
         colorFilter = android.graphics.PorterDuffColorFilter(Tema.ROJO, android.graphics.PorterDuff.Mode.SRC_IN)
     }
@@ -574,17 +580,20 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     /** Teclas apretadas y las que están volviendo a su lugar */
     private val pulsos = HashMap<Colocada, Pulso>()
-    private val HUNDIR = 70f          // se hunde casi al instante: el dedo siente respuesta
-    private val VOLVER = 360f         // vuelve con un resorte corto y amortiguado
-    private val APAGAR = 230f         // la luz se apaga suave
-    private val EXPANDIR = 300f       // la luz se abre desde la yema del dedo
-    private val HUNDIMIENTO = 0.06f   // cuánto se achica la tecla apretada
+    private val HUNDIR = 60f          // se hunde casi al instante: el dedo siente respuesta
+    private val VOLVER = 300f         // vuelve con un resorte corto y amortiguado
+    private val APAGAR = 260f         // la luz se apaga suave
+    private val EXPANDIR = 260f       // el brillo se abre desde la yema del dedo
+    private val HUNDIMIENTO = 0.035f  // se hunde apenas: sutil, como una tecla física
 
     private val pinturaBmp = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val tapa = Paint().apply { color = 0xFF000000.toInt() }
+    // Brillo blanco muy tenue que nace del dedo (sin teñir la tecla de rojo)
     private val luzShader = android.graphics.RadialGradient(0f, 0f, 1f,
-        intArrayOf(0x73FF2D3A, 0x2EFF2D3A, 0x00FF2D3A), floatArrayOf(0f, 0.5f, 1f),
+        intArrayOf(0x2EFFFFFF, 0x10FFFFFF, 0x00FFFFFF), floatArrayOf(0f, 0.55f, 1f),
         android.graphics.Shader.TileMode.CLAMP)
+    /** Línea de luz roja finita en la base de la tecla apretada: el único toque de color */
+    private val filoRojo = Paint(Paint.ANTI_ALIAS_FLAG)
     private val luz = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = luzShader }
     private val matrizLuz = android.graphics.Matrix()
     private val src = android.graphics.Rect()
@@ -660,34 +669,37 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     /** Esquinas más rectas: curva suave, sin parecer pastilla */
     private fun radioDe(r: RectF) = minOf(dp(6.5f), r.height() * 0.13f)
 
-    /** Cuerpo de la tecla en reposo (va a la imagen guardada de cuerpos) */
+    /**
+     * Cuerpo de la tecla en reposo, estilo satinado: un labio oscuro abajo (como una tecla
+     * física), cuerpo mate con un degradado casi invisible y un filo de luz finísimo solo en
+     * el canto de arriba. Sin contornos blancos: se ve limpio y caro.
+     */
     private fun dibujarCuerpo(c: Canvas, k: Colocada) {
         val t = k.tecla
         val r = k.dibujo
         val radio = radioDe(r)
         val base = colorTecla(t, false)
-        // Sombra en dos capas: da profundidad, como una tecla física
-        sombra.color = 0x66000000
-        c.drawRoundRect(r.left, r.top + dp(1.6f), r.right, r.bottom + dp(1.6f), radio, radio, sombra)
-        sombra.color = 0xFF000000.toInt()
-        c.drawRoundRect(r.left, r.top + dp(0.8f), r.right, r.bottom + dp(0.8f), radio, radio, sombra)
-        // Degradado vertical apenas visible: más luz arriba, más sombra abajo
+        val roja = (t.tipo == K.SHIFT && shift > 0) || (t.tipo == K.INTRO && introDestacado)
+        // Sombra suave que la despega del fondo negro
+        sombra.color = 0x8C000000.toInt()
+        c.drawRoundRect(r.left + dp(0.4f), r.top + dp(2f), r.right - dp(0.4f), r.bottom + dp(2f), radio, radio, sombra)
+        // Labio: el canto de abajo, más oscuro
+        sombra.color = Tema.mezclar(0xFF000000.toInt(), base, 0.42f)
+        c.drawRoundRect(r.left, r.top + dp(1.1f), r.right, r.bottom + dp(1.1f), radio, radio, sombra)
+        // Cuerpo satinado
         relleno.color = 0xFFFFFFFF.toInt()
         relleno.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.bottom,
-            Tema.mezclar(0xFFFFFFFF.toInt(), base, 0.075f), Tema.mezclar(0xFF000000.toInt(), base, 0.07f),
+            Tema.mezclar(0xFFFFFFFF.toInt(), base, if (roja) 0.06f else 0.045f),
+            Tema.mezclar(0xFF000000.toInt(), base, 0.06f),
             android.graphics.Shader.TileMode.CLAMP)
         c.drawRoundRect(r, radio, radio, relleno)
         relleno.shader = null
-        // Contorno de luz finísimo: bordes nítidos
-        borde.color = 0x12FFFFFF; borde.strokeWidth = dp(0.6f)
-        c.drawRoundRect(r.left + dp(0.3f), r.top + dp(0.3f), r.right - dp(0.3f), r.bottom - dp(0.3f), radio, radio, borde)
-        // Reflejo fino en el borde de arriba (efecto vidrio)
-        if (Color.alpha(tema.brillo) > 0 && !(t.tipo == K.SHIFT && shift > 0) && !(t.tipo == K.INTRO && introDestacado)) {
-            brillo.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.35f,
-                tema.brillo, 0x00FFFFFF, android.graphics.Shader.TileMode.CLAMP)
-            c.drawRoundRect(r.left + dp(0.5f), r.top + dp(0.5f), r.right - dp(0.5f), r.bottom - dp(0.5f), radio, radio, brillo)
-            brillo.shader = null
-        }
+        // Filo de luz en el canto de arriba (se apaga a los pocos píxeles)
+        brillo.strokeWidth = dp(0.7f)
+        brillo.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.top + minOf(dp(9f), r.height() * 0.22f),
+            if (roja) 0x30FFFFFF else 0x1FFFFFFF, 0x00FFFFFF, android.graphics.Shader.TileMode.CLAMP)
+        c.drawRoundRect(r.left + dp(0.35f), r.top + dp(0.35f), r.right - dp(0.35f), r.bottom - dp(0.35f), radio, radio, brillo)
+        brillo.shader = null
     }
 
     /** Letra o ícono de la tecla (va a la imagen guardada de letras) */
@@ -748,36 +760,38 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         rr.set(cx + (r.left - cx) * s, cy + (r.top - cy) * s, cx + (r.right - cx) * s, cy + (r.bottom - cy) * s)
         val rad = radio * s
         if (l > 0.01f) {
-            // La tecla se aclara
+            // La tecla se aclara apenas
             relleno.shader = null
             relleno.color = colorTecla(k.tecla, true)
-            relleno.alpha = (Color.alpha(relleno.color) * l * 0.92f).toInt().coerceIn(0, 255)
+            relleno.alpha = (Color.alpha(relleno.color) * l * 0.8f).toInt().coerceIn(0, 255)
             c.drawRoundRect(rr, rad, rad, relleno)
             relleno.alpha = 255
-            // Luz roja que nace donde tocaste y se abre por la tecla
+            val roja = k.tecla.tipo == K.INTRO || (k.tecla.tipo == K.SHIFT && shift > 0)
+            // Brillo blanco tenue que se abre desde la yema del dedo
             val e = suave(((ahora - p.t0) / EXPANDIR).coerceIn(0f, 1f))
-            val alcance = maxOf(rr.width(), rr.height()) * (0.45f + 0.75f * e)
+            val alcance = maxOf(rr.width(), rr.height()) * (0.5f + 0.6f * e)
             val gx = (cx + (p.x - cx) * s).coerceIn(rr.left, rr.right)
             val gy = (cy + (p.y - cy) * s).coerceIn(rr.top, rr.bottom)
             matrizLuz.setScale(alcance, alcance)
             matrizLuz.postTranslate(gx, gy)
             luzShader.setLocalMatrix(matrizLuz)
             luz.alpha = (255 * l).toInt().coerceIn(0, 255)
-            if (!(k.tecla.tipo == K.INTRO || (k.tecla.tipo == K.SHIFT && shift > 0))) {
-                c.save()
-                camino.reset(); camino.addRoundRect(rr, rad, rad, Path.Direction.CW)
-                c.clipPath(camino)
-                c.drawRect(rr, luz)
-                c.restore()
-                // Aro rojo finísimo que se enciende con la tecla
-                borde.color = tema.brilloRojo
-                borde.alpha = (Color.alpha(tema.brilloRojo) * l).toInt().coerceIn(0, 255)
-                borde.strokeWidth = dp(1f)
-                c.drawRoundRect(rr, rad, rad, borde)
-                borde.strokeWidth = dp(0.6f)
+            c.save()
+            camino.reset(); camino.addRoundRect(rr, rad, rad, Path.Direction.CW)
+            c.clipPath(camino)
+            c.drawRect(rr, luz)
+            c.restore()
+            // Línea de luz roja en la base: se abre desde el centro y se apaga suave
+            if (!roja) {
+                val medio = rr.width() * (0.16f + 0.14f * e)
+                val alto = dp(1.8f)
+                filoRojo.color = Tema.ROJO
+                filoRojo.alpha = (220 * l).toInt().coerceIn(0, 255)
+                c.drawRoundRect(rr.centerX() - medio, rr.bottom - dp(3.4f), rr.centerX() + medio, rr.bottom - dp(3.4f) + alto, alto / 2, alto / 2, filoRojo)
             }
         }
-        c.drawBitmap(letras, src, dst, pinturaBmp)
+        pinturaLetras.color = tema.texto
+        c.drawBitmap(letras, src, dst, pinturaLetras)
     }
 
     /** Suavizado: rápido al principio y lento al final */
@@ -791,20 +805,39 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     private fun guardarLibre(b: Bitmap?) {
-        if (b != null && !b.isRecycled && libres.size < 2 && libres.none { it === b }) libres.add(b)
+        if (b != null && !b.isRecycled && libres.size < 4 && libres.none { it === b }) libres.add(b)
     }
 
-    private fun imagen(alto: Int): Bitmap {
+    private fun imagen(alto: Int, tipo: Bitmap.Config): Bitmap {
         val it = libres.iterator()
         while (it.hasNext()) {
             val b = it.next()
+            if (b.config != tipo) continue
             it.remove()
             if (!b.isRecycled && b.width == width && b.height >= height) { b.eraseColor(0); return b }
         }
-        return Bitmap.createBitmap(width, alto, Bitmap.Config.ARGB_8888)
+        return Bitmap.createBitmap(width, alto, tipo)
     }
 
+    /** Dibuja todas las letras e íconos en su imagen */
+    private fun dibujarLetras(letras: Bitmap) {
+        letras.eraseColor(0)
+        val cl = Canvas(letras)
+        for (k in colocadas) dibujarEtiqueta(cl, k)
+        if (!panelMano.isEmpty) {
+            icono.color = tema.textoSuave
+            Iconos.expandir(cl, botonExpandir.centerX(), botonExpandir.centerY(), botonExpandir.width(), icono)
+            Iconos.flecha(cl, botonCambiar.centerX(), botonCambiar.centerY(), botonCambiar.width(), icono, if (unaMano == 1) 180f else 0f)
+        }
+    }
+
+    // Un error al dibujar se anota y no cierra el teclado
     override fun onDraw(c: Canvas) {
+        val n = c.save()
+        try { dibujarTodo(c) } catch (e: Throwable) { Registro.anotar("dibujo teclado", e) } finally { c.restoreToCount(n) }
+    }
+
+    private fun dibujarTodo(c: Canvas) {
         if (width <= 0 || height <= 0) return
         val f0 = cacheFondo
         val l0 = cacheLetras
@@ -813,22 +846,31 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             // Con margen de alto: al ajustar el tamaño no se crea una imagen nueva en cada
             // movimiento del dedo (eso llenaba la memoria y podía dejar el teclado en negro)
             val alto = (height * 1.3f).toInt()
-            cacheFondo = imagen(alto); cacheLetras = imagen(alto)
+            cacheFondo = imagen(alto, Bitmap.Config.ARGB_8888); cacheLetras = imagen(alto, Bitmap.Config.ALPHA_8)
             sucio = true
         }
         val fondo: Bitmap = cacheFondo ?: return
         val letras: Bitmap = cacheLetras ?: return
         if (sucio) {
-            fondo.eraseColor(0); letras.eraseColor(0)
-            val cf = Canvas(fondo); val cl = Canvas(letras)
+            fondo.eraseColor(0)
+            val cf = Canvas(fondo)
             prepararPinturas()
-            for (k in colocadas) { dibujarCuerpo(cf, k); dibujarEtiqueta(cl, k) }
-            if (!panelMano.isEmpty) {
-                icono.color = tema.textoSuave
-                Iconos.expandir(cl, botonExpandir.centerX(), botonExpandir.centerY(), botonExpandir.width(), icono)
-                Iconos.flecha(cl, botonCambiar.centerX(), botonCambiar.centerY(), botonCambiar.width(), icono, if (unaMano == 1) 180f else 0f)
+            for (k in colocadas) dibujarCuerpo(cf, k)
+            dibujarLetras(letras)
+            sucio = false; letrasSucias = false; shiftSucia = false
+        } else {
+            if (shiftSucia) {
+                // Solo la tecla shift cambia de color: se borra su lugar y se vuelve a pintar
+                val cf = Canvas(fondo)
+                prepararPinturas()
+                for (k in colocadas) if (k.tecla.tipo == K.SHIFT) {
+                    val r = k.dibujo
+                    cf.drawRect(r.left - dp(2f), r.top - dp(2f), r.right + dp(2f), r.bottom + dp(3f), borrador)
+                    dibujarCuerpo(cf, k)
+                }
+                shiftSucia = false
             }
-            sucio = false
+            if (letrasSucias) { prepararPinturas(); dibujarLetras(letras); letrasSucias = false }
         }
 
         val ahora = SystemClock.uptimeMillis()
@@ -847,7 +889,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             postInvalidateOnAnimation()
         } else {
             c.drawBitmap(fondo, 0f, 0f, null)
-            c.drawBitmap(letras, 0f, 0f, null)
+            pinturaLetras.color = tema.texto
+            c.drawBitmap(letras, 0f, 0f, pinturaLetras)
         }
 
         // Teclas apretadas y las que vuelven a su lugar

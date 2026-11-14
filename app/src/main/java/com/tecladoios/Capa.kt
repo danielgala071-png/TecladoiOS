@@ -131,7 +131,13 @@ class Capa(context: Context) : View(context) {
 
     fun ocultarOpciones() { if (opciones.isNotEmpty()) { opciones = emptyList(); invalidate() } }
 
+    // Un error al dibujar se anota y no cierra el teclado
     override fun onDraw(c: Canvas) {
+        val n = c.save()
+        try { dibujarTodo(c) } catch (e: Throwable) { Registro.anotar("dibujo capa", e) } finally { c.restoreToCount(n) }
+    }
+
+    private fun dibujarTodo(c: Canvas) {
         val ahora = android.os.SystemClock.uptimeMillis()
         val visible = globo || ahora - seVaMs < SE_VA
         if (visible && opciones.isEmpty() && !forma.isEmpty) {

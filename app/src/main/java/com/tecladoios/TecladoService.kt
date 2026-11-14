@@ -204,6 +204,11 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         teclado?.unaMano = cfg.unaMano
         barra?.herramientasActivas = cfg.barraHerramientas
         leerCampo(info)
+        // Algunas apps reinician el campo al enviar: si la palabra ya no está, se suelta
+        if (restarting && palabra.isNotEmpty() &&
+            (info.initialSelStart <= 0 || antes(palabra.length) != palabra.toString())) {
+            reiniciarPalabra(); ultimaCorreccion = null; espacioAuto = false
+        }
         if (!restarting) {
             reiniciarPalabra()
             ultimaCorreccion = null; espacioAuto = false
@@ -329,8 +334,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     }
 
     /** Las dos palabras anteriores a la que se está escribiendo (para predecir) */
-    private fun contexto(): List<String> {
-        val t = antes(80)
+    private fun contexto(leido: String? = null): List<String> {
+        val t = leido ?: antes(80)
         val sinActual = if (palabra.isNotEmpty() && t.endsWith(palabra)) t.dropLast(palabra.length) else t
         val res = ArrayList<String>(2)
         var i = sinActual.length - 1
@@ -347,17 +352,28 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         return res
     }
 
-    private fun inicioDeFrase(): Boolean {
-        val t = antes(6).trimEnd(' ')
+    private fun inicioDeFrase(leido: String? = null): Boolean {
+        val t = (leido?.takeLast(6) ?: antes(6)).trimEnd(' ')
         return t.isEmpty() || t.last() in ".?!\n¡¿"
     }
 
     // ---------- Mayúsculas ----------
 
-    private fun actualizarShift() {
+    /**
+     * Después de cada edición: mayúscula automática y barra con UNA sola lectura del texto
+     * (cada lectura es una consulta a la app; con varias seguidas el teclado se trababa,
+     * sobre todo en WhatsApp con el chat ocupado)
+     */
+    private fun refrescar() {
+        val t = if (palabra.isEmpty() && (sugerir || (cfg.mayusAuto && mayusCampo))) antes(80) else null
+        actualizarShift(t)
+        actualizarBarra(t)
+    }
+
+    private fun actualizarShift(leido: String? = null) {
         if (shift == 2) { teclado?.shift = 2; return }
         val auto = cfg.mayusAuto && mayusCampo && modo == Distribuciones.LETRAS && palabra.isEmpty() && run {
-            val t = antes(4)
+            val t = leido?.takeLast(4) ?: antes(4)
             if (t.isEmpty()) true
             else {
                 val sinEsp = t.trimEnd(' ')
@@ -371,7 +387,12 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     // ---------- Teclas ----------
 
+    // Un error al escribir se anota y no cierra el teclado
     override fun tecla(texto: String, x: Float, y: Float, esLetra: Boolean) {
+        try { teclaReal(texto, x, y, esLetra) } catch (e: Throwable) { Registro.anotar("tecla", e) }
+    }
+
+    private fun teclaReal(texto: String, x: Float, y: Float, esLetra: Boolean) {
         if (buscandoEmoji) { consultaEmoji.append(texto.lowercase()); buscarEmoji(); return }
         val ic = ic() ?: return
         var t = texto
@@ -418,13 +439,16 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             ultimaCorreccion = null
         }
         if (modo == Distribuciones.SIMBOLOS && t == "'") volverLetras()
-        actualizarShift()
-        actualizarBarra()
+        refrescar()
     }
 
     private fun espacioDespuesDe(t: String) = cfg.espacioAuto && campo == Distribuciones.CAMPO_TEXTO && t != "-"
 
     override fun codigo(tipo: Int) {
+        try { codigoReal(tipo) } catch (e: Throwable) { Registro.anotar("codigo", e) }
+    }
+
+    private fun codigoReal(tipo: Int) {
         when (tipo) {
             K.BORRAR -> borrarTexto()
             K.ESPACIO -> espacio()
@@ -468,7 +492,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             ultimoEspacioMs = 0
             espacioAuto = false
             ultimaCorreccion = null
-            actualizarShift(); actualizarBarra()
+            refrescar()
             return
         } else if (espacioAuto && antes(1) == " ") {
             espacioAuto = false
@@ -478,8 +502,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         }
         ultimoEspacioMs = ahora
         if (modo == Distribuciones.SIMBOLOS || modo == Distribuciones.SIMBOLOS2) volverLetras()
-        actualizarShift()
-        actualizarBarra()
+        refrescar()
     }
 
     private fun intro() {
@@ -495,8 +518,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             if (multilinea || accionIntro == EditorInfo.IME_ACTION_NONE) ic.commitText("\n", 1)
             else sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER)
         }
-        actualizarShift()
-        actualizarBarra()
+        refrescar()
     }
 
     /**
@@ -539,8 +561,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             aprenderPalabra(resultado, ctx)
             ultimaCorreccion = null
             reiniciarPalabra()
-            actualizarShift()
-            actualizarBarra()
+            refrescar()
             return
         }
         ic.beginBatchEdit()
@@ -559,8 +580,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             Correccion(original, puesta, separador)
         } else null
         reiniciarPalabra()
-        actualizarShift()
-        actualizarBarra()
+        refrescar()
     }
 
     private fun aprenderPalabra(w: String, ctx: List<String>? = null) {
@@ -591,7 +611,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         if (selIni != selFin && selIni >= 0) {
             if (palabra.isNotEmpty()) { ic.finishComposingText(); reiniciarPalabra() }
             ic.commitText("", 1)
-            actualizarShift(); actualizarBarra()
+            refrescar()
             return
         }
         // Deshacer la corrección automática
@@ -626,7 +646,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             vinoDeslizado = false
             if (palabra.isEmpty()) {
                 ic.beginBatchEdit(); ic.setComposingText("", 1); ic.finishComposingText(); ic.endBatchEdit()
-                reiniciarPalabra(); actualizarShift(); actualizarBarra()
+                reiniciarPalabra(); refrescar()
             } else { ic.setComposingText(palabra, 1); pedirSugerencias() }
             return
         }
@@ -649,11 +669,14 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         // La palabra donde quedó el cursor se vuelve a abrir (para sugerencias) solo cuando
         // terminas de borrar, sin tocar el texto: así nunca se mueve ni se mezcla nada.
         principal.postDelayed(reabrirTrasBorrar, 380L)
-        actualizarShift()
-        actualizarBarra()
+        refrescar()
     }
 
     override fun borrarRepetido(paso: Int) {
+        try { borrarRepetidoReal(paso) } catch (e: Throwable) { Registro.anotar("borrar", e) }
+    }
+
+    private fun borrarRepetidoReal(paso: Int) {
         if (paso < 14 || buscandoEmoji) { borrarTexto(); return }
         // Manteniendo mucho rato: borra palabras enteras
         val ic = ic() ?: return
@@ -674,8 +697,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         ic.endBatchEdit()
         principal.postDelayed(reabrirTrasBorrar, 380L)
         ultimaCorreccion = null
-        actualizarShift()
-        actualizarBarra()
+        refrescar()
     }
 
     /**
@@ -741,7 +763,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         return try { m.proponer(escrito, tx.copyOf(n), ty.copyOf(n), ctx, corregir) } catch (e: Throwable) { Registro.anotar("proponer ya", e); null }
     }
 
-    private fun actualizarBarra() {
+    private fun actualizarBarra(leido: String? = null) {
         val b = barra ?: return
         if (buscandoEmoji) return
         // Lo copiado se ofrece un minuto
@@ -767,14 +789,19 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         }
         // Sin escribir: la barra nunca se esconde, siempre propone la siguiente palabra (también
         // con el campo vacío o recién enviado). Lo copiado reciente tiene prioridad un minuto.
-        if (palabra.isEmpty() && sugerir && cfg.prediccion && Cerebro.motor != null && chip == null && (captura == null || antes(1).isNotEmpty()) && selIni == selFin) {
-            val pred = Cerebro.motor?.predecir(contexto(), inicioDeFrase()) ?: emptyList()
+        if (palabra.isEmpty() && sugerir && cfg.prediccion && Cerebro.motor != null && chip == null && (captura == null || (leido?.takeLast(1) ?: antes(1)).isNotEmpty()) && selIni == selFin) {
+            val t = leido ?: antes(80)
+            val pred = Cerebro.motor?.predecir(contexto(t), inicioDeFrase(t)) ?: emptyList()
             if (pred.isNotEmpty()) { b.mostrarSugerencias(pred, null, false); return }
         }
         b.limpiar()
     }
 
     override fun elegir(texto: String, esLiteral: Boolean) {
+        try { elegirReal(texto, esLiteral) } catch (e: Throwable) { Registro.anotar("elegir", e) }
+    }
+
+    private fun elegirReal(texto: String, esLiteral: Boolean) {
         val ic = ic() ?: return
         marcarEdicion()
         val ctx = contexto()
@@ -794,8 +821,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         aprenderPalabra(texto, ctx)
         reiniciarPalabra()
         espacioAuto = true
-        actualizarShift()
-        actualizarBarra()
+        refrescar()
     }
 
     override fun olvidar(texto: String) {
@@ -901,29 +927,35 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             if (borrar) ic.commitText("", 1) else ic.setSelection(borrarFin, borrarFin)
         }
         borrarFin = -1; borrarAntes = ""
-        actualizarShift(); actualizarBarra()
+        refrescar()
     }
 
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        try { seleccionCambio(newSelStart, newSelEnd, candidatesStart, candidatesEnd) } catch (e: Throwable) { Registro.anotar("seleccion", e) }
+    }
+
+    private fun seleccionCambio(newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int) {
         selIni = newSelStart; selFin = newSelEnd
         if (borrarFin >= 0) return
         val nuestra = SystemClock.uptimeMillis() - ultimaEdicionMs < 250
         if (palabra.isNotEmpty()) {
             if (candidatesStart < 0 || newSelStart != newSelEnd || newSelEnd != candidatesEnd) {
-                // Avisos atrasados de nuestras propias ediciones: se ignoran. Antes uno de esos
-                // soltaba la palabra pero la dejaba abierta en la app, y el siguiente borrado
-                // se comía letras de las palabras anteriores.
-                if (nuestra) return
+                // ¿Aviso atrasado de nuestra propia edición, o la app cambió el texto (por
+                // ejemplo, lo vació al ENVIAR)? Se pregunta a la app qué hay de verdad antes del
+                // cursor: si la palabra sigue ahí, era un aviso atrasado y se ignora; si no, se
+                // suelta. Antes se ignoraba a ciegas y, si enviabas rápido, la palabra enviada
+                // volvía a aparecer al escribir la siguiente letra.
+                if (nuestra && newSelStart == newSelEnd && newSelEnd > 0 && antes(palabra.length) == palabra.toString()) return
                 currentInputConnection?.finishComposingText()
                 reiniciarPalabra()
                 ultimaCorreccion = null; espacioAuto = false
-                actualizarShift(); actualizarBarra()
+                refrescar()
             }
         } else if (!nuestra) {
             ultimaCorreccion = null; espacioAuto = false
             if (newSelStart == newSelEnd && candidatesStart < 0) recapturar(false)
-            actualizarShift(); actualizarBarra()
+            refrescar()
         }
     }
 
@@ -1131,7 +1163,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         marcarEdicion()
         ic()?.commitText(t, 1)
         chipTexto = null; chipSensible = null
-        actualizarShift(); actualizarBarra()
+        refrescar()
     }
 
     override fun pegar(texto: String) {
