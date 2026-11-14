@@ -7,26 +7,29 @@ import android.graphics.Color
 import java.util.concurrent.Executors
 
 /**
- * Colores del teclado: negro AMOLED puro (los píxeles negros se apagan y no gastan batería)
- * con teclas como las del iPhone en modo oscuro: letras gris oscuro, teclas de función más
- * oscuras y texto blanco. El color de la app queda solo en el filo y los detalles.
+ * Colores del teclado: vidrio líquido oscuro (como el iPhone). El fondo desenfoca lo que hay
+ * detrás y las teclas son vidrio translúcido: blanco con poca opacidad encima del fondo.
  */
 class Tema(val acento: Int = ROJO) {
     val fondo = 0xFF000000.toInt()
     val fondoAbajo = 0xFF000000.toInt()
     // Grafito neutro para las letras; las teclas de función llevan un leve tinte vino
-    val tecla = 0xFF38383E.toInt()
-    val teclaFuncion = 0xFF2A2124.toInt()
-    val teclaPresionada = 0xFF5A4348.toInt()     // al presionar, el gris toma un toque rojo
-    val funcionPresionada = 0xFF4A2E33.toInt()
+    // Vidrio: blanco translúcido (letras un poco más claras que las de función)
+    val tecla = 0x30FFFFFF
+    val teclaFuncion = 0x17FFFFFF
+    val teclaPresionada = 0x66FFFFFF
+    val funcionPresionada = 0x42FFFFFF
     val brillo = 0x1CFFFFFF
     val texto = 0xFFF5F5F7.toInt()
     val textoSuave = 0x99EBEBF5.toInt()
     val pista = 0x80EBEBF5.toInt()
     val separador = 0x24FFFFFF
     val barra = 0x00000000
-    val globo = 0xFF46464D.toInt()
-    val tarjeta = 0xFF000000.toInt()
+    val globo = 0xF5505057.toInt()
+    /** Fondo sin desenfoque (teléfonos que no lo permiten o con ahorro de batería) */
+    val tarjeta = 0xFF17171A.toInt()
+    /** Tinte oscuro encima del desenfoque */
+    val tarjetaVidrio = 0xB314141A.toInt()
     val bordeTecla = 0x14FFFFFF
     val bordePanel = acento
     val rojo = ROJO

@@ -126,6 +126,9 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     }
 
     override fun onDestroy() {
+        if (android.os.Build.VERSION.SDK_INT >= 31) oyenteDesenfoque?.let {
+            try { getSystemService(android.view.WindowManager::class.java)?.removeCrossWindowBlurEnabledListener(it) } catch (_: Throwable) { }
+        }
         (getSystemService(CLIPBOARD_SERVICE) as? ClipboardManager)?.removePrimaryClipChangedListener(alCopiar)
         prefs.unregisterOnSharedPreferenceChangeListener(this)
         teclado?.let { prefs.edit().putString("desvios", it.desviosTexto()).apply() }
@@ -146,6 +149,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         if (clave == Ajustes.ALTURA || clave == Ajustes.FILA_NUMEROS) { ponerDistribucion(); teclado?.requestLayout() }
         if (clave == Ajustes.MARGEN_ABAJO) marco?.margenAbajo = (cfg.margenAbajo * resources.displayMetrics.density).toInt()
         if (clave == Ajustes.ANCHO) marco?.margenLado = ladoPara(cfg.ancho)
+        if (clave == Ajustes.VIDRIO) aplicarVidrio()
         aplicarTema(acentoApp)
     }
 
@@ -191,10 +195,47 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     override fun onWindowShown() {
         super.onWindowShown()
-        window?.window?.let { w ->
-            @Suppress("DEPRECATION")
-            w.navigationBarColor = android.graphics.Color.BLACK
-        }
+        aplicarVidrio()
+    }
+
+    // ---------- Vidrio: desenfoque real de lo que hay detrás ----------
+
+    private var oyenteDesenfoque: java.util.function.Consumer<Boolean>? = null
+
+    /**
+     * Android 12+ puede desenfocar lo que hay detrás de la ventana del teclado (lo hace la
+     * GPU del sistema, casi no gasta). Si el teléfono no lo permite, si el ahorro de batería
+     * lo apaga o si la ventana fuera más alta que el teclado, queda el vidrio sólido.
+     */
+    private fun aplicarVidrio() {
+        val ventana = window?.window ?: return
+        val m = marco ?: return
+        var activo = false
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                val wm = getSystemService(android.view.WindowManager::class.java)
+                if (oyenteDesenfoque == null && wm != null) {
+                    val o = java.util.function.Consumer<Boolean> { principal.post { aplicarVidrio() } }
+                    oyenteDesenfoque = o
+                    wm.addCrossWindowBlurEnabledListener(mainExecutor, o)
+                }
+                val decor = ventana.decorView
+                val sobra = decor.height - m.height
+                activo = cfg.vidrio && wm?.isCrossWindowBlurEnabled == true &&
+                    (decor.height == 0 || m.height == 0 || sobra < 40 * resources.displayMetrics.density)
+                val esquinas = 22 * resources.displayMetrics.density
+                ventana.setBackgroundDrawable(android.graphics.drawable.GradientDrawable().apply {
+                    setColor(if (activo) 0x01000000 else 0)
+                    cornerRadii = floatArrayOf(esquinas, esquinas, esquinas, esquinas, 0f, 0f, 0f, 0f)
+                })
+                ventana.setBackgroundBlurRadius(if (activo) (34 * resources.displayMetrics.density).toInt() else 0)
+            }
+        } catch (e: Throwable) { Registro.anotar("vidrio", e); activo = false }
+        m.vidrio = activo
+        @Suppress("DEPRECATION")
+        ventana.navigationBarColor = if (activo) android.graphics.Color.TRANSPARENT else tema.tarjeta
+        // La ventana aún no medía: se revisa otra vez cuando ya tiene su tamaño
+        if (m.height == 0) m.post { if (m.height > 0) aplicarVidrio() }
     }
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
@@ -1037,8 +1078,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
      */
     private fun transicion(v: View?, mostrar: Boolean, oculto: Int, @Suppress("UNUSED_PARAMETER") conAnimacion: Boolean) {
         v ?: return
-        // Como el iPhone: los paneles (emojis, portapapeles, edición) cambian al instante
-        val animar = false
+        // Paneles (emojis, portapapeles, edición): fundido corto subiendo apenas
+        val animar = conAnimacion
         v.animate().cancel()
         val dy = 10 * resources.displayMetrics.density
         if (mostrar) {
@@ -1046,13 +1087,13 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             v.visibility = View.VISIBLE
             if (animar) {
                 v.alpha = 0f; v.translationY = dy
-                v.animate().alpha(1f).translationY(0f).setDuration(280L)
+                v.animate().alpha(1f).translationY(0f).setDuration(200L)
                     .setInterpolator(android.view.animation.PathInterpolator(0.25f, 0.1f, 0.25f, 1f)).withLayer().start()
             } else { v.alpha = 1f; v.translationY = 0f }
         } else {
             if (v.visibility != View.VISIBLE) return
             if (animar) {
-                v.animate().alpha(0f).setDuration(160L)
+                v.animate().alpha(0f).setDuration(120L)
                     .setInterpolator(android.view.animation.PathInterpolator(0.4f, 0f, 1f, 1f)).withLayer().withEndAction {
                     v.visibility = oculto; v.alpha = 1f; v.translationY = 0f
                 }.start()
@@ -1276,27 +1317,26 @@ class Marco(c: Context) : FrameLayout(c) {
         setMeasuredDimension(w, h)
     }
 
+    /** Con desenfoque real detrás (vidrio): el tinte es translúcido */
+    var vidrio = false; set(v) { if (field != v) { field = v; invalidate() } }
+
     /**
-     * Tarjeta flotante casi negra (como el teclado de referencia): separada un poco de los
-     * bordes, con esquinas grandes arriba y abajo siguiendo la curva de la pantalla. Fuera de
-     * la tarjeta, negro puro AMOLED.
+     * Vidrio líquido oscuro: un tinte encima del desenfoque (o un fondo sólido si el teléfono
+     * no desenfoca), apenas más claro arriba. Esquinas curvas arriba, recto abajo y SIN líneas
+     * de borde.
      */
     override fun onDraw(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
-        // Solo la tarjeta: fuera de ella no se pinta nada (antes el negro de afuera se veía
-        // como manchas en las esquinas). Arriba curva, abajo recta hasta el borde.
         val arriba = 22 * d
         forma.reset()
         r.set(0f, 0f, w, h)
         forma.addRoundRect(r, floatArrayOf(arriba, arriba, arriba, arriba, 0f, 0f, 0f, 0f), Path.Direction.CW)
-        fondo.shader = null
-        fondo.color = tema.tarjeta
+        val base = if (vidrio) tema.tarjetaVidrio else tema.tarjeta
+        fondo.shader = android.graphics.LinearGradient(0f, 0f, 0f, h,
+            Tema.mezclar(0xFFFFFFFF.toInt(), base, 0.035f).let { (base and 0xFF000000.toInt()) or (it and 0xFFFFFF) },
+            base, android.graphics.Shader.TileMode.CLAMP)
         c.drawPath(forma, fondo)
-        // Solo un filo de luz finísimo arriba (sin resplandores): limpio como el iPhone
-        borde.color = 0x14FFFFFF; borde.strokeWidth = 0.7f * d
-        c.drawArc(r.left, r.top, r.left + 2 * arriba, r.top + 2 * arriba, 180f, 90f, false, borde)
-        c.drawLine(r.left + arriba, r.top, r.right - arriba, r.top, borde)
-        c.drawArc(r.right - 2 * arriba, r.top, r.right, r.top + 2 * arriba, 270f, 90f, false, borde)
+        fondo.shader = null
     }
 }
 

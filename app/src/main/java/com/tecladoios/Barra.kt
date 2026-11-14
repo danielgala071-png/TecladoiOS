@@ -92,8 +92,9 @@ class Barra(context: Context) : View(context) {
     private var animSube = false
 
     private fun animar(duracion: Float, subir: Boolean) {
-        // Sin fundidos: la barra cambia al instante, como el iPhone
-        animDura = 0f; animSube = false
+        // Fundido cortito sin movimiento (en la GPU, casi no gasta)
+        animInicio = android.os.SystemClock.uptimeMillis(); animDura = minOf(duracion, 140f); animSube = false
+        invalidate()
         invalidate()
     }
 
@@ -133,8 +134,7 @@ class Barra(context: Context) : View(context) {
         zonas.clear(); zonasLargas.clear()
         val w = width.toFloat(); val h = height.toFloat()
         // Línea finísima que separa la barra de las teclas (detalle premium, casi invisible)
-        linea.color = 0x14FFFFFF; linea.strokeWidth = d * 0.6f
-        c.drawLine(dp(18f), h - d * 0.6f, w - dp(18f), h - d * 0.6f, linea)
+        // Sin línea de borde: la barra y las teclas son una sola pieza de vidrio
         val t = if (animDura > 0f) ((android.os.SystemClock.uptimeMillis() - animInicio) / animDura).coerceIn(0f, 1f) else 1f
         if (t < 1f) {
             val e = 1f - (1f - t) * (1f - t) * (1f - t)
@@ -270,7 +270,7 @@ class Barra(context: Context) : View(context) {
             // Volver a las palabras
             val cx = dp(22f); val cy = h / 2
             val apretado = tocando && toqueX in 0f..dp(42f)
-            relleno.color = if (apretado) 0xFF4A1E24.toInt() else 0xFF1A1618.toInt()
+            relleno.color = if (apretado) 0x42FFFFFF else 0x17FFFFFF
             c.drawCircle(cx, cy, dp(15f), relleno)
             icono.color = tema.textoSuave
             Iconos.flecha(c, cx, cy, dp(30f), icono, 0f)
@@ -326,7 +326,7 @@ class Barra(context: Context) : View(context) {
             val cx = x + anchoHerr / 2; val cy = h / 2
             // Cada herramienta en un botón redondo oscuro
             val apretado = toqueX in x..(x + anchoHerr) && tocando
-            relleno.color = if (apretado) 0xFF4A1E24.toInt() else 0xFF1A1618.toInt()
+            relleno.color = if (apretado) 0x42FFFFFF else 0x17FFFFFF
             c.drawCircle(cx, cy, dp(17f), relleno)
             // Aro de luz finísimo: el botón se ve con relieve
             linea.color = 0x1AFFFFFF; linea.strokeWidth = d * 0.7f

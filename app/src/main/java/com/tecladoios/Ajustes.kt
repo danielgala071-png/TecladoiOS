@@ -35,6 +35,7 @@ object Ajustes {
     const val ALTURA = "altura"              // 80..130 (%)
     const val MARGEN_ABAJO = "margen_abajo"  // dp de espacio debajo del teclado
     const val ANCHO = "ancho"                // 70..100 (%), el teclado queda centrado
+    const val VIDRIO = "vidrio"              // desenfoque real detrás del teclado (Android 12+)
     const val RETARDO_LARGA = "retardo_larga"// ms
     const val BORDES_APP = "bordes_app_v2"
     const val BARRA_HERRAMIENTAS = "barra_herramientas"
@@ -78,6 +79,7 @@ class Config(p: SharedPreferences) {
     val altura = p.getInt(Ajustes.ALTURA, 100).coerceIn(75, 135)
     val margenAbajo = p.getInt(Ajustes.MARGEN_ABAJO, 0).coerceIn(0, 120)
     val ancho = p.getInt(Ajustes.ANCHO, 100).coerceIn(70, 100)
+    val vidrio = p.getBoolean(Ajustes.VIDRIO, true)
     val retardoLarga = p.getInt(Ajustes.RETARDO_LARGA, 320).coerceIn(150, 800)
     val bordesApp = p.getBoolean(Ajustes.BORDES_APP, true)
     val barraHerramientas = p.getBoolean(Ajustes.BARRA_HERRAMIENTAS, true)

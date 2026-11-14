@@ -49,8 +49,8 @@ class Capa(context: Context) : View(context) {
     private var apareceMs = 0L
     private var seVaMs = 0L
     // Como el iPhone: el globo aparece al instante y se va en un suspiro
-    private val APARECE = 1f
-    private val SE_VA = 1f
+    private val APARECE = 90f
+    private val SE_VA = 90f
 
     fun mostrarGlobo(r: RectF, texto: String) {
         val ahora = android.os.SystemClock.uptimeMillis()
@@ -116,7 +116,7 @@ class Capa(context: Context) : View(context) {
 
     /** Las tildes y símbolos se despliegan desde la tecla (crecen desde abajo con un resorte) */
     private var opcionesMs = 0L
-    private val DESPLIEGUE = 1f
+    private val DESPLIEGUE = 130f
 
     /** Elige la opción bajo el dedo (x en coordenadas de la capa) */
     fun moverSeleccion(x: Float, y: Float): Int {
@@ -146,11 +146,16 @@ class Capa(context: Context) : View(context) {
             val escala: Float
             val subeLetra: Float
             if (globo) {
-                // Como el iPhone: el globo aparece entero al instante
-                alfa = 1f; escala = 1f; subeLetra = 0f
+                // Aparece rapidísimo creciendo apenas desde la tecla
+                val t = ((ahora - apareceMs) / APARECE).coerceIn(0f, 1f)
+                val e = 1f - (1f - t) * (1f - t)
+                alfa = 0.5f + 0.5f * e; escala = 0.92f + 0.08f * e; subeLetra = (1f - e) * 3f * d
+                if (t < 1f) postInvalidateOnAnimation()
             } else {
-                // Y se va al instante al soltar
-                alfa = 0f; escala = 1f; subeLetra = 0f
+                // Y se va desvaneciendo en un suspiro
+                val t = ((ahora - seVaMs) / SE_VA).coerceIn(0f, 1f)
+                alfa = 1f - t; escala = 1f - 0.04f * t; subeLetra = 0f
+                postInvalidateOnAnimation()
             }
             val a = (alfa * 255).toInt()
             c.save()
@@ -163,8 +168,12 @@ class Capa(context: Context) : View(context) {
             pintura.alpha = a
             c.drawPath(forma, pintura)
             pintura.shader = null
-            brilloG.color = 0x59FF2D3A; brilloG.alpha = (0x59 * alfa).toInt()
+            // Filo de luz del vidrio (brillante arriba)
+            brilloG.shader = android.graphics.LinearGradient(0f, limites.top, 0f, tecla.bottom,
+                intArrayOf(0x66FFFFFF, 0x10FFFFFF, 0x10FFFFFF), floatArrayOf(0f, 0.4f, 1f), android.graphics.Shader.TileMode.CLAMP)
+            brilloG.alpha = (255 * alfa).toInt()
             c.drawPath(forma, brilloG)
+            brilloG.shader = null
             letraP.color = tema.texto; letraP.alpha = a
             letraP.textSize = tecla.height() * 0.78f
             val cy = limites.top + (tecla.top - limites.top) * 0.5f

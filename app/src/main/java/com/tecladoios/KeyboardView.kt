@@ -48,7 +48,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         set(v) {
             // Transición abc ↔ 123: se guarda la imagen de la distribución que se va para que
             // sus letras salgan rodando mientras entran las nuevas, fila por fila
-            if (false && field.nombre != v.nombre && cacheFondo != null && cacheLetras != null && isShown) {
+            if (field.nombre != v.nombre && cacheFondo != null && cacheLetras != null && isShown) {
                 guardarLibre(anteriorFondo); guardarLibre(anteriorLetras)
                 anteriorFondo = cacheFondo; anteriorLetras = cacheLetras
                 cacheFondo = null; cacheLetras = null
@@ -565,11 +565,17 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         colorFilter = android.graphics.PorterDuffColorFilter(Tema.ROJO, android.graphics.PorterDuff.Mode.SRC_IN)
     }
     /** Cada fila tarda esto en cambiar... */
-    private val DURACION_FILA = 240f
+    private val DURACION_FILA = 170f
     /** ...y arranca este tanto después de la de abajo: una ola que nace en la tecla 123 */
-    private val ESCALON = 34f
+    private val ESCALON = 0f
 
     // ---------- Pulsación: la tecla se hunde, se enciende desde el dedo y vuelve con resorte ----------
+
+    private companion object {
+        const val SHIFT_BLANCO = 0xFFF5F5F7.toInt()
+        const val SHIFT_BLANCO_APRETADO = 0xFFC7C7CC.toInt()
+        const val FLECHA_NEGRA = 0xFF1C1C1E.toInt()
+    }
 
     private class Pulso(var t0: Long, var x: Float, var y: Float) {
         /** Cuándo se soltó (0 = sigue apretada) */
@@ -583,7 +589,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     // Como el iPhone: la tecla cambia de color al instante al tocarla y vuelve en un suspiro
     private val HUNDIR = 1f
     private val VOLVER = 1f
-    private val APAGAR = 1f   // al soltar vuelve a su color al instante, como el iPhone
+    private val APAGAR = 140f   // al soltar, el brillo del vidrio se apaga suave
     private val EXPANDIR = 1f
     private val HUNDIMIENTO = 0f
 
@@ -657,8 +663,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     private fun colorTecla(t: Tecla, apretada: Boolean): Int = when {
-        t.tipo == K.INTRO -> if (apretada) tema.rojoOscuro else tema.introActivo
-        t.tipo == K.SHIFT && shift > 0 -> if (apretada) tema.rojoOscuro else tema.rojo
+        // Como el iPhone: el enter es una tecla gris más y la mayúscula activa se pone blanca
+        t.tipo == K.SHIFT && shift > 0 -> if (apretada) SHIFT_BLANCO_APRETADO else SHIFT_BLANCO
         t.funcion -> if (apretada) tema.funcionPresionada else tema.teclaFuncion
         // Letras: con el globo encima basta un brillo leve (como el iPhone); sin globo, más marcado
         apretada && t.tipo == K.TEXTO && config?.vistaPrevia != false && t.texto.length <= 2 ->
@@ -667,18 +673,56 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         else -> tema.tecla
     }
 
-    /** Esquinas más rectas: curva suave, sin parecer pastilla */
-    private fun radioDe(r: RectF) = minOf(dp(6.5f), r.height() * 0.13f)
+    /** Esquinas de vidrio: curva suave como el iPhone */
+    private fun radioDe(r: RectF) = minOf(dp(8.5f), r.height() * 0.18f)
 
-    /** Cuerpo de la tecla en reposo, como el iPhone: color plano y una sombrita de 1 px abajo */
+    /**
+     * Tecla de vidrio líquido. Se dibuja UNA vez en la imagen guardada, así que la
+     * profundidad no gasta nada al escribir:
+     * - sombra suave solo por fuera (no ensucia el vidrio),
+     * - cuerpo translúcido apenas más claro arriba,
+     * - filo de luz: brillante en el canto de arriba y casi invisible abajo (refracción).
+     */
     private fun dibujarCuerpo(c: Canvas, k: Colocada) {
         val r = k.dibujo
         val radio = radioDe(r)
-        sombra.color = 0xFF000000.toInt()
-        c.drawRoundRect(r.left, r.top + dp(1f), r.right, r.bottom + dp(1f), radio, radio, sombra)
-        relleno.shader = null
-        relleno.color = colorTecla(k.tecla, false)
+        val color = colorTecla(k.tecla, false)
+        // Sombra por fuera de la tecla
+        camino.reset(); camino.addRoundRect(r, radio, radio, Path.Direction.CW)
+        c.save()
+        c.clipOutPath(camino)
+        sombra.color = 0x66000000
+        c.drawRoundRect(r.left + dp(0.5f), r.top + dp(1.6f), r.right - dp(0.5f), r.bottom + dp(1.6f), radio, radio, sombra)
+        c.restore()
+        // Cuerpo de vidrio
+        relleno.color = 0xFFFFFFFF.toInt()
+        val a = Color.alpha(color)
+        relleno.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.bottom,
+            Tema.mezclar(0xFFFFFFFF.toInt(), color, 0f).let { (minOf(255, a + 0x0C) shl 24) or (it and 0xFFFFFF) },
+            (maxOf(0, a - 0x06) shl 24) or (color and 0xFFFFFF),
+            android.graphics.Shader.TileMode.CLAMP)
         c.drawRoundRect(r, radio, radio, relleno)
+        relleno.shader = null
+        // Filo de luz (canto de arriba brillante, abajo casi nada)
+        if (!(k.tecla.tipo == K.SHIFT && shift > 0)) {
+            brillo.strokeWidth = dp(0.8f)
+            brillo.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.bottom,
+                intArrayOf(0x52FFFFFF, 0x0DFFFFFF, 0x14FFFFFF), floatArrayOf(0f, 0.55f, 1f),
+                android.graphics.Shader.TileMode.CLAMP)
+            c.drawRoundRect(r.left + dp(0.4f), r.top + dp(0.4f), r.right - dp(0.4f), r.bottom - dp(0.4f), radio, radio, brillo)
+            brillo.shader = null
+        }
+        if (k.tecla.tipo == K.SHIFT && shift > 0) flechaNegra(c, k)
+    }
+
+    /** Flecha rellena negra de la mayúscula activa (con rayita debajo si está fija) */
+    private fun flechaNegra(c: Canvas, k: Colocada) {
+        if (modoTrackpad) return
+        val r = k.dibujo
+        icono.color = FLECHA_NEGRA
+        Iconos.shift(c, r.centerX(), r.centerY(), minOf(r.height(), r.width()), icono, true, shift == 2)
+        icono.style = Paint.Style.STROKE
+        icono.color = tema.texto
     }
 
     /** Letra o ícono de la tecla (va a la imagen guardada de letras) */
@@ -699,7 +743,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 if (config?.pistas != false && distribucion.nombre == "abc" && t.pista != null)
                     c.drawText(t.pista, r.right - r.width() * 0.2f, r.top + pista.textSize * 1.05f, pista)
             }
-            K.SHIFT -> Iconos.shift(c, cx, cy, s, icono, shift > 0, shift == 2)
+            // Activa: la flecha negra va pintada sobre la tecla blanca (en la imagen de cuerpos)
+            K.SHIFT -> if (shift == 0) Iconos.shift(c, cx, cy, s, icono, false, false)
             K.BORRAR -> Iconos.borrar(c, cx, cy, s, icono, false)
             K.EMOJI -> Iconos.cara(c, cx, cy, s, icono)
             K.INTRO -> {
@@ -733,6 +778,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         relleno.alpha = (Color.alpha(relleno.color) * l).toInt().coerceIn(0, 255)
         c.drawRoundRect(r, radio, radio, relleno)
         relleno.alpha = 255
+        if (k.tecla.tipo == K.SHIFT && shift > 0) { flechaNegra(c, k); return }
         src.set(r.left.toInt().coerceAtLeast(0), r.top.toInt().coerceAtLeast(0),
             (r.right + 1).toInt().coerceAtMost(letras.width), (r.bottom + 1).toInt().coerceAtMost(letras.height))
         dst.set(src)
@@ -878,7 +924,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private fun dibujarCambio(c: Canvas, t: Float, filas: Int, fondo: Bitmap, letras: Bitmap, viejoF: Bitmap, viejoL: Bitmap) {
         val w = width.toFloat()
         val arriba = dp(8f)
-        val sube = altoFila * 0.34f
+        val sube = altoFila * 0.08f   // las letras nuevas suben apenas mientras aparecen
         val medio = sepYActual / 2f
         for (k in 0 until filas) {
             val y0 = arriba + k * altoFila
@@ -897,7 +943,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             } else c.drawBitmap(fondo, 0f, 0f, null)
             // Destello que recorre las filas
             val destello = kotlin.math.sin(Math.PI * f).toFloat()
-            if (destello > 0.02f) {
+            if (false && destello > 0.02f) {
                 pinturaDestello.alpha = (destello * 46).toInt()
                 c.drawBitmap(fondo, 0f, 0f, pinturaDestello)
             }
