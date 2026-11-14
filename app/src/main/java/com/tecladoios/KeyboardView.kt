@@ -81,7 +81,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
         val filas = distribucion.filas.size
         val escala = (alturaForzada ?: config?.altura ?: 100) / 100f
-        val base = if (filas >= 5) 50f else 54f
+        val base = if (filas >= 5) 54f else 59f   // teclas un poco más grandes
         val h = (dp(base) * filas * escala + dp(8f) + dp(6f)).toInt()
         setMeasuredDimension(w, h)
     }

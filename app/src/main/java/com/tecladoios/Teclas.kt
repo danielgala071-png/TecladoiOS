@@ -102,8 +102,8 @@ object Distribuciones {
                 texto(".", 1f, listOf(",", "-", "_", ".com", ".pe", ".gob.pe")), intro))
             CAMPO_WEB -> Fila(listOf(izquierda, emoji, texto("/", 1f), Tecla(K.ESPACIO, "", 3.6f),
                 texto(".", 1f, listOf(".com", ".pe", ".gob.pe", ".org", "-", "_")), intro))
-            else -> Fila(listOf(izquierda, emoji, Tecla(K.ESPACIO, "", 4.6f),
-                texto(".", 1f, PUNTUACION.drop(1)), intro))
+            // Sin la tecla del punto: el espacio ocupa su lugar (el punto sale con doble espacio o en 123)
+            else -> Fila(listOf(izquierda, emoji, Tecla(K.ESPACIO, "", 5.6f), intro))
         }
     }
 
