@@ -48,7 +48,6 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         set(v) {
             // Transición: la distribución anterior se desvanece encima de la nueva (abc ↔ 123)
             if (field.nombre != v.nombre && cache != null && isShown) {
-                anterior?.recycle()
                 anterior = cache; cache = null
                 cambioMs = SystemClock.uptimeMillis()
             }
@@ -111,8 +110,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         altoFila = (h - arriba - abajo) / filas.size
         val unidad = (der - izq) / distribucion.unidades
         anchoTecla = unidad
-        val sepX = dp(5.5f) * if (unaMano != 0) 0.8f else 1f
-        val sepY = minOf(dp(11f), altoFila * 0.2f)
+        // Divisiones finas entre teclas: teclas más grandes y un aspecto más limpio
+        val sepX = dp(3.6f) * if (unaMano != 0) 0.85f else 1f
+        val sepY = minOf(dp(7.5f), altoFila * 0.14f)
         val lista = ArrayList<Colocada>(48)
         for ((fi, fila) in filas.withIndex()) {
             var x = izq + (distribucion.unidades - fila.unidades) / 2 * unidad + fila.sangria * unidad
@@ -504,8 +504,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         super.onDetachedFromWindow()
         cancelarTodo()
         // La imagen guardada se suelta: el teclado escondido no ocupa memoria
-        cache?.recycle(); cache = null; sucio = true
-        anterior?.recycle(); anterior = null
+        // Las imágenes NO se liberan a mano: Android todavía puede estar usándolas para
+        // dibujar la pantalla (liberarlas antes dejaba el teclado en negro). Se sueltan solas.
+        cache = null; sucio = true
+        anterior = null
     }
 
     // ---------- Dibujo ----------
@@ -568,7 +570,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val t = k.tecla
         val r = k.dibujo
         // Esquinas bien redondeadas, como las teclas de vidrio
-        val radio = minOf(dp(8f), r.height() * 0.18f)
+        val radio = minOf(dp(10f), r.height() * 0.21f)
         val base = colorTecla(t, apretada)
         if (!apretada) {
             // Sombra en dos capas: da profundidad, como una tecla física (se dibuja una sola vez)
@@ -636,9 +638,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     override fun onDraw(c: Canvas) {
         if (width <= 0 || height <= 0) return
         var bmp = cache
-        if (bmp == null || bmp.width != width || bmp.height != height) {
-            bmp?.recycle()
-            bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        if (bmp == null || bmp.isRecycled || bmp.width != width || bmp.height < height) {
+            // Con margen de alto: al ajustar el tamaño no se crea una imagen nueva en cada
+            // movimiento del dedo (eso llenaba la memoria y podía dejar el teclado en negro)
+            bmp = Bitmap.createBitmap(width, (height * 1.3f).toInt(), Bitmap.Config.ARGB_8888)
             cache = bmp
             sucio = true
         }
@@ -658,7 +661,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val previa = anterior
         if (previa != null) {
             val t = (SystemClock.uptimeMillis() - cambioMs) / DURACION_CAMBIO
-            if (t >= 1f || previa.width != width || previa.height != height) { previa.recycle(); anterior = null }
+            if (t >= 1f || previa.isRecycled || previa.width != width) anterior = null
             else {
                 pinturaAnterior.alpha = (255 * (1f - suave(t))).toInt()
                 c.drawBitmap(previa, 0f, 0f, pinturaAnterior)

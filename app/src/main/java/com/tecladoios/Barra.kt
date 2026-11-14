@@ -112,6 +112,9 @@ class Barra(context: Context) : View(context) {
     override fun onDraw(c: Canvas) {
         zonas.clear(); zonasLargas.clear()
         val w = width.toFloat(); val h = height.toFloat()
+        // Línea finísima que separa la barra de las teclas (detalle premium, casi invisible)
+        linea.color = 0x14FFFFFF; linea.strokeWidth = d * 0.6f
+        c.drawLine(dp(18f), h - d * 0.6f, w - dp(18f), h - d * 0.6f, linea)
         val t = if (animDura > 0f) ((android.os.SystemClock.uptimeMillis() - animInicio) / animDura).coerceIn(0f, 1f) else 1f
         if (t < 1f) {
             val e = 1f - (1f - t) * (1f - t) * (1f - t)

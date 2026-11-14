@@ -1184,14 +1184,14 @@ class Marco(c: Context) : FrameLayout(c) {
     /** Espacio extra abajo que elige el usuario al ajustar el tamaño (en px) */
     var margenAbajo = 0; set(v) { field = v; aplicarRelleno() }
 
-    private val lado = 0
+    private val lado = (6 * resources.displayMetrics.density).toInt()
 
     init {
         setWillNotDraw(false)
         aplicarRelleno()
     }
 
-    private fun aplicarRelleno() = setPadding(lado, (2 * d).toInt(), lado, abajoSistema + margenAbajo)
+    private fun aplicarRelleno() = setPadding(lado, (6 * d).toInt(), lado, abajoSistema + margenAbajo + (4 * d).toInt())
 
     /**
      * El alto lo pone solo la barra con el teclado (el primer hijo). Las demás capas (globos,
@@ -1211,16 +1211,27 @@ class Marco(c: Context) : FrameLayout(c) {
         setMeasuredDimension(w, h)
     }
 
-    /** Negro puro AMOLED con la parte de arriba curva (barra de sugerencias redondeada), sin líneas */
+    /**
+     * Tarjeta flotante casi negra (como el teclado de referencia): separada un poco de los
+     * bordes, con esquinas grandes arriba y abajo siguiendo la curva de la pantalla. Fuera de
+     * la tarjeta, negro puro AMOLED.
+     */
     override fun onDraw(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
-        val rad = 18 * d
+        c.drawColor(tema.fondo)
+        val arriba = 26 * d
+        val abajo = 36 * d
         forma.reset()
-        r.set(0f, 0f, w, h + rad)
-        forma.addRoundRect(r, floatArrayOf(rad, rad, rad, rad, 0f, 0f, 0f, 0f), Path.Direction.CW)
+        r.set(3 * d, 2 * d, w - 3 * d, h - 3 * d)
+        forma.addRoundRect(r, floatArrayOf(arriba, arriba, arriba, arriba, abajo, abajo, abajo, abajo), Path.Direction.CW)
         fondo.shader = null
-        fondo.color = tema.fondo
+        fondo.color = tema.tarjeta
         c.drawPath(forma, fondo)
+        // Filo de luz finísimo arriba de la tarjeta (detalle premium)
+        borde.color = 0x1AFFFFFF; borde.strokeWidth = 0.7f * d
+        c.drawArc(r.left, r.top, r.left + 2 * arriba, r.top + 2 * arriba, 180f, 90f, false, borde)
+        c.drawLine(r.left + arriba, r.top, r.right - arriba, r.top, borde)
+        c.drawArc(r.right - 2 * arriba, r.top, r.right, r.top + 2 * arriba, 270f, 90f, false, borde)
     }
 }
 

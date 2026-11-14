@@ -65,37 +65,18 @@ class Respuesta(c: Context) {
     private var efSuave: VibrationEffect? = null
 
     /**
-     * Una sola vibración, siempre fuerte y un poco larga (no un toquecito corto):
-     * - Letras y demás teclas: golpe fuerte (100) de ~26 ms.
-     * - Espacio, mayúscula y borrar: más fuerte (120) y algo más largo, ~34 ms.
-     * Si el motor permite elegir la fuerza, se usa un pulso propio con largo y fuerza exactos;
-     * si no, el golpe pesado del fabricante.
+     * Vibración al máximo del motor del celular y larga en cada tecla:
+     * - Letras y demás teclas: fuerza máxima, 45 ms.
+     * - Espacio, mayúscula y borrar: fuerza máxima, 55 ms (un poco más largas).
+     * Siempre es un pulso propio con largo exacto (los efectos del fabricante son muy cortos).
      */
     private fun armar() {
         if (efLetra != null) return
         try {
-            if (conAmplitud) {
-                efLetra = VibrationEffect.createOneShot(26L, 213)
-                efFuerte = VibrationEffect.createOneShot(34L, 255)
-                efSuave = VibrationEffect.createOneShot(10L, 140)
-            } else if (conPrimitivas) {
-                efLetra = VibrationEffect.startComposition()
-                    .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1f)
-                    .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 0.7f, 6).compose()
-                efFuerte = VibrationEffect.startComposition()
-                    .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1f)
-                    .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.8f, 8).compose()
-                efSuave = VibrationEffect.startComposition()
-                    .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 0.8f).compose()
-            } else if (conEfectos) {
-                efLetra = VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK)
-                efFuerte = VibrationEffect.createOneShot(34L, VibrationEffect.DEFAULT_AMPLITUDE)
-                efSuave = VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
-            } else {
-                efLetra = VibrationEffect.createOneShot(26L, VibrationEffect.DEFAULT_AMPLITUDE)
-                efFuerte = VibrationEffect.createOneShot(34L, VibrationEffect.DEFAULT_AMPLITUDE)
-                efSuave = VibrationEffect.createOneShot(10L, VibrationEffect.DEFAULT_AMPLITUDE)
-            }
+            val max = if (conAmplitud) 255 else VibrationEffect.DEFAULT_AMPLITUDE
+            efLetra = VibrationEffect.createOneShot(45L, max)
+            efFuerte = VibrationEffect.createOneShot(55L, max)
+            efSuave = VibrationEffect.createOneShot(18L, max)
         } catch (_: Throwable) { }
     }
 
