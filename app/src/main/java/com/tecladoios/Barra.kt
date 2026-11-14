@@ -92,7 +92,8 @@ class Barra(context: Context) : View(context) {
     private var animSube = false
 
     private fun animar(duracion: Float, subir: Boolean) {
-        animInicio = android.os.SystemClock.uptimeMillis(); animDura = duracion; animSube = subir
+        // Sin fundidos: la barra cambia al instante, como el iPhone
+        animDura = 0f; animSube = false
         invalidate()
     }
 
@@ -179,8 +180,7 @@ class Barra(context: Context) : View(context) {
         run {
             val cx = boton / 2 + dp(2f); val cy = h / 2
             val apretado = tocando && toqueX in 0f..boton
-            relleno.color = if (apretado) 0xFF4A1E24.toInt() else 0xFF1A1618.toInt()
-            c.drawCircle(cx, cy, dp(15f), relleno)
+            if (apretado) { relleno.color = 0x24FFFFFF; c.drawCircle(cx, cy, dp(15f), relleno) }
             relleno.color = tema.textoSuave
             val sep = dp(4.2f); val lado = dp(2.6f)
             for (a in -1..1 step 2) for (b in -1..1 step 2)
@@ -223,7 +223,7 @@ class Barra(context: Context) : View(context) {
                 // Entrar desde vacío se nota más; cambiar mientras escribes es más corto y sutil
                 val desdeVacio = celdaPrevia[i] == null
                 celdaMs[i] = ahora + if (desdeVacio) RETRASO_CELDA[i] else RETRASO_CELDA[i] / 2
-                celdaDura[i] = if (desdeVacio) 230f else 150f
+                celdaDura[i] = 0f   // sin animación: las palabras cambian al instante, como el iPhone
                 celdaSube[i] = if (desdeVacio) dp(7f) else dp(3.5f)
                 celdaPrevia[i] = celdas[i]
             }
@@ -255,8 +255,7 @@ class Barra(context: Context) : View(context) {
             c.restore()
             val rr = RectF(desplazamiento + x0, 0f, desplazamiento + x0 + ancho, h)
             val lit = esLiteral[i]
-            val celda = i
-            zonas.add(rr to { elegidaCelda = celda; elegidaMs = android.os.SystemClock.uptimeMillis(); oyente?.elegir(s, lit) })
+            zonas.add(rr to { oyente?.elegir(s, lit) })
             if (!lit) zonasLargas.add(rr to { oyente?.olvidar(s) })
         }
         // Separadores: no se dibujan junto a una casilla vacía

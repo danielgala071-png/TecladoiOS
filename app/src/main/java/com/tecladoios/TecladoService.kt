@@ -1035,8 +1035,10 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
      * Cambio de panel con transición: el que entra aparece subiendo apenas y el que sale se
      * desvanece rápido. Usa las animaciones de Android (en la GPU: casi no gasta).
      */
-    private fun transicion(v: View?, mostrar: Boolean, oculto: Int, animar: Boolean) {
+    private fun transicion(v: View?, mostrar: Boolean, oculto: Int, @Suppress("UNUSED_PARAMETER") conAnimacion: Boolean) {
         v ?: return
+        // Como el iPhone: los paneles (emojis, portapapeles, edición) cambian al instante
+        val animar = false
         v.animate().cancel()
         val dy = 10 * resources.displayMetrics.density
         if (mostrar) {
@@ -1290,18 +1292,7 @@ class Marco(c: Context) : FrameLayout(c) {
         fondo.shader = null
         fondo.color = tema.tarjeta
         c.drawPath(forma, fondo)
-        // Filo rojo arriba que se apaga hacia los lados, con un resplandor suave hacia abajo
-        val cx = w / 2f
-        borde.shader = android.graphics.LinearGradient(0f, 0f, w, 0f,
-            intArrayOf(0x00FF2D3A, 0xCCFF2D3A.toInt(), 0x00FF2D3A), floatArrayOf(0.08f, 0.5f, 0.92f),
-            android.graphics.Shader.TileMode.CLAMP)
-        borde.strokeWidth = 1.2f * d
-        c.drawLine(r.left + arriba, r.top + 0.6f * d, r.right - arriba, r.top + 0.6f * d, borde)
-        borde.shader = null
-        fondo.shader = android.graphics.RadialGradient(cx, 0f, w * 0.45f, 0x26FF2D3A, 0x00FF2D3A,
-            android.graphics.Shader.TileMode.CLAMP)
-        c.save(); c.clipPath(forma); c.drawRect(0f, 0f, w, 26 * d, fondo); c.restore()
-        fondo.shader = null
+        // Solo un filo de luz finísimo arriba (sin resplandores): limpio como el iPhone
         borde.color = 0x14FFFFFF; borde.strokeWidth = 0.7f * d
         c.drawArc(r.left, r.top, r.left + 2 * arriba, r.top + 2 * arriba, 180f, 90f, false, borde)
         c.drawLine(r.left + arriba, r.top, r.right - arriba, r.top, borde)

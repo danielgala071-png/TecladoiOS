@@ -193,6 +193,7 @@ class Motor(
         if (contexto.isEmpty()) return emptyMap()
         val m = HashMap<String, Float>()
         for ((w, v) in aprendido.predecir(contexto)) m[w] = 0.6f + 0.25f * ln(1f + v)
+        dosPalabras(contexto)?.forEachIndexed { i, w -> m[w] = (m[w] ?: 0f) + 1.2f - i * 0.07f }
         bigramas[Texto.normal(contexto.last())]?.forEachIndexed { i, w -> m[w] = (m[w] ?: 0f) + 0.9f - i * 0.06f }
         return m
     }
@@ -389,18 +390,34 @@ class Motor(
     }
 
     /** Siguiente palabra probable después de [contexto] */
+    /** Lo que suele seguir a las DOS últimas palabras ("buenos días" → a, para…) */
+    private fun dosPalabras(contexto: List<String>): Array<String>? =
+        if (contexto.size >= 2) bigramas[Texto.normal(contexto[contexto.size - 2]) + " " + Texto.normal(contexto.last())] else null
+
+    /**
+     * Siguiente palabra, como el iPhone: primero lo que TÚ sueles escribir después de esas
+     * palabras, luego las frases hechas de dos palabras, luego lo que suele seguir a la
+     * última, y si falta, palabras de inicio o generales. Nunca repite la palabra anterior.
+     */
     fun predecir(contexto: List<String>, inicioDeFrase: Boolean): List<String> {
         val res = LinkedHashMap<String, Float>()
-        for ((w, v) in aprendido.predecir(contexto)) res[w] = 2f + ln(1f + v)
+        for ((w, v) in aprendido.predecir(contexto)) res[w] = 2.2f + ln(1f + v)
+        dosPalabras(contexto)?.forEachIndexed { i, w -> res[w] = (res[w] ?: 0f) + 2.0f - i * 0.12f }
         if (contexto.isNotEmpty()) bigramas[Texto.normal(contexto.last())]?.forEachIndexed { i, w ->
             res[w] = (res[w] ?: 0f) + 1.6f - i * 0.12f
         }
+        // Lo que más usas en general desempata (y sube lo tuyo por encima de lo genérico)
+        for (w in res.keys.toList()) res[w] = res[w]!! + 0.15f * bonoUso(Texto.normal(w))
+        val anterior = contexto.lastOrNull()?.let { Texto.normal(it) }
+        if (anterior != null) res.keys.removeAll { Texto.normal(it) == anterior }
         if (res.size < 3) {
             val base = if (inicioDeFrase || contexto.isEmpty()) INICIO else GENERALES
-            base.forEachIndexed { i, w -> if (!res.containsKey(w)) res[w] = 0.5f - i * 0.02f }
+            base.forEachIndexed { i, w -> if (!res.containsKey(w) && Texto.normal(w) != anterior) res[w] = 0.5f - i * 0.02f }
         }
         val orden = res.entries.sortedByDescending { it.value }.map { it.key }
-        return orden.map { if (inicioDeFrase) Texto.capitalizar(it) else it }.distinct().take(3)
+        val vistos = HashSet<String>()
+        return orden.map { if (inicioDeFrase) Texto.capitalizar(it) else it }
+            .filter { vistos.add(Texto.normal(it)) }.take(3)
     }
 
     /** Igual que [confianzaDe] pero con el número de la palabra (más rápido al deslizar) */
@@ -425,8 +442,9 @@ class Motor(
                 if (l.isEmpty() || l[0] == '#') continue
                 val i = l.indexOf(':')
                 if (i <= 0) continue
-                val k = Texto.normal(l.substring(0, i).trim())
-                if (k.contains(' ')) continue
+                // También claves de dos palabras ("buenos días: ..."): predicen mejor que una sola
+                val k = Texto.normal(l.substring(0, i).trim()).split(' ').filter { it.isNotEmpty() }.joinToString(" ")
+                if (k.isEmpty() || k.count { it == ' ' } > 1) continue
                 val nuevos = l.substring(i + 1).split(',').map { it.trim() }.filter { it.isNotEmpty() && !it.contains(' ') }
                 val previos = en[k]
                 en[k] = if (previos == null) nuevos.toTypedArray() else (previos.toList() + nuevos).distinct().toTypedArray()

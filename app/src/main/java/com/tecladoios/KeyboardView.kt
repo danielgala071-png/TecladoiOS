@@ -48,7 +48,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         set(v) {
             // Transición abc ↔ 123: se guarda la imagen de la distribución que se va para que
             // sus letras salgan rodando mientras entran las nuevas, fila por fila
-            if (field.nombre != v.nombre && cacheFondo != null && cacheLetras != null && isShown) {
+            if (false && field.nombre != v.nombre && cacheFondo != null && cacheLetras != null && isShown) {
                 guardarLibre(anteriorFondo); guardarLibre(anteriorLetras)
                 anteriorFondo = cacheFondo; anteriorLetras = cacheLetras
                 cacheFondo = null; cacheLetras = null
@@ -580,11 +580,12 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     /** Teclas apretadas y las que están volviendo a su lugar */
     private val pulsos = HashMap<Colocada, Pulso>()
-    private val HUNDIR = 60f          // se hunde casi al instante: el dedo siente respuesta
-    private val VOLVER = 300f         // vuelve con un resorte corto y amortiguado
-    private val APAGAR = 260f         // la luz se apaga suave
-    private val EXPANDIR = 260f       // el brillo se abre desde la yema del dedo
-    private val HUNDIMIENTO = 0.035f  // se hunde apenas: sutil, como una tecla física
+    // Como el iPhone: la tecla cambia de color al instante al tocarla y vuelve en un suspiro
+    private val HUNDIR = 1f
+    private val VOLVER = 1f
+    private val APAGAR = 1f   // al soltar vuelve a su color al instante, como el iPhone
+    private val EXPANDIR = 1f
+    private val HUNDIMIENTO = 0f
 
     private val pinturaBmp = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val tapa = Paint().apply { color = 0xFF000000.toInt() }
@@ -618,7 +619,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val p = pulsos[c] ?: return
         if (p.suelta == 0L) {
             val ahora = SystemClock.uptimeMillis()
-            p.nivel = hundimiento(p, ahora)
+            p.nivel = 1f
             p.suelta = ahora
         }
         invalidate()
@@ -634,7 +635,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     /** Cuánta luz tiene la tecla (0..1) */
     private fun luzDe(p: Pulso, ahora: Long): Float {
-        if (p.suelta == 0L) return suave(((ahora - p.t0) / HUNDIR).coerceIn(0f, 1f))
+        if (p.suelta == 0L) return 1f   // apretada: color de tecla apretada al instante
         val r = ((ahora - p.suelta) / APAGAR).coerceIn(0f, 1f)
         val u = 1f - r
         return p.nivel.coerceIn(0f, 1f) * u * u
@@ -669,37 +670,15 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     /** Esquinas más rectas: curva suave, sin parecer pastilla */
     private fun radioDe(r: RectF) = minOf(dp(6.5f), r.height() * 0.13f)
 
-    /**
-     * Cuerpo de la tecla en reposo, estilo satinado: un labio oscuro abajo (como una tecla
-     * física), cuerpo mate con un degradado casi invisible y un filo de luz finísimo solo en
-     * el canto de arriba. Sin contornos blancos: se ve limpio y caro.
-     */
+    /** Cuerpo de la tecla en reposo, como el iPhone: color plano y una sombrita de 1 px abajo */
     private fun dibujarCuerpo(c: Canvas, k: Colocada) {
-        val t = k.tecla
         val r = k.dibujo
         val radio = radioDe(r)
-        val base = colorTecla(t, false)
-        val roja = (t.tipo == K.SHIFT && shift > 0) || (t.tipo == K.INTRO && introDestacado)
-        // Sombra suave que la despega del fondo negro
-        sombra.color = 0x8C000000.toInt()
-        c.drawRoundRect(r.left + dp(0.4f), r.top + dp(2f), r.right - dp(0.4f), r.bottom + dp(2f), radio, radio, sombra)
-        // Labio: el canto de abajo, más oscuro
-        sombra.color = Tema.mezclar(0xFF000000.toInt(), base, 0.42f)
-        c.drawRoundRect(r.left, r.top + dp(1.1f), r.right, r.bottom + dp(1.1f), radio, radio, sombra)
-        // Cuerpo satinado
-        relleno.color = 0xFFFFFFFF.toInt()
-        relleno.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.bottom,
-            Tema.mezclar(0xFFFFFFFF.toInt(), base, if (roja) 0.06f else 0.045f),
-            Tema.mezclar(0xFF000000.toInt(), base, 0.06f),
-            android.graphics.Shader.TileMode.CLAMP)
-        c.drawRoundRect(r, radio, radio, relleno)
+        sombra.color = 0xFF000000.toInt()
+        c.drawRoundRect(r.left, r.top + dp(1f), r.right, r.bottom + dp(1f), radio, radio, sombra)
         relleno.shader = null
-        // Filo de luz en el canto de arriba (se apaga a los pocos píxeles)
-        brillo.strokeWidth = dp(0.7f)
-        brillo.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.top + minOf(dp(9f), r.height() * 0.22f),
-            if (roja) 0x30FFFFFF else 0x1FFFFFFF, 0x00FFFFFF, android.graphics.Shader.TileMode.CLAMP)
-        c.drawRoundRect(r.left + dp(0.35f), r.top + dp(0.35f), r.right - dp(0.35f), r.bottom - dp(0.35f), radio, radio, brillo)
-        brillo.shader = null
+        relleno.color = colorTecla(k.tecla, false)
+        c.drawRoundRect(r, radio, radio, relleno)
     }
 
     /** Letra o ícono de la tecla (va a la imagen guardada de letras) */
@@ -744,52 +723,19 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
      * del dedo; al soltar vuelve con un resorte corto y la luz se apaga.
      */
     private fun dibujarPulso(c: Canvas, k: Colocada, p: Pulso, ahora: Long, fondo: Bitmap, letras: Bitmap) {
-        val r = k.dibujo
-        val h = hundimiento(p, ahora)
         val l = luzDe(p, ahora)
+        if (l <= 0.01f) return
+        val r = k.dibujo
         val radio = radioDe(r)
-        val m = dp(2.4f)
-        val cx = r.centerX(); val cy = r.centerY()
-        val s = 1f - HUNDIMIENTO * h
-        // Tapar la tecla quieta (con su sombra) para dibujarla hundida
-        c.drawRoundRect(r.left - m * 0.4f, r.top - m * 0.4f, r.right + m * 0.4f, r.bottom + m, radio, radio, tapa)
-        src.set((r.left - m).toInt().coerceAtLeast(0), (r.top - m).toInt().coerceAtLeast(0),
-            (r.right + m).toInt().coerceAtMost(fondo.width), (r.bottom + m * 1.4f).toInt().coerceAtMost(fondo.height))
-        dst.set(cx + (src.left - cx) * s, cy + (src.top - cy) * s, cx + (src.right - cx) * s, cy + (src.bottom - cy) * s)
-        c.drawBitmap(fondo, src, dst, pinturaBmp)
-        rr.set(cx + (r.left - cx) * s, cy + (r.top - cy) * s, cx + (r.right - cx) * s, cy + (r.bottom - cy) * s)
-        val rad = radio * s
-        if (l > 0.01f) {
-            // La tecla se aclara apenas
-            relleno.shader = null
-            relleno.color = colorTecla(k.tecla, true)
-            relleno.alpha = (Color.alpha(relleno.color) * l * 0.8f).toInt().coerceIn(0, 255)
-            c.drawRoundRect(rr, rad, rad, relleno)
-            relleno.alpha = 255
-            val roja = k.tecla.tipo == K.INTRO || (k.tecla.tipo == K.SHIFT && shift > 0)
-            // Brillo blanco tenue que se abre desde la yema del dedo
-            val e = suave(((ahora - p.t0) / EXPANDIR).coerceIn(0f, 1f))
-            val alcance = maxOf(rr.width(), rr.height()) * (0.5f + 0.6f * e)
-            val gx = (cx + (p.x - cx) * s).coerceIn(rr.left, rr.right)
-            val gy = (cy + (p.y - cy) * s).coerceIn(rr.top, rr.bottom)
-            matrizLuz.setScale(alcance, alcance)
-            matrizLuz.postTranslate(gx, gy)
-            luzShader.setLocalMatrix(matrizLuz)
-            luz.alpha = (255 * l).toInt().coerceIn(0, 255)
-            c.save()
-            camino.reset(); camino.addRoundRect(rr, rad, rad, Path.Direction.CW)
-            c.clipPath(camino)
-            c.drawRect(rr, luz)
-            c.restore()
-            // Línea de luz roja en la base: se abre desde el centro y se apaga suave
-            if (!roja) {
-                val medio = rr.width() * (0.16f + 0.14f * e)
-                val alto = dp(1.8f)
-                filoRojo.color = Tema.ROJO
-                filoRojo.alpha = (220 * l).toInt().coerceIn(0, 255)
-                c.drawRoundRect(rr.centerX() - medio, rr.bottom - dp(3.4f), rr.centerX() + medio, rr.bottom - dp(3.4f) + alto, alto / 2, alto / 2, filoRojo)
-            }
-        }
+        // Solo el color de tecla apretada encima (sin hundir, sin brillos) y la letra encima
+        relleno.shader = null
+        relleno.color = colorTecla(k.tecla, true)
+        relleno.alpha = (Color.alpha(relleno.color) * l).toInt().coerceIn(0, 255)
+        c.drawRoundRect(r, radio, radio, relleno)
+        relleno.alpha = 255
+        src.set(r.left.toInt().coerceAtLeast(0), r.top.toInt().coerceAtLeast(0),
+            (r.right + 1).toInt().coerceAtMost(letras.width), (r.bottom + 1).toInt().coerceAtMost(letras.height))
+        dst.set(src)
         pinturaLetras.color = tema.texto
         c.drawBitmap(letras, src, dst, pinturaLetras)
     }
@@ -901,7 +847,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 if (terminado(e.value, ahora)) { it.remove(); continue }
                 dibujarPulso(c, e.key, e.value, ahora, fondo, letras)
             }
-            if (pulsos.values.any { it.suelta != 0L || ahora - it.t0 < EXPANDIR }) postInvalidateOnAnimation()
+            if (pulsos.values.any { it.suelta != 0L }) postInvalidateOnAnimation()
         }
 
         // Estela al deslizar (se afina hacia el final, como una pincelada)

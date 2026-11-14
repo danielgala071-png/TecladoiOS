@@ -1239,3 +1239,126 @@ jueves: a, en
 viernes: a, en, por
 sábado: a, en, por
 domingo: a, en, por
+
+# --- Palabras muy usadas que no tenían predicción ---
+él: es, está, no, me, dijo, tiene, va, también
+ella: es, está, no, me, dijo, tiene, va, también
+pues: sí, no, ya, bueno, claro, nada, entonces
+ser: así, mejor, posible, más, tan, el, la
+son: las, los, muy, de, mis, unos, buenos
+sabe: que, nada, si, bien, cómo, lo
+saber: si, que, cómo, qué, cuándo, dónde, más
+veo: que, bien, mañana, luego, a, el
+vi: que, a, el, la, tu, ayer, eso
+dile: que, a, por, lo, gracias
+nadie: me, sabe, lo, más, te, va
+ahora: sí, no, mismo, voy, estoy, que, me, ya
+allá: está, en, voy, nos, te, estoy
+colegio: de, a, en, y, con, mañana
+universidad: de, a, en, y, con
+fotos: de, que, del, y, por, para
+hermano: de, y, me, se, está, mayor, menor
+hermana: de, y, me, se, está, mayor, menor
+amigo: de, mío, y, me, que, se
+amiga: de, mía, y, me, que, se
+amigos: de, y, en, que, del
+amigas: de, y, en, que
+familia: y, de, está, bien, en, que
+novio: y, de, me, se, que
+novia: y, de, me, se, que
+bebé: está, y, de, se, es
+tiempo: de, que, para, no, y, libre
+horas: de, más, y, en, que, después
+mes: de, que, pasado, siguiente, y
+año: pasado, que, de, nuevo, y, en
+años: de, que, y, más, en
+vez: que, más, de, a, en
+veces: que, al, más, me, a
+mucha: gente, suerte, gracias, más, razón, hambre
+poca: gente, cosa, plata, plata
+otros: días, años, que, de, también
+mismo: que, día, tiempo, lugar, de
+todas: las, formas, maneras, partes, mis
+bonito: día, es, y, que, lo
+bonita: la, es, y, que, foto
+lindo: día, es, y, que, lo
+linda: la, es, y, que, foto
+rico: el, la, es, y
+rica: la, es, y
+grande: y, que, de, el
+pequeño: y, de, que, el
+nuevo: y, de, que, año, en
+nueva: y, de, que, en
+peor: que, es, de, todavía, aún
+llegas: a, tú, al, hoy, mañana
+llega: a, el, la, hoy, mañana, al
+llegar: a, al, tarde, temprano, hoy, mañana
+venir: a, mañana, hoy, para, con
+viene: a, el, la, mañana, hoy, con
+sus: cosas, amigos, papás, hijos
+tus: cosas, amigos, papás, hijos, fotos
+cual: es, sería, quieres, prefieres
+quien: es, sabe, te, me, dijo
+cuéntame: qué, cómo, que, todo, bien
+amo: mucho, a, tanto, mi, mucho
+extraño: mucho, a, tanto, un
+extrañas: a, mucho, cosas
+cariño: mío, te, y, que
+corazón: mío, y, que, de
+beso: y, grande, a, para
+abrazos: y, a, para, fuertes
+comer: algo, a, en, con, juntos, hoy
+comida: y, de, está, para, que
+dormir: un, temprano, ya, a, bien, un
+duermo: un, temprano, ya, bien
+tienda: de, y, a, que, del
+mercado: a, de, y, que
+carro: de, y, a, que, del
+suerte: en, con, y, que, para, hoy
+mentira: que, es, y, no
+segura: que, de, y, es
+crees: que, en, tú, eso
+gusta: mucho, el, la, que, más, tu
+gustó: mucho, el, la, que, tu
+encanta: el, la, que, tu, mucho
+necesitas: algo, ayuda, que, más, a
+
+# --- Dos palabras: lo que sigue después de una frase hecha ---
+buenos días: a, para, con, estimado, señor, cómo
+buenas tardes: a, para, con, estimado, señor, cómo
+buenas noches: a, para, que, amor, mi
+muchas gracias: por, a, de, y, señor
+por favor: me, no, si, que, avísame, envíame
+qué tal: estás, todo, tu, el, la, si
+cómo estás: tú, amigo, bien, hoy, mi
+cómo está: usted, todo, el, la, tu
+cómo te: va, fue, sientes, llamas
+te quiero: mucho, amor, mi, tanto
+te amo: mucho, amor, mi, tanto
+te extraño: mucho, amor, mi, tanto
+nos vemos: mañana, luego, a, el, en, pronto
+hasta mañana: a, amor, que, y
+hasta luego: a, amor, que, y
+de nada: a, amigo, y
+lo siento: mucho, por, no, mi
+no sé: qué, si, cómo, dónde, cuándo, nada
+no te: preocupes, olvides, vayas, creo
+ya estoy: en, llegando, saliendo, listo, lista, aquí
+estoy en: casa, el, la, camino, la oficina
+voy a: ir, ver, estar, llegar, hacer, salir, comer
+vamos a: ir, ver, comer, salir, hacer
+tengo que: ir, hacer, ver, salir, trabajar, estudiar
+hay que: ver, hacer, ir, esperar
+me avisas: si, cuando, cualquier, por
+estimado señor: buenos, buenas, por, le
+le saludo: cordialmente, atentamente, muy
+sin otro: particular
+quedo atento: a, para, su
+quedo atenta: a, para, su
+atentamente: a, el, la
+en el: trabajo, colegio, centro, camino, carro
+en la: casa, oficina, mañana, tarde, noche, universidad
+a la: casa, oficina, una, mañana, noche
+de la: mañana, tarde, noche, oficina, casa
+qué haces: hoy, ahora, mañana, tú
+dónde estás: ahora, tú, amor

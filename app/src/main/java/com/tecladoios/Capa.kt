@@ -48,8 +48,9 @@ class Capa(context: Context) : View(context) {
     // Animación del globo: aparece creciendo un poco y se va desvaneciendo (muy corta)
     private var apareceMs = 0L
     private var seVaMs = 0L
-    private val APARECE = 120f
-    private val SE_VA = 130f
+    // Como el iPhone: el globo aparece al instante y se va en un suspiro
+    private val APARECE = 1f
+    private val SE_VA = 1f
 
     fun mostrarGlobo(r: RectF, texto: String) {
         val ahora = android.os.SystemClock.uptimeMillis()
@@ -115,7 +116,7 @@ class Capa(context: Context) : View(context) {
 
     /** Las tildes y símbolos se despliegan desde la tecla (crecen desde abajo con un resorte) */
     private var opcionesMs = 0L
-    private val DESPLIEGUE = 170f
+    private val DESPLIEGUE = 1f
 
     /** Elige la opción bajo el dedo (x en coordenadas de la capa) */
     fun moverSeleccion(x: Float, y: Float): Int {
@@ -145,20 +146,11 @@ class Capa(context: Context) : View(context) {
             val escala: Float
             val subeLetra: Float
             if (globo) {
-                val t = ((ahora - apareceMs) / APARECE).coerceIn(0f, 1f)
-                // Nace de la tecla con un resorte cortito: crece, se pasa apenas y se asienta
-                val u = t - 1f
-                val e = 1f + 2.2f * u * u * u + 1.2f * u * u
-                alfa = (0.2f + 1.6f * t).coerceAtMost(1f); escala = 0.86f + 0.14f * e
-                subeLetra = (1f - e) * 6f * d
-                if (t < 1f) postInvalidateOnAnimation()
+                // Como el iPhone: el globo aparece entero al instante
+                alfa = 1f; escala = 1f; subeLetra = 0f
             } else {
-                val t = ((ahora - seVaMs) / SE_VA).coerceIn(0f, 1f)
-                // Se recoge hacia su tecla mientras se apaga
-                val u = 1f - t
-                alfa = u * u; escala = 1f - 0.08f * t
-                subeLetra = -2f * d * t
-                postInvalidateOnAnimation()
+                // Y se va al instante al soltar
+                alfa = 0f; escala = 1f; subeLetra = 0f
             }
             val a = (alfa * 255).toInt()
             c.save()
