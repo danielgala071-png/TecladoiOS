@@ -242,6 +242,7 @@ class SettingsActivity : Activity() {
 
         val tec = seccion("Teclado")
         interruptor(tec, "Fila de números", Ajustes.FILA_NUMEROS, false)
+        interruptor(tec, "Seguir el modo del celular", Ajustes.TEMA_SISTEMA, false, "Apagado: siempre negro AMOLED. Encendido: claro de día si tu celular está en modo claro")
         interruptor(tec, "Teclado dividido en horizontal", Ajustes.DIVIDIDO, true, "Con el celular echado, las letras se separan a los lados para escribir con los pulgares")
         interruptor(tec, "Símbolos en las teclas", Ajustes.PISTAS, false, "Mantén una letra para escribir su símbolo o tilde")
         interruptor(tec, "Vista previa al tocar", Ajustes.VISTA_PREVIA, true)

@@ -379,7 +379,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private fun aplicarTema(acento: Int) {
         acentoApp = acento
         // Claro u oscuro según el modo del celular, como en iOS
-        val claro = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) !=
+        // AMOLED (negro puro) siempre, salvo que en Ajustes pidas seguir el modo del celular
+        val claro = cfg.temaSistema && (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) !=
             android.content.res.Configuration.UI_MODE_NIGHT_YES
         val t = Tema(Tema.AZUL, claro)
         tema = t
@@ -1423,11 +1424,11 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             pe.visibility = View.VISIBLE; pe.alpha = 1f
             pe.translationY = alto
             kb.visibility = View.VISIBLE
-            pe.animate().translationY(0f).setDuration(280L).setInterpolator(curva).withLayer()
+            pe.animate().translationY(0f).setDuration(260L).setInterpolator(curva)
                 .withEndAction { if (panel == Panel.EMOJI) kb.visibility = View.INVISIBLE }.start()
         } else {
             kb.visibility = View.VISIBLE; kb.alpha = 1f; kb.translationY = 0f
-            pe.animate().translationY(alto).setDuration(240L).setInterpolator(curva).withLayer()
+            pe.animate().translationY(alto).setDuration(220L).setInterpolator(curva)
                 .withEndAction { if (panel != Panel.EMOJI) { pe.visibility = View.GONE; pe.translationY = 0f } }.start()
         }
     }

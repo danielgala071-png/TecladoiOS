@@ -250,7 +250,10 @@ class PanelEmoji(context: Context) : View(context) {
     // Dibujar un emoji a color es caro; al deslizar se repetía con cada emoji en cada cuadro y
     // por eso se sentía lento. Ahora cada emoji se dibuja UNA vez en una imagen chiquita y luego
     // solo se copia (muy rápido). Se guardan los más recientes, con un tope de memoria.
-    private val imagenes = object : android.util.LruCache<String, android.graphics.Bitmap>(10 * 1024) {
+    // Imágenes de los emojis ya dibujados: con espacio para casi todos, así cambiar de
+    // categoría no tiene que dibujar decenas de emojis de golpe (eso era el tironcito)
+    private val imagenes = object : android.util.LruCache<String, android.graphics.Bitmap>(
+        (Runtime.getRuntime().maxMemory() / 1024 / 4).toInt().coerceIn(16 * 1024, 72 * 1024)) {
         override fun sizeOf(key: String, value: android.graphics.Bitmap) = value.byteCount / 1024
     }
     private val pintaImagen = Paint(Paint.FILTER_BITMAP_FLAG)
@@ -261,7 +264,7 @@ class PanelEmoji(context: Context) : View(context) {
         val clave = "$tam:$e"
         imagenes.get(clave)?.let { return it }
         return try {
-            val lado = (tam * 1.3f).toInt()
+            val lado = (tam * 1.18f).toInt()
             val bmp = android.graphics.Bitmap.createBitmap(lado, lado, android.graphics.Bitmap.Config.ARGB_8888)
             val cv = Canvas(bmp)
             emojiDibujo.textSize = tam.toFloat()
@@ -272,27 +275,46 @@ class PanelEmoji(context: Context) : View(context) {
     }
 
     @Volatile private var tamPrecalentado = -1
+    /** Categoría que conviene preparar primero (la que acabas de tocar) */
+    @Volatile private var prioridad = 0
+    @Volatile private var vueltaPrecalentar = 0
+
+    // Hilo propio y de baja prioridad: prepara los emojis sin frenar al cerebro ni la pantalla
+    private val hiloEmojis = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "emojis").apply { priority = Thread.MIN_PRIORITY; isDaemon = true }
+    }
 
     /**
-     * Apenas se abre el panel, deja listos en segundo plano los emojis de las primeras
-     * categorías: así el primer deslizamiento ya va fluido.
+     * Deja listos en segundo plano los emojis, empezando por la categoría [desde] y siguiendo
+     * por las de al lado: al deslizar o tocar otra categoría ya están dibujados.
      */
-    private fun precalentar(tam: Int) {
-        if (tam <= 0 || tam == tamPrecalentado) return
-        tamPrecalentado = tam
-        val lista = categorias.take(3).flatMap { it.emojis }.take(260)
-        Cerebro.hilo.execute {
-            for (e in lista) {
-                if (tamPrecalentado != tam) return@execute
-                if (imagenes.get("$tam:$e") == null) {
-                    try {
-                        val lado = (tam * 1.3f).toInt()
-                        val bmp = android.graphics.Bitmap.createBitmap(lado, lado, android.graphics.Bitmap.Config.ARGB_8888)
-                        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; textSize = tam.toFloat() }
-                        Canvas(bmp).drawText(e, lado / 2f, lado / 2f + tam * 0.35f, p)
-                        imagenes.put("$tam:$e", bmp)
-                    } catch (_: Throwable) { return@execute }
-                }
+    private fun precalentar(tam: Int, desde: Int = 0) {
+        if (tam <= 0) return
+        if (tam == tamPrecalentado && desde == prioridad) return
+        tamPrecalentado = tam; prioridad = desde
+        val vuelta = ++vueltaPrecalentar
+        val cats = categorias
+        if (cats.isEmpty()) return
+        // Orden: la elegida, luego alternando derecha e izquierda
+        val orden = ArrayList<Int>(cats.size)
+        orden.add(desde.coerceIn(0, cats.size - 1))
+        for (k in 1 until cats.size) {
+            if (desde + k < cats.size) orden.add(desde + k)
+            if (desde - k >= 0) orden.add(desde - k)
+        }
+        hiloEmojis.execute {
+            val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; textSize = tam.toFloat() }
+            val lado = (tam * 1.18f).toInt()
+            for (k in orden) for (e in cats[k].emojis) {
+                if (vuelta != vueltaPrecalentar || tamPrecalentado != tam) return@execute
+                if (imagenes.get("$tam:$e") != null) continue
+                try {
+                    val bmp = android.graphics.Bitmap.createBitmap(lado, lado, android.graphics.Bitmap.Config.ARGB_8888)
+                    Canvas(bmp).drawText(e, lado / 2f, lado / 2f + tam * 0.35f, p)
+                    imagenes.put("$tam:$e", bmp)
+                } catch (_: Throwable) { return@execute }
+                // Si el caché ya está lleno, no tiene sentido seguir (se pisarían entre sí)
+                if (imagenes.size() >= imagenes.maxSize() - lado * lado * 4 / 1024) return@execute
             }
         }
     }
@@ -358,7 +380,7 @@ class PanelEmoji(context: Context) : View(context) {
         // Emojis (solo las columnas visibles)
         emojiP.textSize = cel * 0.68f
         val colW = anchoCol(cel)
-        precalentar(emojiP.textSize.toInt())
+        precalentar(emojiP.textSize.toInt(), prioridad)
         c.save()
         c.clipRect(0f, arribaGrilla() - dp(2f), w, yAbajo)
         for ((k, cat) in categorias.withIndex()) {
@@ -502,6 +524,8 @@ class PanelEmoji(context: Context) : View(context) {
     }
 
     private fun saltarA(k: Int) {
+        // Primero se preparan los emojis de esa categoría (y las vecinas)
+        if (tamPrecalentado > 0) precalentar(tamPrecalentado, k)
         scroller.forceFinished(true)
         corrimiento = (paradasX.getOrElse(k) { 0f } - dp(10f)).coerceIn(0f, maxCorrimiento())
         invalidate()

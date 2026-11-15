@@ -26,8 +26,8 @@ class Capa(context: Context) : View(context) {
     /** Margen alrededor del globo guardado (para el aura y la sombra), en dp */
     private val MARGEN = 18f
     /** Globos ya armados, por tecla y letra (los más usados se quedan) */
-    private val globos = object : LinkedHashMap<String, android.graphics.Bitmap>(48, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, android.graphics.Bitmap>?) = size > 48
+    private val globos = object : LinkedHashMap<String, android.graphics.Bitmap>(96, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, android.graphics.Bitmap>?) = size > 96
     }
 
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
@@ -92,7 +92,7 @@ class Capa(context: Context) : View(context) {
     private var apareceMs = 0L
     private var seVaMs = 0L
     // Como el iPhone: el globo aparece al instante y se va en un suspiro
-    private val APARECE = 1f
+    private val APARECE = 85f
     private val SE_VA = 45f
 
     fun mostrarGlobo(r: RectF, texto: String) {
@@ -102,6 +102,33 @@ class Capa(context: Context) : View(context) {
         tecla.set(r); globoTexto = texto; globo = true
         armarForma()
         invalidate()
+    }
+
+    // ---------- Globos preparados de antemano (uno por cuadro, en ratos libres) ----------
+    private val porPreparar = ArrayDeque<Pair<RectF, String>>()
+    private val guardaTecla = RectF()
+
+    fun precalentarGlobos(lista: List<Pair<RectF, String>>) {
+        porPreparar.clear(); porPreparar.addAll(lista)
+        removeCallbacks(preparar)
+        postDelayed(preparar, 250L)
+    }
+
+    private val preparar = object : Runnable {
+        override fun run() {
+            if (porPreparar.isEmpty() || width <= 0) return
+            val ahora = android.os.SystemClock.uptimeMillis()
+            // Si estás escribiendo (globo a la vista o desvaneciéndose), espera un rato
+            if (globo || opciones.isNotEmpty() || ahora - seVaMs < SE_VA + 40) { postDelayed(this, 150L); return }
+            val (r, t) = porPreparar.removeFirst()
+            guardaTecla.set(tecla); val txt = globoTexto
+            try {
+                tecla.set(r); globoTexto = t
+                armarForma(); imagenGlobo()
+            } catch (e: Throwable) { Registro.anotar("preparar globo", e) }
+            tecla.set(guardaTecla); globoTexto = txt; armarForma()
+            if (porPreparar.isNotEmpty()) postOnAnimation(this)
+        }
     }
 
     fun ocultarGlobo() {
@@ -190,10 +217,12 @@ class Capa(context: Context) : View(context) {
             val escala: Float
             val subeLetra: Float
             if (globo) {
-                // Aparece rapidísimo creciendo apenas desde la tecla
-                // Brota de la tecla con un pequeño rebote (como el globo del iPhone)
-                // Aparece al instante, como en iOS
-                alfa = 1f; escala = 1f; subeLetra = 0f
+                // Almohadilla que se expande: brota desde la tecla y crece hasta su tamaño
+                // en un instante (sin rebote), suave y sin retrasar la escritura
+                val t = ((ahora - apareceMs) / APARECE).coerceIn(0f, 1f)
+                val e = 1f - (1f - t) * (1f - t) * (1f - t)
+                alfa = (0.5f + 0.5f * e); escala = 0.72f + 0.28f * e; subeLetra = 0f
+                if (t < 1f) postInvalidateOnAnimation()
             } else {
                 // Y se va desvaneciendo en un suspiro
                 val t = ((ahora - seVaMs) / SE_VA).coerceIn(0f, 1f)

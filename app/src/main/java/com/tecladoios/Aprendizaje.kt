@@ -142,13 +142,23 @@ class Aprendizaje(private val archivo: File) {
         try { archivo.delete() } catch (_: Throwable) { }
     }
 
-    @Synchronized
+    /**
+     * Guarda en el archivo. Solo se arma el texto con el candado puesto (rapidísimo, en memoria)
+     * y el archivo se escribe ya sin candado: así escribir en el teclado nunca espera a que
+     * termine de guardarse (antes podía dar un tironcito cada cierto número de palabras).
+     */
     fun guardar() {
         try {
+            val texto: String
+            synchronized(this) {
+                val sw = java.io.StringWriter(16 * 1024)
+                sw.write("#TPA2\n"); escribir(sw)
+                texto = sw.toString()
+                cambios = 0
+            }
             val tmp = File(archivo.parentFile, archivo.name + ".tmp")
-            tmp.bufferedWriter(Charsets.UTF_8).use { w -> w.write("#TPA2\n"); escribir(w) }
+            tmp.writeText(texto, Charsets.UTF_8)
             if (!tmp.renameTo(archivo)) { archivo.delete(); tmp.renameTo(archivo) }
-            cambios = 0
         } catch (e: Throwable) { Registro.anotar("guardar aprendizaje", e) }
     }
 

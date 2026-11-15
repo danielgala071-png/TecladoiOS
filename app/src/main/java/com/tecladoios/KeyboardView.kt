@@ -56,7 +56,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         set(v) {
             // Transición abc ↔ 123: se guarda la imagen de la distribución que se va para que
             // sus letras salgan rodando mientras entran las nuevas, fila por fila
-            if (false && field.nombre != v.nombre && cacheFondo != null && cacheLetras != null && isShown) {
+            if (field.nombre != v.nombre && cacheFondo != null && cacheLetras != null && isShown) {
                 guardarLibre(anteriorFondo); guardarLibre(anteriorLetras)
                 anteriorFondo = cacheFondo; anteriorLetras = cacheLetras
                 cacheFondo = null; cacheLetras = null
@@ -69,7 +69,28 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     /** 0 minúsculas, 1 mayúscula, 2 bloqueo */
     // La mayúscula solo cambia letras y el color de la tecla shift: no se redibuja todo
-    var shift = 0; set(v) { if (field != v) { field = v; letrasSucias = true; shiftSucia = true; invalidate() } }
+    var shift = 0; set(v) {
+        if (field != v) {
+            // Minúsculas ↔ mayúsculas con un fundido cortito (se guarda cómo se veían)
+            val l = cacheLetras
+            if (l != null && !l.isRecycled && isShown && distribucion.nombre == "abc" && !modoTrackpad) {
+                letrasViejas = try {
+                    // Se reutiliza la misma imagen (sin crear una nueva en cada cambio de mayúscula)
+                    val b = bufferMayus?.takeIf { !it.isRecycled && it.width == l.width && it.height == l.height }
+                        ?: Bitmap.createBitmap(l.width, l.height, Bitmap.Config.ALPHA_8).also { bufferMayus = it }
+                    b.eraseColor(0)
+                    Canvas(b).drawBitmap(l, 0f, 0f, null)
+                    b
+                } catch (e: Throwable) { null }
+                letrasViejasMs = SystemClock.uptimeMillis()
+            }
+            field = v; letrasSucias = true; shiftSucia = true; invalidate()
+        }
+    }
+    private var letrasViejas: Bitmap? = null
+    private var bufferMayus: Bitmap? = null
+    private var letrasViejasMs = 0L
+    private val FUNDIDO_MAYUS = 90f
     /** Texto de la tecla intro ("buscar", "enviar"...) o null para la flecha */
     var textoIntro: String? = null; set(v) { if (field != v) { field = v; ensuciar() } }
     var introDestacado = false; set(v) { if (field != v) { field = v; ensuciar() } }
@@ -111,6 +132,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     private fun reacomodar() {
+        globosPedidos = false
         val w = width.toFloat(); val h = height.toFloat()
         if (w <= 0 || h <= 0) return
         val arriba = dp(8f); val abajo = dp(6f)
@@ -278,7 +300,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     private val dedos = HashMap<Int, Dedo>()
     private var presionadas = HashSet<Colocada>()
-    private var modoTrackpad = false; set(v) { if (field != v) { field = v; ensuciar() } }
+    // Al mover el cursor, las letras se desvanecen (y vuelven al soltar) en vez de desaparecer de golpe
+    private var modoTrackpad = false; set(v) { if (field != v) { field = v; trackpadMs = SystemClock.uptimeMillis(); invalidate() } }
+    private var trackpadMs = 0L
+    private val FUNDIDO_CURSOR = 160f
 
     // Arreglos reutilizados (sin crear objetos nuevos en cada movimiento del dedo)
     private val posA = IntArray(2)
@@ -655,10 +680,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         colorFilter = android.graphics.PorterDuffColorFilter(Tema.ROJO, android.graphics.PorterDuff.Mode.SRC_IN)
     }
     /** Cada fila tarda esto en cambiar... */
-    private val DURACION_FILA = 210f
+    private val DURACION_FILA = 120f
     private var cambioHaciaIzq = true
     /** ...y arranca este tanto después de la de abajo: una ola que nace en la tecla 123 */
-    private val ESCALON = 0f
+    private val ESCALON = 12f   // de abajo hacia arriba, casi a la vez
 
     // ---------- Pulsación: la tecla se hunde, se enciende desde el dedo y vuelve con resorte ----------
 
@@ -681,8 +706,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     /** Teclas apretadas y las que están volviendo a su lugar */
     private val pulsos = HashMap<Colocada, Pulso>()
     // Como el iPhone: la tecla cambia de color al instante al tocarla y vuelve en un suspiro
-    private val HUNDIR = 1f
-    private val VOLVER = 1f
+    private val HUNDIR = 60f     // se hunde en un instante
+    private val VOLVER = 170f    // al soltar sube con un resorte suave
+    private val EXPANDE = 120f   // la almohadilla de color crece desde el centro
     private val APAGAR = 110f   // al soltar sube con un rebote cortito y el brillo se apaga
     private val BAJAR = 55f     // se hunde en un instante (se siente, pero no retrasa nada)
     private val EXPANDIR = 1f
@@ -721,7 +747,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         if (p.suelta == 0L) {
             val ahora = SystemClock.uptimeMillis()
             // Desde lo que alcanzó a hundirse (un toque rapidísimo no salta)
-            p.nivel = suave(((ahora - p.t0) / BAJAR).coerceIn(0f, 1f)).coerceAtLeast(0.6f)
+            p.nivel = suave(((ahora - p.t0) / HUNDIR).coerceIn(0f, 1f)).coerceAtLeast(0.7f)
             p.suelta = ahora
         }
         invalidate()
@@ -781,7 +807,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val blanca = k.tecla.tipo == K.SHIFT && shift > 0
         relleno.shader = null
         relleno.color = tema.sombra
-        c.drawRoundRect(r.left, r.top + dp(1f), r.right, r.bottom + dp(1f), radio, radio, relleno)
+        c.drawRoundRect(r.left, r.top + dp(1.5f), r.right, r.bottom + dp(1.5f), radio, radio, relleno)
         relleno.color = colorTecla(k.tecla, false)
         c.drawRoundRect(r, radio, radio, relleno)
         if (blanca) flechaNegra(c, k)
@@ -811,7 +837,6 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     /** Letra o ícono de la tecla (va a la imagen guardada de letras) */
     private fun dibujarEtiqueta(c: Canvas, k: Colocada) {
-        if (modoTrackpad) return
         val t = k.tecla
         val r = k.dibujo
         val cx = r.centerX(); val cy = r.centerY()
@@ -857,7 +882,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 // Como en iOS: el espacio dice "espacio" (en el teclado numérico va limpio)
                 if (distribucion.nombre != "tel" && distribucion.nombre != "num") {
                     chica.color = tema.texto
-                    c.drawText("espacio", cx, cy + chica.textSize * 0.36f, chica)
+                    c.drawText(if (mostrarIdioma) "Español" else "espacio", cx, cy + chica.textSize * 0.36f, chica)
                 }
             }
             else -> { chica.color = tema.texto; c.drawText(t.texto, cx, cy + chica.textSize * 0.36f, chica) }
@@ -887,29 +912,57 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
      * sube por dentro de ella; el vidrio se aclara. No se mueve: es rápida y elegante. La luz
      * es una imagen difuminada hecha una sola vez, así que casi no gasta.
      */
+    /**
+     * Tecla presionada con profundidad: se hunde sobre su borde de abajo (como un botón real),
+     * una almohadilla de color crece desde el centro hasta llenarla y, al soltar, sube con un
+     * resorte suave mientras el color se apaga. Todo con rectángulos: nada pesado por cuadro.
+     */
     private fun dibujarPulso(c: Canvas, k: Colocada, p: Pulso, ahora: Long, fondo: Bitmap, letras: Bitmap) {
+        val h = hundimiento(p, ahora)
         val l = luzDe(p, ahora)
-        if (l <= 0.01f) return
+        if (kotlin.math.abs(h) <= 0.01f && l <= 0.01f) return
         val t = k.tecla
-        // Letra con globo: el globo la tapa, como en iOS (la tecla no cambia)
-        if (!t.funcion && t.tipo == K.TEXTO && config?.vistaPrevia != false && t.texto.length <= 2 &&
-            distribucion.nombre != "num" && distribucion.nombre != "tel") return
         val r = k.dibujo
         val radio = radioDe(r)
         val blanca = t.tipo == K.SHIFT && shift > 0
-        // Cambia de color al instante y vuelve en un suspiro al soltar
+        val prof = dp(1.5f)
+        val dy = prof * h
+
+        // 1. Se borra la tecla en su lugar (con su borde) y se deja el borde fijo abajo
         relleno.shader = null
-        relleno.color = colorTecla(t, true)
-        relleno.alpha = (255 * l).toInt().coerceIn(0, 255)
+        relleno.color = tema.fondo
+        c.drawRect(r.left - 1f, r.top - 1f, r.right + 1f, r.bottom + prof + 1f, relleno)
+        relleno.color = tema.sombra
+        c.drawRoundRect(r.left, r.top + prof, r.right, r.bottom + prof, radio, radio, relleno)
+
+        c.save()
+        c.translate(0f, dy)
+        // 2. La tecla, hundida
+        relleno.color = colorTecla(t, false)
         c.drawRoundRect(r, radio, radio, relleno)
-        relleno.alpha = 255
-        if (blanca) { flechaNegra(c, k); return }
-        if (t.tipo == K.INTRO && introDestacado && textoIntro != null) { introBlanco(c, k); return }
-        src.set(r.left.toInt().coerceAtLeast(0), r.top.toInt().coerceAtLeast(0),
-            (r.right + 1).toInt().coerceAtMost(letras.width), (r.bottom + 1).toInt().coerceAtMost(letras.height))
-        dst.set(src)
-        pinturaLetras.color = tema.texto
-        c.drawBitmap(letras, src, dst, pinturaLetras)
+        // 3. La almohadilla de color: crece desde el centro y se apaga al soltar
+        if (l > 0.01f) {
+            val e = suave(((ahora - p.t0) / EXPANDE).coerceIn(0f, 1f))
+            val inX = r.width() * 0.32f * (1f - e)
+            val inY = r.height() * 0.32f * (1f - e)
+            relleno.color = colorTecla(t, true)
+            relleno.alpha = (255 * l).toInt().coerceIn(0, 255)
+            val rad = radio + minOf(inX, inY) * 0.6f
+            c.drawRoundRect(r.left + inX, r.top + inY, r.right - inX, r.bottom - inY, rad, rad, relleno)
+            relleno.alpha = 255
+        }
+        // 4. La letra o el ícono encima, también hundidos (no mientras mueves el cursor)
+        if (modoTrackpad) { }
+        else if (blanca) flechaNegra(c, k)
+        else if (t.tipo == K.INTRO && introDestacado && textoIntro != null) introBlanco(c, k)
+        else {
+            src.set(r.left.toInt().coerceAtLeast(0), r.top.toInt().coerceAtLeast(0),
+                (r.right + 1).toInt().coerceAtMost(letras.width), (r.bottom + 1).toInt().coerceAtMost(letras.height))
+            dst.set(src)
+            pinturaLetras.color = tema.texto
+            c.drawBitmap(letras, src, dst, pinturaLetras)
+        }
+        c.restore()
     }
 
     // Luz violeta por dentro, desde la base de la tecla hacia arriba
@@ -1034,7 +1087,14 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private val ENTRADA_ESCALON = 35f
 
     /** En iOS el teclado solo sube con la ventana: sin cascada */
-    fun animarEntrada() {}
+    fun animarEntrada() {
+        // Como el iPhone: al abrir, el espacio dice el idioma un momento y luego "espacio"
+        mostrarIdioma = true; letrasSucias = true; invalidate()
+        removeCallbacks(quitarIdioma)
+        postDelayed(quitarIdioma, 1300L)
+    }
+    private var mostrarIdioma = false
+    private val quitarIdioma = Runnable { mostrarIdioma = false; letrasSucias = true; invalidate() }
 
     /** Las filas aparecen una tras otra, subiendo un poquito */
     private fun dibujarEntrada(c: Canvas, t: Float, filas: Int, fondo: Bitmap, letras: Bitmap) {
@@ -1106,8 +1166,32 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         try { dibujarTodo(c) } catch (e: Throwable) { Registro.anotar("dibujo teclado", e) } finally { c.restoreToCount(n) }
     }
 
+    /** Ya se pidió preparar los globos para esta distribución */
+    private var globosPedidos = false
+
+    /**
+     * Prepara en ratos libres los globos de todas las letras (minúscula y mayúscula): así el
+     * primer toque de cada tecla no tiene que dibujar la sombra difuminada (ese era un tironcito).
+     */
+    private fun pedirGlobos() {
+        if (globosPedidos || config?.vistaPrevia == false) return
+        globosPedidos = true
+        post {
+            val lista = ArrayList<Pair<RectF, String>>()
+            for (k in colocadas) {
+                val t = k.tecla
+                if (t.tipo != K.TEXTO || t.texto.length > 2) continue
+                val r = rectEnCapa(k.dibujo)
+                lista.add(r to t.texto)
+                if (t.esLetra) lista.add(RectF(r) to t.texto.uppercase())
+            }
+            capa.precalentarGlobos(lista)
+        }
+    }
+
     private fun dibujarTodo(c: Canvas) {
         if (width <= 0 || height <= 0) return
+        pedirGlobos()
         val f0 = cacheFondo
         val l0 = cacheLetras
         if (f0 == null || f0.isRecycled || f0.width != width || f0.height < height ||
@@ -1166,7 +1250,27 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         } else {
             c.drawBitmap(fondo, 0f, 0f, null)
             pinturaLetras.color = tema.texto
-            c.drawBitmap(letras, 0f, 0f, pinturaLetras)
+            // Cuánto se ven las letras: se apagan al mover el cursor y vuelven al soltar
+            val tc = ((ahora - trackpadMs) / FUNDIDO_CURSOR).coerceIn(0f, 1f)
+            val verLetras = if (modoTrackpad) 1f - suave(tc) else suave(tc)
+            if (tc < 1f) postInvalidateOnAnimation()
+            val viejas = letrasViejas
+            val tm = (ahora - letrasViejasMs) / FUNDIDO_MAYUS
+            if (viejas != null && tm < 1f && !viejas.isRecycled && viejas.width == letras.width) {
+                // Fundido minúsculas ↔ mayúsculas
+                val e = suave(tm.coerceIn(0f, 1f))
+                pinturaLetras.alpha = (255 * (1f - e) * verLetras).toInt().coerceIn(0, 255)
+                c.drawBitmap(viejas, 0f, 0f, pinturaLetras)
+                pinturaLetras.alpha = (255 * e * verLetras).toInt().coerceIn(0, 255)
+                c.drawBitmap(letras, 0f, 0f, pinturaLetras)
+                pinturaLetras.alpha = 255
+                postInvalidateOnAnimation()
+            } else {
+                if (viejas != null) letrasViejas = null
+                pinturaLetras.alpha = (255 * verLetras).toInt().coerceIn(0, 255)
+                if (verLetras > 0.01f) c.drawBitmap(letras, 0f, 0f, pinturaLetras)
+                pinturaLetras.alpha = 255
+            }
         }
 
         // Teclas apretadas y las que vuelven a su lugar
@@ -1177,7 +1281,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 if (terminado(e.value, ahora)) { it.remove(); continue }
                 dibujarPulso(c, e.key, e.value, ahora, fondo, letras)
             }
-            if (pulsos.values.any { it.suelta != 0L || ahora - it.t0 < BAJAR }) postInvalidateOnAnimation()
+            if (pulsos.values.any { it.suelta != 0L || ahora - it.t0 < maxOf(HUNDIR, EXPANDE) }) postInvalidateOnAnimation()
         }
 
 
@@ -1247,20 +1351,15 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             // Letras: pasan como una página (las viejas salen por un lado y las nuevas entran
             // por el otro), recortadas al alto de las teclas de la fila
             c.clipRect(0f, y0 + medio, w, y0 + altoFila - medio)
-            val lado = if (cambioHaciaIzq) -1f else 1f
-            val tramo = w * 0.32f
+            // Fundido suave y rápido en su lugar (nada se mueve: no estorba si sigues escribiendo)
+            pinturaAnterior.color = tema.texto; pinturaNueva.color = tema.texto
             if (f < 1f) {
-                val u = 1f - e
-                pinturaAnterior.alpha = (255 * u * u).toInt().coerceIn(0, 255)
-                c.save(); c.translate(lado * tramo * e, 0f)
+                pinturaAnterior.alpha = (255 * (1f - e)).toInt().coerceIn(0, 255)
                 c.drawBitmap(viejoL, 0f, 0f, pinturaAnterior)
-                c.restore()
             }
             if (f > 0f) {
-                pinturaNueva.alpha = (255 * minOf(1f, f * 1.5f)).toInt().coerceIn(0, 255)
-                c.save(); c.translate(-lado * tramo * (1f - asentar(f)), 0f)
+                pinturaNueva.alpha = (255 * e).toInt().coerceIn(0, 255)
                 c.drawBitmap(letras, 0f, 0f, pinturaNueva)
-                c.restore()
             }
             c.restore()
         }

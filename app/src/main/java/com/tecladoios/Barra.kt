@@ -154,6 +154,15 @@ class Barra(context: Context) : View(context) {
     private val fuerte = TextPaint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 600) }
     private val icono = Paint(Paint.ANTI_ALIAS_FLAG)
     private val linea = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    // Las palabras ya recortadas se guardan: durante las animaciones no se mide el texto en cada cuadro
+    private val recortes = object : LinkedHashMap<String, String>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 32
+    }
+    private fun recortar(t: String, p: android.text.TextPaint, max: Float): String {
+        val clave = "$t|${max.toInt()}|${p.textSize.toInt()}"
+        return recortes.getOrPut(clave) { TextUtils.ellipsize(t, p, max, TextUtils.TruncateAt.MIDDLE).toString() }
+    }
     private val pequeno = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 500) }
     private val relleno = Paint(Paint.ANTI_ALIAS_FLAG)
     private val r = RectF()
@@ -308,7 +317,7 @@ class Barra(context: Context) : View(context) {
                 c.drawRoundRect(x0 + dp(3f), h * 0.12f, x0 + ancho - dp(3f), h * 0.88f, dp(7f), dp(7f), relleno)
             }
             val mostrado = if (esLiteral[i]) "“$s”" else s
-            val corto = TextUtils.ellipsize(mostrado, p, ancho - dp(22f), TextUtils.TruncateAt.MIDDLE).toString()
+            val corto = recortar(mostrado, p, ancho - dp(22f))
             p.alpha = (255 * (0.2f + 0.8f * ec)).toInt()
             c.drawText(corto, x0 + ancho / 2, h / 2 + p.textSize * 0.36f, p)
             p.alpha = 255

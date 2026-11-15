@@ -25,7 +25,7 @@ class Tecla(
     val pista: String? = null,
     val variantes: List<String> = emptyList(),
     /** Teclas grises (función): se dibujan con otro tono, como en el iPhone */
-    val funcion: Boolean = tipo != K.TEXTO && tipo != K.ESPACIO,
+    val funcion: Boolean = tipo != K.TEXTO,   // el espacio también va con las de función (AMOLED)
 ) {
     val esLetra = tipo == K.TEXTO && texto.length == 1 && texto[0].isLetter()
 }

@@ -54,6 +54,7 @@ object Ajustes {
     const val PORTAPAPELES = "portapapeles"
     const val CAPTURAS = "capturas"
     const val ICONO_OCULTO = "icono_oculto"
+    const val TEMA_SISTEMA = "tema_sistema"       // claro de día si el celular está en claro (si no, AMOLED)
     const val DIVIDIDO = "teclado_dividido"       // letras separadas con el celular echado
     const val CIERRE = "cierre_automatico"        // ofrecer ) » ? ! al cerrar la frase
     const val CODIGOS = "codigos_sms"             // códigos de verificación en la barra
@@ -98,6 +99,7 @@ class Config(p: SharedPreferences) {
     val bloqueoMayus = p.getBoolean(Ajustes.BLOQUEO_MAYUS, true)
     val codigos = p.getBoolean(Ajustes.CODIGOS, false)
     val dividido = p.getBoolean(Ajustes.DIVIDIDO, true)
+    val temaSistema = p.getBoolean(Ajustes.TEMA_SISTEMA, false)
     val cierre = p.getBoolean(Ajustes.CIERRE, true)
     val contrasenas = p.getBoolean(Ajustes.CONTRASENAS, true)
     val datoNombre = p.getString(Ajustes.DATO_NOMBRE, "")?.trim().orEmpty()

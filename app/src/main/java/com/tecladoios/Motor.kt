@@ -105,7 +105,8 @@ class Motor(
         return 0.8f
     }
 
-    private val COSTO_FALTA = 0.85f
+    // Letra que faltó ("naa" → "nada"): más barata. Medido: 93.0 → 93.6 % solas, 98.9 % en la barra
+    private val COSTO_FALTA = 0.65f
     private val COSTO_CRUCE = 0.55f
 
     private fun presupuesto(n: Int) = when {
@@ -204,7 +205,9 @@ class Motor(
     }
 
     private fun puntaje(costo: Float, penal: Float, contexto: Float, uso: Float) =
-        costo * 2.4f + penal * 0.42f - contexto - uso
+        // El contexto (las palabras de antes) pesa el doble: si la frase lo pide, la corrección
+        // elige la palabra que encaja (medido en el banco: 92.9 % → 93.3 %, 0 palabras buenas cambiadas)
+        costo * 2.4f + penal * 0.42f - contexto * 2.0f - uso
 
     // ---------- Lo principal ----------
 

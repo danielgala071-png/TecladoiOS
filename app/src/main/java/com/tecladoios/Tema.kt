@@ -12,17 +12,19 @@ import java.util.concurrent.Executors
  */
 class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
     /** Fondo del teclado */
-    val fondo = if (claro) 0xFFD1D4DA.toInt() else 0xFF2C2C2E.toInt()
+    val fondo = if (claro) 0xFFD1D4DA.toInt() else 0xFF000000.toInt()   // AMOLED: negro puro
     val fondoAbajo = fondo
     /** Teclas de letras */
-    val tecla = if (claro) 0xFFFFFFFF.toInt() else 0xFF6B6B6E.toInt()
+    val tecla = if (claro) 0xFFFFFFFF.toInt() else 0xFF2C2C2F.toInt()
     /** Mayúscula, borrar, 123, emoji, intro */
-    val teclaFuncion = if (claro) 0xFFABB0BA.toInt() else 0xFF464648.toInt()
+    /** Las principales (mayúscula, borrar, 123, emoji, espacio, intro): grafito más oscuro */
+    val teclaFuncion = if (claro) 0xFFABB0BA.toInt() else 0xFF17181C.toInt()
     /** Al tocar, las de función toman el color de las letras (como en iOS) */
-    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFF464648.toInt()
-    val funcionPresionada = tecla
+    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFF4A4A4F.toInt()
+    val funcionPresionada = if (claro) 0xFFFFFFFF.toInt() else 0xFF33353C.toInt()
     /** Línea de sombra bajo cada tecla */
-    val sombra = if (claro) 0xFF898A8D.toInt() else 0xFF000000.toInt()
+    /** Borde de abajo de cada tecla (da la profundidad; en AMOLED es un gris muy oscuro) */
+    val sombra = if (claro) 0xFF898A8D.toInt() else 0xFF0E0E10.toInt()
     val brillo = 0x00FFFFFF
     val texto = if (claro) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
     val textoSuave = if (claro) 0x993C3C43.toInt() else 0xB3EBEBF5.toInt()
