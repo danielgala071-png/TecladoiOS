@@ -796,8 +796,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private fun hundimiento(p: Pulso, ahora: Long): Float {
         if (p.suelta == 0L) return suave(((ahora - p.t0) / HUNDIR).coerceIn(0f, 1f))
         val r = ((ahora - p.suelta) / VOLVER).coerceIn(0f, 1f)
-        // Resorte de goma: vuelve, se pasa (crece un poquito), rebota otra vez y se asienta
-        return p.nivel * kotlin.math.exp(-3.4f * r) * kotlin.math.cos(r * 10.5f) * (1f - r)
+        // Resorte de goma más fluido: vuelve, se pasa una sola vez y se asienta suave
+        return p.nivel * kotlin.math.exp(-4f * r) * kotlin.math.cos(r * 8.2f) * (1f - r)
     }
 
     /** Cuánta luz tiene la tecla (0..1) */

@@ -367,6 +367,9 @@ class Barra(context: Context) : View(context) {
     private val celdaMs = LongArray(3)
     private val celdaDura = FloatArray(3)
     private val celdaSube = FloatArray(3)
+    // Rodillo: mientras escribes, la palabra vieja sube y se apaga y la nueva sube desde abajo
+    private val celdaSaliente = arrayOfNulls<String>(3)
+    private val celdaSubeY = FloatArray(3)
     private val RETRASO_CELDA = longArrayOf(20L, 0L, 40L)
 
     // Destello de la palabra que elegiste
@@ -423,8 +426,12 @@ class Barra(context: Context) : View(context) {
                 // Barra sin saltos: mientras escribes, las palabras cambian con un fundido
                 // rapidísimo en su lugar (nada se mueve). Solo al aparecer desde vacío entran
                 // con un deslizamiento cortito.
-                celdaDura[i] = if (desdeVacio) 240f else 90f
+                // Mientras escribes: efecto rodillo (la vieja sale hacia arriba, la nueva entra
+                // desde abajo con un resorte cortito). Desde vacío: entra deslizándose.
+                celdaDura[i] = if (desdeVacio) 240f else 170f
                 celdaSube[i] = if (desdeVacio) dp(8f) else 0f
+                celdaSubeY[i] = if (desdeVacio) 0f else dp(6f)
+                celdaSaliente[i] = if (desdeVacio) null else celdaPrevia[i]
                 celdaPrevia[i] = celdas[i]
             }
         }
@@ -444,8 +451,17 @@ class Barra(context: Context) : View(context) {
             val ec = 1f - uc * uc * uc
             // Entrada con resorte: llega, se pasa un pelo y se asienta (suave a 90/120 Hz)
             val res = 1f - kotlin.math.exp(-5.5f * tc) * kotlin.math.cos(8f * tc) * uc
+            // La palabra que se va: sube y se apaga
+            val sal = celdaSaliente[i]
+            if (sal != null && tc < 1f) {
+                val col = texto.color; val al = texto.alpha
+                texto.color = if (tema.claro) tema.velo(0x99) else 0xFF9A9A9E.toInt()
+                texto.alpha = (200 * (1f - ec)).toInt().coerceIn(0, 255)
+                c.drawText(recortar(sal, texto, ancho - dp(22f)), x0 + ancho / 2, h / 2 + texto.textSize * 0.36f - celdaSubeY[i] * ec, texto)
+                texto.color = col; texto.alpha = al
+            }
             c.save()
-            c.translate(celdaSube[i] * (1f - res), 0f)
+            c.translate(celdaSube[i] * (1f - res), celdaSubeY[i] * (1f - res))
             // La que se pondrá sola brilla fuerte; las demás quedan tenues y lo que escribiste
             // (entre comillas) va aún más apagado, para que se distinga de las sugerencias
             val esCorregida = false

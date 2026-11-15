@@ -69,23 +69,23 @@ class Respuesta(c: Context) {
     private var efIntro: VibrationEffect? = null
 
     /**
-     * Vibración con textura (siempre al máximo del motor, pero cada tecla se siente distinta):
-     * - Letras: un golpe seco y fuerte de 38 ms (rápido a dos pulgares).
-     * - Espacio: doble golpe (tac-tac).
-     * - Borrar: golpe fuerte que se apaga en una cola suave (se siente como «quitar»).
-     * - Intro: doble golpe largo y pesado.
-     * - Mayúscula y demás: un golpe firme de 50 ms.
+     * Vibración con textura: cada tipo de tecla se siente claramente distinto.
+     * - Letras: «tic» seco, fuerte y corto (32 ms): rápido a dos pulgares.
+     * - Espacio: «tac-tac», doble golpe.
+     * - Borrar: golpe fuerte y un eco más suave (se siente como «quitar»).
+     * - Intro: golpe largo y pesado, doble.
+     * - Mayúscula, 123, emoji y demás: crece de suave a fuerte («bum»).
      */
     private fun armar() {
         if (efLetra != null) return
         try {
             val max = if (conAmplitud) 255 else VibrationEffect.DEFAULT_AMPLITUDE
-            efLetra = VibrationEffect.createOneShot(38L, max)
-            efFuerte = VibrationEffect.createOneShot(50L, max)
+            efLetra = VibrationEffect.createOneShot(32L, max)
+            efFuerte = onda(longArrayOf(0, 18, 40), intArrayOf(0, 110, 255))
             efSuave = VibrationEffect.createOneShot(14L, max)
-            efEspacio = onda(longArrayOf(0, 28, 42, 28), intArrayOf(0, 255, 0, 230))
-            efBorrar = onda(longArrayOf(0, 26, 34), intArrayOf(0, 255, 110))
-            efIntro = onda(longArrayOf(0, 40, 50, 46), intArrayOf(0, 255, 0, 255))
+            efEspacio = onda(longArrayOf(0, 26, 45, 26), intArrayOf(0, 255, 0, 230))
+            efBorrar = onda(longArrayOf(0, 26, 38, 18), intArrayOf(0, 255, 0, 120))
+            efIntro = onda(longArrayOf(0, 45, 45, 60), intArrayOf(0, 255, 0, 255))
         } catch (_: Throwable) { }
     }
 
