@@ -111,6 +111,8 @@ class PanelEmoji(context: Context) : View(context) {
         // Para animar: cómo estaban los recientes la vez anterior y cuándo se abrió el panel
         recientesAntes = categorias.firstOrNull()?.emojis ?: emptyList()
         abiertoMs = android.os.SystemClock.uptimeMillis()
+        // Mientras el panel sube queda quieto (sin redibujar): así la subida va fluida
+        congelado = true
         atajos = base.map { it.emojis.firstOrNull() ?: "•" }
         inicioCat = IntArray(0)
         categorias = listOf(Categoria("Usados recientemente", recientes())) +
@@ -126,9 +128,34 @@ class PanelEmoji(context: Context) : View(context) {
     private var recientesAntes: List<String> = emptyList()
     private var animandoGrilla = false
     private var abiertoMs = 0L
-    /** Emojis en cascada al abrir: cada fila aparece un poquito después de la de arriba */
-    private val CASCADA_FILA = 28f
-    private val CASCADA_DURA = 170f
+    /**
+     * true mientras el panel sube o baja: no se anima nada por dentro, así Android solo mueve
+     * una imagen ya hecha (eso era lo que se veía entrecortado).
+     */
+    private var congelado = false
+
+    /** Termina la subida: recién ahí los recientes se acomodan con su animación */
+    fun soltar() {
+        if (!congelado) return
+        congelado = false
+        abiertoMs = android.os.SystemClock.uptimeMillis() - 60L
+        invalidate()
+    }
+
+    /** Congela el panel antes de bajarlo */
+    fun congelar() { congelado = true }
+
+    /**
+     * Deja dibujados los emojis antes de abrir el panel (en segundo plano), así el primer
+     * cuadro de la subida no tiene que dibujar nada nuevo. [alto] = alto del teclado.
+     */
+    fun preparar(alto: Int) {
+        if (alto <= 0) return
+        if (categorias.isEmpty()) { refrescar(); congelado = false }
+        val cel = (alto - altoAbajo() - arribaGrilla() - dp(4f)) / FILAS.toFloat()
+        if (cel <= 0f) return
+        precalentar((cel * 0.68f).toInt(), 0)
+    }
     /** Recientes: el que usaste entra primero y empuja a los demás */
     private val EMPUJE_DURA = 320f
     // Emoji tocado que salta hacia arriba
@@ -377,7 +404,7 @@ class PanelEmoji(context: Context) : View(context) {
     }
 
     private fun dibujarTodo(c: Canvas) {
-        if (categorias.isEmpty()) refrescar()
+        if (categorias.isEmpty()) { refrescar(); congelado = false }
         val w = width.toFloat(); val h = height.toFloat()
         val cel = celda()
         if (cel <= 0f) return
@@ -440,20 +467,13 @@ class PanelEmoji(context: Context) : View(context) {
                 val primera = ((-gx) / colW).toInt().coerceAtLeast(0)
                 val ultima = minOf(cols - 1, ((w - gx) / colW).toInt())
                 val ahoraP = android.os.SystemClock.uptimeMillis()
-                val tAbierto = (ahoraP - abiertoMs).toFloat()
+                val tAbierto = if (congelado) 0f else (ahoraP - abiertoMs).toFloat()
                 for (col in primera..ultima) for (fila in 0 until FILAS) {
                     val e = emojiBloque(k, g, col, fila) ?: continue
                     var cx = gx + col * colW + colW / 2
                     var cy = arribaGrilla() + fila * cel + cel / 2
                     var alfa = 255
                     var escalaE = 1f
-                    // Cascada al abrir: fila por fila, de arriba abajo (sube apenas y aparece)
-                    val tf = ((tAbierto - fila * CASCADA_FILA) / CASCADA_DURA).coerceIn(0f, 1f)
-                    if (tf < 1f) {
-                        val ef = suaveP(tf)
-                        alfa = (255 * ef).toInt(); cy += dp(10f) * (1f - ef)
-                        animandoGrilla = true
-                    }
                     // Recientes: cada uno viaja de su lugar anterior al nuevo; el nuevo crece
                     if (k == 0 && recientesAntes.isNotEmpty()) {
                         val te = ((tAbierto - 60f) / EMPUJE_DURA).coerceIn(0f, 1f)
@@ -467,7 +487,7 @@ class PanelEmoji(context: Context) : View(context) {
                                 val cyA = arribaGrilla() + (j % FILAS) * cel + cel / 2
                                 cx = cxA + (cx - cxA) * ee; cy = cyA + (cy - cyA) * ee
                             }
-                            animandoGrilla = true
+                            if (!congelado) animandoGrilla = true
                         }
                     }
                     if (e == presionado) {

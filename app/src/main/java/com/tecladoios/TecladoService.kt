@@ -171,7 +171,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             leerDesvios(prefs.getString("desvios", null))
         }
         val br = Barra(c).apply { oyente = this@TecladoService; herramientasActivas = cfg.barraHerramientas }
-        val pe = PanelEmoji(c).apply { oyente = this@TecladoService; visibility = View.GONE }
+        // INVISIBLE (no GONE): ya está medido y armado, abrirlo no obliga a rehacer el diseño
+        val pe = PanelEmoji(c).apply { oyente = this@TecladoService; visibility = View.INVISIBLE }
         val ed = PanelEdicion(c).apply { oyente = this@TecladoService; visibility = View.GONE; alResponder = { respuesta.tocar(it) } }
         val pc = PanelPortapapeles(c).apply { oyente = this@TecladoService; visibility = View.GONE; alResponder = { respuesta.tocar(it) } }
         val aj = AjusteTamano(c).apply { oyente = this@TecladoService; visibility = View.GONE }
@@ -205,6 +206,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     override fun onWindowShown() {
         super.onWindowShown()
         aplicarVidrio()
+        // Deja listos los emojis en segundo plano para que el panel abra sin tirón
+        teclado?.let { kb -> kb.post { panelEmoji?.preparar(kb.height) } }
     }
 
     // ---------- Vidrio: desenfoque real de lo que hay detrás ----------
@@ -1386,21 +1389,24 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         val antes = panel
         panel = p
         val animar = antes != p && marco?.isShown == true
-        if (animar && (p == Panel.EMOJI || antes == Panel.EMOJI) && (p == Panel.TECLADO || antes == Panel.TECLADO)) {
-            // Emojis como en iOS: el panel sube desde abajo tapando las letras, y al volver baja
-            deslizarEmojis(p == Panel.EMOJI)
-        } else {
-            transicion(teclado, p == Panel.TECLADO, View.INVISIBLE, animar)
-            transicion(panelEmoji, p == Panel.EMOJI, View.GONE, animar)
-        }
-        transicion(panelEdicion, p == Panel.EDICION, View.GONE, animar)
-        transicion(panelCopiado, p == Panel.PORTAPAPELES, View.GONE, animar)
+        // Primero se prepara el contenido y recién después se anima: así el primer cuadro de
+        // la animación no carga nada (antes se armaba todo en medio y daba un tirón)
         when (p) {
             Panel.EMOJI -> { soltarComposicion(); panelEmoji?.refrescar() }
             Panel.PORTAPAPELES -> { panelCopiado?.activo = cfg.portapapeles; panelCopiado?.elementos = portapapeles.elementos() }
             Panel.EDICION -> { soltarComposicion(); panelEdicion?.seleccionando = false }
             Panel.TECLADO -> {}
         }
+        if (animar && (p == Panel.EMOJI || antes == Panel.EMOJI) && (p == Panel.TECLADO || antes == Panel.TECLADO)) {
+            // Emojis como en iOS: el panel sube desde abajo tapando las letras, y al volver baja
+            deslizarEmojis(p == Panel.EMOJI)
+        } else {
+            transicion(teclado, p == Panel.TECLADO, View.INVISIBLE, animar)
+            transicion(panelEmoji, p == Panel.EMOJI, View.INVISIBLE, animar)
+            if (p == Panel.EMOJI) panelEmoji?.soltar()
+        }
+        transicion(panelEdicion, p == Panel.EDICION, View.GONE, animar)
+        transicion(panelCopiado, p == Panel.PORTAPAPELES, View.GONE, animar)
         teclado?.cancelarTodo()
         actualizarBarra()
     }
@@ -1416,8 +1422,9 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         v.animate().cancel()
         val dy = 10 * resources.displayMetrics.density
         if (mostrar) {
-            if (v.visibility == View.VISIBLE && v.alpha == 1f) return
+            if (v.visibility == View.VISIBLE && v.alpha == 1f && v.scaleX == 1f) return
             v.visibility = View.VISIBLE
+            v.scaleX = 1f; v.scaleY = 1f
             if (animar) {
                 v.alpha = 0f; v.translationY = dy
                 v.animate().alpha(1f).translationY(0f).setDuration(200L)
@@ -1428,31 +1435,49 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             if (animar) {
                 v.animate().alpha(0f).setDuration(120L)
                     .setInterpolator(android.view.animation.PathInterpolator(0.4f, 0f, 1f, 1f)).withLayer().withEndAction {
-                    v.visibility = oculto; v.alpha = 1f; v.translationY = 0f
+                    v.visibility = oculto; v.alpha = 1f; v.translationY = 0f; v.scaleX = 1f; v.scaleY = 1f
                 }.start()
-            } else v.visibility = oculto
+            } else { v.visibility = oculto; v.alpha = 1f; v.translationY = 0f; v.scaleX = 1f; v.scaleY = 1f }
         }
     }
 
+    /**
+     * Abrir y cerrar los emojis sin tirones:
+     * - el panel ya viene dibujado y quieto (congelado), y se mueve como una sola imagen
+     *   en la GPU (withLayer), sin redibujar nada en cada cuadro;
+     * - las letras no se esconden (eso obligaba a redibujarlas de golpe al volver): se
+     *   desvanecen y se hunden un poquito, con profundidad, y al volver salen igual de suave;
+     * - curvas tipo iOS: arranque firme y llegada muy suave.
+     */
     private fun deslizarEmojis(subir: Boolean) {
         val pe = panelEmoji ?: return
         val kb = teclado ?: return
-        val curva = android.view.animation.PathInterpolator(0.2f, 0.9f, 0.25f, 1f)
-        pe.animate().cancel()
+        pe.animate().cancel(); kb.animate().cancel()
         pe.background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(tema.fondo, tema.fondoAbajo))
         val alto = (pe.height.takeIf { it > 0 } ?: kb.height).toFloat()
+        kb.visibility = View.VISIBLE
+        kb.pivotX = kb.width / 2f; kb.pivotY = 0f
         if (subir) {
-            pe.visibility = View.VISIBLE; pe.alpha = 1f
-            pe.translationY = alto
-            kb.visibility = View.VISIBLE
-            pe.animate().translationY(0f).setDuration(260L).setInterpolator(curva)
-                .withEndAction { if (panel == Panel.EMOJI) { kb.visibility = View.INVISIBLE; pe.background = null } }.start()
+            if (pe.visibility != View.VISIBLE) { pe.visibility = View.VISIBLE; pe.translationY = alto }
+            pe.alpha = 1f
+            pe.animate().translationY(0f).setDuration(SUBE_EMOJIS).setInterpolator(curvaSube).withLayer()
+                .withEndAction { if (panel == Panel.EMOJI) { pe.background = null; pe.soltar() } }.start()
+            // Las letras se van hacia atrás mientras el panel las cubre (siguen «vivas» con alfa 0)
+            kb.animate().alpha(0f).scaleX(0.94f).scaleY(0.94f).setDuration(SUBE_EMOJIS).setInterpolator(curvaSube).withLayer().start()
         } else {
-            kb.visibility = View.VISIBLE; kb.alpha = 1f; kb.translationY = 0f
-            pe.animate().translationY(alto).setDuration(220L).setInterpolator(curva)
-                .withEndAction { if (panel != Panel.EMOJI) { pe.visibility = View.GONE; pe.translationY = 0f } }.start()
+            pe.congelar()
+            if (kb.alpha >= 1f) { kb.alpha = 0f; kb.scaleX = 0.94f; kb.scaleY = 0.94f }
+            kb.translationY = 0f
+            pe.animate().translationY(alto).setDuration(BAJA_EMOJIS).setInterpolator(curvaBaja).withLayer()
+                .withEndAction { if (panel != Panel.EMOJI) { pe.visibility = View.INVISIBLE; pe.translationY = 0f; pe.background = null } }.start()
+            kb.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(BAJA_EMOJIS).setInterpolator(curvaBaja).withLayer().start()
         }
     }
+
+    private val curvaSube = android.view.animation.PathInterpolator(0.32f, 0.72f, 0f, 1f)
+    private val curvaBaja = android.view.animation.PathInterpolator(0.3f, 0f, 0.1f, 1f)
+    private val SUBE_EMOJIS = 340L
+    private val BAJA_EMOJIS = 280L
 
     /**
      * Pantallas de 90/120 Hz: mientras el teclado está a la vista le pide a Android la
