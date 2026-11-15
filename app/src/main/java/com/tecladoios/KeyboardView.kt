@@ -411,10 +411,11 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         dedos[id] = dd
         if (!panelMano.isEmpty && panelMano.contains(x, y)) { dd.modo = Modo.PANEL; return }
         val c = buscar(x, y) ?: run { dd.modo = Modo.HECHO; return }
+        // La vibración va primero: se siente justo al apoyar el dedo, antes de dibujar nada
+        oyente?.respuesta(tipoRespuesta(c.tecla))
         dd.tecla = c
         presionar(c, x, y)
         val t = c.tecla
-        oyente?.respuesta(tipoRespuesta(t))
         val retardo = (config?.retardoLarga ?: 320).toLong()
         when (t.tipo) {
             K.TEXTO -> {

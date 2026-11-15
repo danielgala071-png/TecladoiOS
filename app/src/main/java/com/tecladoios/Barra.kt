@@ -300,7 +300,7 @@ class Barra(context: Context) : View(context) {
         for (i in 0 until 3) {
             val s = celdas[i] ?: continue
             val x0 = i * ancho
-            val p = texto
+            val p = if (i == 1 && destacada >= 0) fuerte else texto
             val destacadaAqui = i == 1 && destacada >= 0
             val tc = if (celdaDura[i] > 0f) ((ahora - celdaMs[i]) / celdaDura[i]).coerceIn(0f, 1f) else 1f
             if (tc < 1f) seguir = true
@@ -308,9 +308,17 @@ class Barra(context: Context) : View(context) {
             val ec = 1f - uc * uc * uc
             c.save()
             c.translate(celdaSube[i] * (1f - ec), 0f)
-            // Como en iOS: todas en el mismo color; al tocar una, un fondo gris redondeado
+            // La que se pondrá sola brilla fuerte; las demás quedan tenues y lo que escribiste
+            // (entre comillas) va aún más apagado, para que se distinga de las sugerencias
             val esCorregida = false
-            p.color = tema.texto
+            val elegidaAqui = i == 1 && destacada >= 0
+            p.color = when {
+                elegidaAqui -> tema.texto
+                esLiteral[i] -> tema.velo(0x6B)
+                i == 1 -> tema.velo(0xD0)
+                else -> tema.velo(0x8F)
+            }
+            if (elegidaAqui) p.setShadowLayer(dp(7f), 0f, 0f, if (tema.claro) 0x40000000 else 0xB3FFFFFF.toInt())
             if (i == celdaTocada || (i == elegidaCelda && brilloElegida > 0f)) {
                 relleno.style = Paint.Style.FILL
                 relleno.color = if (tema.claro) 0x24000000 else tema.velo(0x29)
@@ -318,9 +326,11 @@ class Barra(context: Context) : View(context) {
             }
             val mostrado = if (esLiteral[i]) "“$s”" else s
             val corto = recortar(mostrado, p, ancho - dp(22f))
-            p.alpha = (255 * (0.2f + 0.8f * ec)).toInt()
+            val alfaBase = p.alpha
+            p.alpha = (alfaBase * (0.2f + 0.8f * ec)).toInt()
             c.drawText(corto, x0 + ancho / 2, h / 2 + p.textSize * 0.36f, p)
             p.alpha = 255
+            if (elegidaAqui) p.clearShadowLayer()
             c.restore()
             val rr = RectF(desplazamiento + x0, 0f, desplazamiento + x0 + ancho, h)
             val lit = esLiteral[i]

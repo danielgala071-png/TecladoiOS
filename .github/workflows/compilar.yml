@@ -8,6 +8,9 @@ on:
 jobs:
   compilar:
     runs-on: ubuntu-latest
+    # Para publicar cada versión en "Releases"
+    permissions:
+      contents: write
 
     steps:
       - name: Descargar el código
@@ -125,3 +128,15 @@ jobs:
         with:
           name: TecladoiOS
           path: app/build/outputs/apk/debug/*.apk
+
+      - name: Publicar la versión en Releases (para descargar el APK directo)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          VERSION="7.${{ github.run_number }}"
+          cp "$APK" "TecladoiOS-$VERSION.apk"
+          NOTAS="$(git log -1 --pretty=%B | head -1)"
+          gh release create "v$VERSION" "TecladoiOS-$VERSION.apk" \
+            --title "TecladoiOS $VERSION" --notes "$NOTAS" --target "$GITHUB_SHA" --latest

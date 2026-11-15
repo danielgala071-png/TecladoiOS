@@ -95,7 +95,48 @@ class SettingsActivity : Activity() {
         })
     }
 
+    // ---------- Íconos de colores como en Ajustes del iPhone ----------
+    private val COLORES_IOS = intArrayOf(0xFF0A84FF.toInt(), 0xFF30D158.toInt(), 0xFFFF9F0A.toInt(), 0xFF5E5CE6.toInt(),
+        0xFFFF453A.toInt(), 0xFF64D2FF.toInt(), 0xFFBF5AF2.toInt(), 0xFF8E8E93.toInt(), 0xFFFF375F.toInt())
+    private var colorSeccion = COLORES_IOS[0]
+    private var nSeccion = 0
+
+    /** Símbolo de la fila según lo que hace (como los íconos del iPhone) */
+    private fun simbolo(t: String): String {
+        val x = t.lowercase()
+        return when {
+            "mayús" in x || "mayus" in x -> "⇧"
+            "corrección" in x || "corregir" in x -> "✓"
+            "punto" in x -> "•"
+            "puntuación" in x || "cierre" in x -> "❞"
+            "espacio" in x -> "␣"
+            "sugerencia" in x || "predecir" in x || "barra" in x -> "≡"
+            "separar" in x -> "⇹"
+            "aprender" in x || "palabra" in x || "estadística" in x -> "✎"
+            "vibración" in x || "vibrar" in x -> "≋"
+            "sonido" in x || "volumen" in x -> "♪"
+            "emoji" in x -> "☺"
+            "código" in x || "sms" in x -> "✉"
+            "contraseña" in x || "gestor" in x -> "⚿"
+            "datos" in x || "contacto" in x || "nombre" in x -> "☻"
+            "atajo" in x || "sustitución" in x -> "⇄"
+            "tamaño" in x || "altura" in x || "dividido" in x -> "⤢"
+            "modo" in x || "tema" in x -> "◐"
+            "activar" in x || "elegir" in x -> "⌨"
+            "portapapeles" in x || "copiado" in x || "captura" in x -> "⎘"
+            "números" in x -> "#"
+            else -> "⚙"
+        }
+    }
+
+    private fun icono(t: String): View = TextView(this).apply {
+        text = simbolo(t); setTextColor(Color.WHITE); textSize = 15f; gravity = Gravity.CENTER
+        background = GradientDrawable().apply { setColor(colorSeccion); cornerRadius = dp(7f).toFloat() }
+        layoutParams = LinearLayout.LayoutParams(dp(29f), dp(29f)).apply { marginEnd = dp(14f) }
+    }
+
     private fun seccion(t: String, nota: String? = null): LinearLayout {
+        colorSeccion = COLORES_IOS[nSeccion % COLORES_IOS.size]; nSeccion++
         lista.addView(TextView(this).apply {
             text = t.uppercase(); setTextColor(cGris); textSize = 12.5f
             Fuentes.aplicar(this, 500)
@@ -116,8 +157,9 @@ class SettingsActivity : Activity() {
 
     private fun separador(caja: LinearLayout) {
         if (caja.childCount == 0) return
+        // Como el iPhone: la línea empieza donde empieza el texto (después del ícono)
         caja.addView(View(this).apply { setBackgroundColor(cLinea) },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply { marginStart = dp(16f) })
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply { marginStart = dp(59f) })
     }
 
     private fun interruptor(caja: LinearLayout, texto: String, clave: String, porDefecto: Boolean, sub: String? = null, alCambiar: ((Boolean) -> Boolean)? = null) {
@@ -126,6 +168,7 @@ class SettingsActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(16f), dp(11f), dp(12f), dp(11f))
         }
+        fila.addView(icono(texto))
         val textos = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         textos.addView(TextView(this).apply { text = texto; setTextColor(cTexto); textSize = 17f })
         if (sub != null) textos.addView(TextView(this).apply { text = sub; setTextColor(0xFF8E8E93.toInt()); textSize = 12.5f })
@@ -170,8 +213,9 @@ class SettingsActivity : Activity() {
     private fun boton(caja: LinearLayout, texto: String, color: Int = acento, sub: String? = null, accion: () -> Unit): TextView {
         separador(caja)
         // Fila como en Ajustes del iPhone: texto a la izquierda y "›" gris a la derecha
-        val fila = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16f), dp(12f), dp(8f), dp(12f)) }
+        val fila = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(16f), 0, 0, 0) }
+        if (texto.isNotEmpty()) fila.addView(icono(texto))
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(if (texto.isEmpty()) 0 else 0, dp(12f), dp(8f), dp(12f)) }
         val t = TextView(this).apply { text = texto; setTextColor(if (color == Color.WHITE) cTexto else color); textSize = 17f }
         col.addView(t)
         if (sub != null) col.addView(TextView(this).apply { text = sub; setTextColor(cGris); textSize = 12.5f })
@@ -185,7 +229,7 @@ class SettingsActivity : Activity() {
     }
 
     private fun opciones(caja: LinearLayout, texto: String, clave: String, nombres: List<String>, porDefecto: Int) {
-        val t = boton(caja, "", Color.WHITE) {}
+        val t = boton(caja, texto, Color.WHITE) {}
         fun refrescar() { t.text = "$texto: ${nombres.getOrElse(prefs.getInt(clave, porDefecto)) { nombres[0] }}" }
         refrescar()
         (t.parent as View).setOnClickListener {
@@ -202,7 +246,7 @@ class SettingsActivity : Activity() {
         titulo("TecladoiOS")
 
         val act = seccion("Activar", "Actívalo una vez y elígelo como teclado. Todo lo que aprende se queda en tu celular, sin internet.")
-        estado = boton(act, "", Color.WHITE) {}
+        estado = boton(act, "Activar", Color.WHITE) {}
         boton(act, "1. Activar en los ajustes de Android") { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) }
         boton(act, "2. Elegir TecladoiOS") { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker() }
 

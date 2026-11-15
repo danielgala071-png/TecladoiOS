@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Cargar el cerebro al prender el celular (arranque instantáneo del teclado) -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Solo si lo activas en Ajustes: los nombres de tus contactos (nunca salen del celular) -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <!-- Solo si lo activas en Ajustes: ver tus capturas de pantalla recientes para enviarlas
@@ -48,6 +50,15 @@
 
         <!-- Solo si lo activas en Ajustes: lee los avisos de mensajes para encontrar códigos de
              verificación y ofrecerlos en la barra. Nada sale del celular ni se guarda. -->
+        <receiver
+            android:name=".AlEncender"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".CodigosService"
             android:label="Códigos de TecladoiOS"

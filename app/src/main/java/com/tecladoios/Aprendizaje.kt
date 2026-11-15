@@ -21,6 +21,26 @@ class Aprendizaje(private val archivo: File) {
     val rechazadas = HashSet<String>()
     /** Palabras que eliminaste de las sugerencias: no se sugieren ni se usan para corregir */
     val eliminadas = HashSet<String>()
+    /** Palabras nuevas usadas una sola vez: si en la limpieza siguiente siguen igual, se olvidan */
+    val enEspera = HashSet<String>()
+
+    /**
+     * Limpieza semanal: olvida las palabras nuevas que aprendió una sola vez y no volviste a
+     * usar en toda una semana (casi siempre son errores de dedo). Las que fijaste o usaste más
+     * de una vez se quedan. Devuelve cuántas olvidó.
+     */
+    @Synchronized
+    fun limpiar(): Int {
+        var olvidadas = 0
+        val sigue = HashSet<String>()
+        for ((k, p) in propias.entries.toList()) {
+            if (p.fija || p.veces > 1) continue
+            if (k in enEspera) { propias.remove(k); uso.remove(k); olvidadas++ } else sigue.add(k)
+        }
+        enEspera.clear(); enEspera.addAll(sigue)
+        cambios++
+        return olvidadas
+    }
 
     @Volatile var cambios = 0
         private set
@@ -170,6 +190,7 @@ class Aprendizaje(private val archivo: File) {
         for ((k, m) in siguientes) for ((s, v) in m) w.write("S\t$k\t$s\t$v\n")
         for (r in rechazadas) w.write("R\t$r\n")
         for (x in eliminadas) w.write("X\t$x\n")
+        for (x in enEspera) w.write("W\t$x\n")
     }
 
     /** Suma una línea de una copia de seguridad a lo que ya sabe (gana el número mayor) */
@@ -209,6 +230,7 @@ class Aprendizaje(private val archivo: File) {
                         "S" -> if (p.size >= 4) siguientes.getOrPut(p[1]) { HashMap(4) }[p[2]] = p[3].toIntOrNull() ?: 1
                         "R" -> if (p.size >= 2) rechazadas.add(p[1])
                         "X" -> if (p.size >= 2) eliminadas.add(p[1])
+                        "W" -> if (p.size >= 2) enEspera.add(p[1])
                     }
                 }
             }

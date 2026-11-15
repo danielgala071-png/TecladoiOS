@@ -38,6 +38,7 @@ object Cerebro {
                 motor = m
                 deslizar = Deslizar(m)
                 if (Ajustes.prefs(app).getBoolean(Ajustes.CONTACTOS, false)) cargarContactos(app)
+                limpiezaSemanal(app, m)
                 // El índice para deslizar se arma después, sin apuro
                 hilo.execute { try { deslizar?.preparar() } catch (e: Throwable) { Registro.anotar("preparar deslizar", e) } }
             } catch (e: Throwable) {
@@ -48,6 +49,20 @@ object Cerebro {
                 for (f in lista) principal.post { f() }
             }
         }
+    }
+
+    /** Una vez por semana el cerebro olvida los errores de dedo que aprendió una sola vez */
+    private fun limpiezaSemanal(c: Context, m: Motor) {
+        try {
+            val p = Ajustes.prefs(c)
+            val ahora = System.currentTimeMillis()
+            val ultima = p.getLong("limpieza_cerebro", 0L)
+            if (ultima == 0L) { p.edit().putLong("limpieza_cerebro", ahora).apply(); return }
+            if (ahora - ultima < 7L * 24 * 3600 * 1000) return
+            m.aprendido.limpiar()
+            p.edit().putLong("limpieza_cerebro", ahora).apply()
+            m.aprendido.guardar()
+        } catch (e: Throwable) { Registro.anotar("limpieza semanal", e) }
     }
 
     private fun lineas(c: Context, archivo: String): List<String> = try {

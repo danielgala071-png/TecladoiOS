@@ -127,6 +127,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         // Un código de SMS que llega con el teclado abierto aparece al instante en la barra
         Codigos.alLlegar = { principal.post { if (palabra.isEmpty() && cfg.codigos) actualizarBarra() } }
         Estadisticas.cargar(prefs)
+        pedirMaximaFluidez()
         // Sube y baja con la curva del iPhone (en algunos Android la animación la pone el sistema)
         try { window?.window?.setWindowAnimations(R.style.AnimacionTeclado) } catch (e: Throwable) { Registro.anotar("animación ventana", e) }
     }
@@ -1431,6 +1432,27 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             pe.animate().translationY(alto).setDuration(220L).setInterpolator(curva)
                 .withEndAction { if (panel != Panel.EMOJI) { pe.visibility = View.GONE; pe.translationY = 0f } }.start()
         }
+    }
+
+    /**
+     * Pantallas de 90/120 Hz: mientras el teclado está a la vista le pide a Android la
+     * frecuencia más alta, así las animaciones se ven el doble de suaves.
+     */
+    private fun pedirMaximaFluidez() {
+        try {
+            val w = window?.window ?: return
+            val dm = getSystemService(android.hardware.display.DisplayManager::class.java) ?: return
+            val pantalla = dm.getDisplay(android.view.Display.DEFAULT_DISPLAY) ?: return
+            val actual = pantalla.mode
+            // El modo más rápido con la misma resolución
+            val mejor = pantalla.supportedModes
+                .filter { it.physicalWidth == actual.physicalWidth && it.physicalHeight == actual.physicalHeight }
+                .maxByOrNull { it.refreshRate } ?: return
+            val a = w.attributes
+            a.preferredDisplayModeId = mejor.modeId
+            a.preferredRefreshRate = mejor.refreshRate
+            w.attributes = a
+        } catch (e: Throwable) { Registro.anotar("frecuencia de pantalla", e) }
     }
 
     override fun menuTeclado(opcion: String) {
