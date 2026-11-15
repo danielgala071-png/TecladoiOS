@@ -222,7 +222,7 @@ class Motor(
         val formasExactas = dic.formas(clave)
         val propia = aprendido.conocida(clave)
         val contacto = contactos[clave]
-        val valida = formasExactas.isNotEmpty() || propia != null || contacto != null
+        var valida = formasExactas.isNotEmpty() || propia != null || contacto != null
 
         val ctxBono = mapaContexto(contexto)
         // Otros idiomas (como Gboard multilingüe): una palabra en inglés o portugués solo
@@ -268,6 +268,21 @@ class Motor(
                 if (!candidataRapida(clave, k)) continue
                 val costo = parecido(clave, k, xs, ys) ?: continue
                 meter(nombre, puntaje(costo, 2.0f, 0f, 0f), k != clave, k.length > clave.length)
+            }
+        }
+
+        // Error de dedo que el cerebro "aprendió" por repetirlo (se escapó dos o tres veces sin
+        // corregir): si está a un toque de una palabra común, no cuenta como palabra tuya y se
+        // corrige. Las que fijaste (o deshiciste una corrección) y las que usas mucho se respetan.
+        if (valida && formasExactas.isEmpty() && contacto == null && propia != null && !propia.fija && propia.veces < DUDOSA) {
+            val rival = lista.filter { it.esCorreccion && !it.completa }.minByOrNull { it.puntaje }
+            if (rival != null) {
+                val id = dic.id(rival.texto)
+                val costo = costoDe(rival.texto, clave, xs, ys)
+                if (id >= 0 && dic.penal(id) < 7.5f && costo <= 1.05f && !aprendido.rechazada(escrito, rival.texto)) {
+                    valida = false
+                    lista.removeAll { Texto.normal(it.texto) == clave }
+                }
             }
         }
 
@@ -450,6 +465,8 @@ class Motor(
     companion object {
         /** Lo que pesa una palabra de otro idioma que no usas (frente a una del español) */
         private const val FUERA = 2.4f
+        /** Una palabra nueva tuya cuenta como segura recién después de usarla tantas veces */
+        private const val DUDOSA = 5
         private val LETRAS = CharArray(27) { i -> if (i < 14) 'a' + i else if (i == 14) 'ñ' else 'o' + (i - 15) }
         val INICIO = listOf("hola", "ya", "gracias", "buenos", "sí", "no", "estimado", "ok", "qué", "te", "yo", "bueno")
         val GENERALES = listOf("de", "que", "y", "la", "el", "en", "a", "no", "con", "para", "por", "me")

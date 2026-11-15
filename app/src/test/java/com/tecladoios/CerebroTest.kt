@@ -105,4 +105,18 @@ class CerebroTest {
         assertNotNull(res.firstOrNull())
         assertEquals("hola", res.first())
     }
+
+    @Test fun errorRepetidoSeSigueCorrigiendo() {
+        // "qeu" se escapó dos veces sin corregir: el cerebro no debe darlo por palabra buena
+        val m = motor(geoQwerty())
+        m.aprendido.usar("qeu", false); m.aprendido.usar("qeu", false)
+        assertEquals("que", m.proponer("qeu", null, null, emptyList(), true).autocorregir)
+    }
+
+    @Test fun palabraFijadaSeRespeta() {
+        // Si la fijaste (o deshiciste la corrección), se queda como la escribiste
+        val m = motor(geoQwerty())
+        m.aprendido.agregar("qeu", true)
+        assertNull(m.proponer("qeu", null, null, emptyList(), true).autocorregir)
+    }
 }
