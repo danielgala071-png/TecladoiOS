@@ -1,14 +1,15 @@
 package com.tecladoios
 
 /**
- * Ahorro de batería (activado de fábrica): quita todo lo que gasta de más.
- * - Sin animaciones: las teclas se marcan al tocar y vuelven al soltar, sin hundirse ni
- *   rebotar; el globo aparece y desaparece al instante; la barra cambia sin rodillo; los
- *   emojis y los paneles cambian directo; sin pulso al enviar ni brillos.
- * - Vibración: un toque corto igual para todas las teclas (el motor trabaja mucho menos).
- * - Sin sonido de teclas.
- * Se apaga en Ajustes → Otros → «Ahorro de batería» para volver a tener todo.
+ * Teclado sin gasto de batería (fijo, sin interruptor): se quitaron todas las animaciones y
+ * efectos que hacían trabajar la pantalla y el procesador al escribir.
+ * - Teclas: se marcan al tocar y vuelven al soltar, sin hundirse ni rebotar.
+ * - Globo: aparece ya formado y se va al instante.
+ * - Barra: las palabras cambian directo (sin rodillo, destellos ni saltos).
+ * - Paneles y emojis: cambian directo, sin transiciones.
+ * - Sin pulso al enviar, sin brillos, sin animación de 123 ni de mayúsculas.
+ * - Sin sonido; vibración: un toque corto igual para todas las teclas.
  */
 object Ahorro {
-    @Volatile var activo = true
+    const val activo = true
 }

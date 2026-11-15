@@ -301,10 +301,9 @@ class SettingsActivity : Activity() {
         interruptor(tec, "¿ y ¡ automáticos", Ajustes.SIGNOS_INICIO, true, "Al cerrar con ? o ! se pone ¿ o ¡ al inicio de la frase")
         deslizador(tec, "Mantener presionado", Ajustes.RETARDO_LARGA, 150, 700, 320) { "$it ms" }
 
-        val son = seccion("Sonido y vibración")
-        interruptor(son, "Vibración al tocar", Ajustes.VIBRACION, true, "Golpe fuerte en cada tecla, más fuerte en espacio, mayúscula y borrar")
-        interruptor(son, "Sonido al tocar", Ajustes.SONIDO, false)
-        deslizador(son, "Volumen", Ajustes.VOLUMEN, 0, 100, 40) { "$it %" }
+        // Sin sonido (gasta batería): solo queda la vibración, corta e igual en todas las teclas
+        val son = seccion("Vibración")
+        interruptor(son, "Vibración al tocar", Ajustes.VIBRACION, true, "Un toque corto en cada tecla")
 
         val por = seccion("Portapapeles y capturas", "Lo copiado se guarda una hora (lo fijado, siempre). Las contraseñas copiadas no se guardan.")
         interruptor(por, "Historial del portapapeles", Ajustes.PORTAPAPELES, true)
@@ -348,7 +347,6 @@ class SettingsActivity : Activity() {
         boton(est, "Ver mis estadísticas") { verEstadisticas() }
 
         val otros = seccion("Otros")
-        interruptor(otros, "Ahorro de batería", Ajustes.AHORRO, true, "Sin animaciones, sin sonido y vibración corta. Apágalo para tener todos los efectos")
         interruptor(otros, "Ocultar el ícono de la app", Ajustes.ICONO_OCULTO, false, "Abre los ajustes desde el engranaje del teclado") { si ->
             packageManager.setComponentEnabledSetting(ComponentName(this, "com.tecladoios.Lanzador"),
                 if (si) PackageManager.COMPONENT_ENABLED_STATE_DISABLED else PackageManager.COMPONENT_ENABLED_STATE_ENABLED,

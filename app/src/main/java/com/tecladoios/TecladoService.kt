@@ -126,7 +126,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     override fun onCreate() {
         super.onCreate()
         prefs = Ajustes.prefs(this)
-        cfg = Config(prefs); Ahorro.activo = cfg.ahorro
+        cfg = Config(prefs)
         respuesta = Respuesta(this).also { it.config = cfg }
         portapapeles = Portapapeles(java.io.File(filesDir, "portapapeles.tsv")).also { it.cargar() }
         prefs.registerOnSharedPreferenceChangeListener(this)
@@ -157,7 +157,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     override fun onSharedPreferenceChanged(p: SharedPreferences?, clave: String?) {
         if (clave == "emojis_recientes" || clave == "desvios" || clave == "ultima_captura") return
-        cfg = Config(prefs); Ahorro.activo = cfg.ahorro
+        cfg = Config(prefs)
         respuesta.config = cfg
         teclado?.config = cfg
         teclado?.unaMano = cfg.unaMano
@@ -263,7 +263,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        cfg = Config(prefs); Ahorro.activo = cfg.ahorro; respuesta.config = cfg
+        cfg = Config(prefs); respuesta.config = cfg
         teclado?.config = cfg
         teclado?.unaMano = cfg.unaMano
         barra?.herramientasActivas = cfg.barraHerramientas
