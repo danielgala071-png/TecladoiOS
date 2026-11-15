@@ -88,6 +88,29 @@ object Cerebro {
         return Motor(dic, Errores.cargar(c), aprendido, big, geo)
     }
 
+    /**
+     * Al desbloquear el celular: si el cerebro no está cargado lo carga, y si ya está, lo
+     * «despierta» con una búsqueda de prueba (Android pudo haber dormido o comprimido su
+     * memoria): así la primera tecla y la primera sugerencia salen sin espera.
+     */
+    @Volatile private var sumidero = 0
+
+    fun precalentar(c: Context) {
+        val m = motor ?: run { iniciar(c); return }
+        hilo.execute {
+            try {
+                m.proponer("hola", null, null, listOf("buenos", "dias"), true)
+                m.predecir(listOf("nos", "vemos"), false)
+                m.letrasProbables("ho")
+                // Toca la memoria del diccionario para que esté a mano
+                val d = m.dic; var s = 0
+                var i = 0
+                while (i < d.hijo.size) { s += d.hijo[i] xor d.mejor[i]; i += 512 }
+                sumidero = s
+            } catch (e: Throwable) { Registro.anotar("precalentar", e) }
+        }
+    }
+
     fun cargarContactos(c: Context) {
         val m = motor ?: return
         if (c.checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) { m.contactos = emptyMap(); return }

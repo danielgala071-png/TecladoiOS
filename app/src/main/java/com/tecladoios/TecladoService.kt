@@ -136,11 +136,28 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         Codigos.alLlegar = { principal.post { if (palabra.isEmpty() && cfg.codigos) actualizarBarra() } }
         Estadisticas.cargar(prefs)
         pedirMaximaFluidez()
+        // Precalentar el cerebro al desbloquear: así la primera tecla ya responde al instante
+        try {
+            val filtro = android.content.IntentFilter().apply {
+                addAction(android.content.Intent.ACTION_USER_PRESENT)
+                addAction(android.content.Intent.ACTION_SCREEN_ON)
+            }
+            if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(alDesbloquear, filtro, RECEIVER_NOT_EXPORTED)
+            else registerReceiver(alDesbloquear, filtro)
+        } catch (e: Throwable) { Registro.anotar("al desbloquear", e) }
         // Sube y baja con la curva del iPhone (en algunos Android la animación la pone el sistema)
         try { window?.window?.setWindowAnimations(R.style.AnimacionTeclado) } catch (e: Throwable) { Registro.anotar("animación ventana", e) }
     }
 
+    private val alDesbloquear = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: android.content.Context, i: android.content.Intent?) {
+            Cerebro.precalentar(this@TecladoService)
+            panelEmoji?.let { pe -> teclado?.let { kb -> if (kb.height > 0) pe.preparar(kb.height) } }
+        }
+    }
+
     override fun onDestroy() {
+        try { unregisterReceiver(alDesbloquear) } catch (_: Throwable) { }
         Codigos.alLlegar = null
         if (android.os.Build.VERSION.SDK_INT >= 31) oyenteDesenfoque?.let {
             try { getSystemService(android.view.WindowManager::class.java)?.removeCrossWindowBlurEnabledListener(it) } catch (_: Throwable) { }
@@ -296,6 +313,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        Medidor.guardar(this)
         revision = null
         barra?.revision = null
         ocultarLlaves()
@@ -642,7 +660,9 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     // Un error al escribir se anota y no cierra el teclado
     override fun tecla(texto: String, x: Float, y: Float, esLetra: Boolean) {
         try {
+            val inicio = System.nanoTime()
             teclaReal(texto, x, y, esLetra)
+            Medidor.tecla(System.nanoTime() - inicio)
             if ((texto == "?" || texto == "!") && sugerir && cfg.signosInicio) signoDeApertura(texto[0])
             // Como en iOS: el apóstrofo en 123 te devuelve a las letras
             if ((texto == "'" || texto == "’") && (modo == Distribuciones.SIMBOLOS || modo == Distribuciones.SIMBOLOS2)) volverLetras()
@@ -1046,6 +1066,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         val t = turno.incrementAndGet()
         val deslizado = vinoDeslizado
         val alts = alternativasDeslizar
+        val pedidoNs = System.nanoTime()
         ejecutar.execute {
             if (turno.get() != t) return@execute
             val p = try {
@@ -1056,6 +1077,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 if (turno.get() == t && palabra.toString() == escrito) {
                     propuesta = p; propuestaDe = escrito
                     actualizarBarra()
+                    Medidor.sugerencia(System.nanoTime() - pedidoNs)
+                    Medidor.guardarSiToca(this)
                 }
             }
         }

@@ -361,6 +361,7 @@ class SettingsActivity : Activity() {
                 startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
             } catch (_: Exception) { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
         }
+        boton(otros, "Medidor de velocidad", sub = "Milisegundos por tecla y por sugerencia") { verMedidor() }
         boton(otros, "Registro de errores") { verRegistro() }
         val version = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "" }
         lista.addView(TextView(this).apply {
@@ -505,6 +506,12 @@ class SettingsActivity : Activity() {
             .setNegativeButton("Cancelar", null)
         if (clave != null) d.setNeutralButton("Borrar") { _, _ -> m.remove(clave); Atajos.guardar(prefs, m) }
         d.show()
+    }
+
+    private fun verMedidor() {
+        AlertDialog.Builder(this).setTitle("Medidor de velocidad").setMessage(Medidor.resumen(this))
+            .setNeutralButton("Reiniciar") { _, _ -> Medidor.reiniciar(this) }
+            .setPositiveButton("Cerrar", null).show()
     }
 
     private fun verRegistro() {

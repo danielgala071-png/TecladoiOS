@@ -94,12 +94,13 @@ class Capa(context: Context) : View(context) {
     private val APARECE = 190f
     private val POP = 230f
     private var popMs = 0L
-    private val SE_VA = 45f
+    private val SE_VA = 150f   // lo que tarda la letra en bajar a su tecla
 
     fun mostrarGlobo(r: RectF, texto: String) {
         val ahora = android.os.SystemClock.uptimeMillis()
-        // Escribiendo rápido el globo salta de tecla en tecla sin volver a crecer
-        if (!globo && ahora - seVaMs > SE_VA) apareceMs = ahora
+        // Cada tecla: el globo sube desde ella y la letra viaja hacia arriba (también
+        // escribiendo rápido, así cada letra se ve subir)
+        apareceMs = ahora
         popMs = ahora   // cada tecla nueva hace su "pop", aunque escribas rápido
         tecla.set(r); globoTexto = texto; globo = true
         armarForma()
@@ -215,54 +216,55 @@ class Capa(context: Context) : View(context) {
         val ahora = android.os.SystemClock.uptimeMillis()
         val visible = globo || ahora - seVaMs < SE_VA
         if (visible && opciones.isEmpty() && !forma.isEmpty) {
+            // El globo no se ensancha: crece solo hacia arriba desde la tecla. La letra viaja:
+            // sale de la tecla y sube hasta el globo; al soltar, baja del globo a su tecla.
             val alfa: Float
-            val escala: Float
-            val subeLetra: Float
-            var escX = 1f; var escY = 1f; var flota = 0f; var alfaLetra = 1f
+            var escY = 1f; var flota = 0f
+            val viaje: Float   // 0 = la letra está en la tecla, 1 = arriba en el globo
             if (globo) {
                 val t = ((ahora - apareceMs) / APARECE).coerceIn(0f, 1f)
-                // Gota: el alto va adelante (se estira hacia arriba con un leve rebote) y el
-                // ancho llega después (se hincha); a la vez sube flotando desde la tecla
                 val u = 1f - t
+                // Sube estirándose con un leve rebote
                 val eY = 1f - kotlin.math.exp(-6f * t) * kotlin.math.cos(7.5f * t) * u
-                val tX = ((t - 0.12f) / 0.88f).coerceIn(0f, 1f)
-                val eX = 1f - (1f - tX) * (1f - tX) * (1f - tX)
                 escY = 0.30f + 0.70f * eY
-                escX = 0.42f + 0.58f * eX
                 flota = u * u * 9f * d   // empieza 9 dp más abajo y sube flotando
                 alfa = (t / 0.18f).coerceIn(0f, 1f)
-                alfaLetra = ((t - 0.25f) / 0.35f).coerceIn(0f, 1f)
-                escala = 1f; subeLetra = 0f
+                // La letra sube con el globo y se asienta con un pelo de rebote
+                viaje = (1f - kotlin.math.exp(-5.5f * t) * kotlin.math.cos(6f * t) * u).coerceAtMost(1.04f)
                 if (t < 1f) postInvalidateOnAnimation()
             } else {
-                // Y se va desvaneciendo en un suspiro
+                // Al soltar: el globo se recoge hacia la tecla y la letra baja a su lugar
                 val t = ((ahora - seVaMs) / SE_VA).coerceIn(0f, 1f)
-                alfa = 1f - t; escala = 1f - 0.12f * t; subeLetra = 0f
+                val e = t * t * (3f - 2f * t)
+                escY = 1f - 0.7f * e
+                alfa = (1f - t * 1.4f).coerceIn(0f, 1f)
+                viaje = 1f - e
                 postInvalidateOnAnimation()
             }
-            // El globo (sombra, aura difuminada, vidrio, filo y letra brillante) se arma UNA vez
-            // por tecla y se guarda: después cada cuadro solo lo copia. El aura difuminada era lo
-            // más caro de dibujar y se repetía en cada cuadro mientras la tecla estaba apretada.
+            // El globo (sombra, vidrio, filo) se arma UNA vez por tecla y se guarda: después
+            // cada cuadro solo lo copia
             val img = imagenGlobo()
             c.save()
             c.translate(0f, flota)
-            c.scale(escala * escX, escala * escY, tecla.centerX(), tecla.bottom)
+            c.scale(1f, escY, tecla.centerX(), tecla.bottom)
             if (img != null) {
                 pintaGlobo.alpha = (alfa * 255).toInt().coerceIn(0, 255)
-                c.drawBitmap(img, limites.left - MARGEN * d, limites.top - MARGEN * d + subeLetra * 0.3f, pintaGlobo)
+                c.drawBitmap(img, limites.left - MARGEN * d, limites.top - MARGEN * d, pintaGlobo)
             }
-            // La letra hace un "pop": crece un poquito más que el globo y se asienta
+            c.restore()
+            // La letra (fuera de la escala del globo, para que no se deforme)
             val tl = ((ahora - popMs) / POP).coerceIn(0f, 1f)
-            // La letra rebota como goma: crece, se encoge apenas y se asienta
             val pop = if (globo) 1f + 0.2f * kotlin.math.exp(-4.5f * tl) * kotlin.math.sin(Math.PI.toFloat() * 2.2f * tl) else 1f
             if (globo && tl < 1f) postInvalidateOnAnimation()
-            letraP.color = tema.texto; letraP.alpha = (alfa * alfaLetra * 255).toInt().coerceIn(0, 255)
-            letraP.textSize = tecla.height() * 0.8f
-            val cyL = limites.top + (tecla.top - limites.top) * 0.5f
-            c.save(); c.scale(pop, pop, limites.centerX(), cyL)
-            c.drawText(globoTexto, limites.centerX(), cyL + letraP.textSize * 0.35f, letraP)
-            c.restore()
-            letraP.alpha = 255
+            val cyArriba = limites.top + (tecla.top - limites.top) * 0.5f + flota
+            val cyTecla = tecla.centerY()
+            val cy = cyTecla + (cyArriba - cyTecla) * viaje
+            val tamTecla = tecla.height() * 0.45f
+            val tamArriba = tecla.height() * 0.8f
+            letraP.color = tema.texto; letraP.alpha = 255
+            letraP.textSize = tamTecla + (tamArriba - tamTecla) * viaje.coerceIn(0f, 1f)
+            c.save(); c.scale(pop, pop, limites.centerX(), cy)
+            c.drawText(globoTexto, limites.centerX(), cy + letraP.textSize * 0.35f, letraP)
             c.restore()
         }
         if (opciones.isNotEmpty()) {
