@@ -135,29 +135,14 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         // Un código de SMS que llega con el teclado abierto aparece al instante en la barra
         Codigos.alLlegar = { principal.post { if (palabra.isEmpty() && cfg.codigos) actualizarBarra() } }
         Estadisticas.cargar(prefs)
-        pedirMaximaFluidez()
-        // Precalentar el cerebro al desbloquear: así la primera tecla ya responde al instante
-        try {
-            val filtro = android.content.IntentFilter().apply {
-                addAction(android.content.Intent.ACTION_USER_PRESENT)
-                addAction(android.content.Intent.ACTION_SCREEN_ON)
-            }
-            if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(alDesbloquear, filtro, android.content.Context.RECEIVER_NOT_EXPORTED)
-            else registerReceiver(alDesbloquear, filtro)
-        } catch (e: Throwable) { Registro.anotar("al desbloquear", e) }
+        // Ahorro de batería: ya no se fuerza la pantalla a 90/120 Hz (Android sube la
+        // frecuencia solo al tocar y la baja al quedar quieto) ni se despierta el cerebro en
+        // cada desbloqueo; se prepara recién cuando abres el teclado.
         // Sube y baja con la curva del iPhone (en algunos Android la animación la pone el sistema)
         try { window?.window?.setWindowAnimations(R.style.AnimacionTeclado) } catch (e: Throwable) { Registro.anotar("animación ventana", e) }
     }
 
-    private val alDesbloquear = object : android.content.BroadcastReceiver() {
-        override fun onReceive(c: android.content.Context, i: android.content.Intent?) {
-            Cerebro.precalentar(this@TecladoService)
-            panelEmoji?.let { pe -> teclado?.let { kb -> if (kb.height > 0) pe.preparar(kb.height) } }
-        }
-    }
-
     override fun onDestroy() {
-        try { unregisterReceiver(alDesbloquear) } catch (_: Throwable) { }
         Codigos.alLlegar = null
         if (android.os.Build.VERSION.SDK_INT >= 31) oyenteDesenfoque?.let {
             try { getSystemService(android.view.WindowManager::class.java)?.removeCrossWindowBlurEnabledListener(it) } catch (_: Throwable) { }
@@ -1686,27 +1671,6 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private val curvaRevelado = android.view.animation.PathInterpolator(0.32f, 0.72f, 0f, 1f)
     private val ABRE_EMOJIS = 360L
     private val CIERRA_EMOJIS = 300L
-
-    /**
-     * Pantallas de 90/120 Hz: mientras el teclado está a la vista le pide a Android la
-     * frecuencia más alta, así las animaciones se ven el doble de suaves.
-     */
-    private fun pedirMaximaFluidez() {
-        try {
-            val w = window?.window ?: return
-            val dm = getSystemService(android.hardware.display.DisplayManager::class.java) ?: return
-            val pantalla = dm.getDisplay(android.view.Display.DEFAULT_DISPLAY) ?: return
-            val actual = pantalla.mode
-            // El modo más rápido con la misma resolución
-            val mejor = pantalla.supportedModes
-                .filter { it.physicalWidth == actual.physicalWidth && it.physicalHeight == actual.physicalHeight }
-                .maxByOrNull { it.refreshRate } ?: return
-            val a = w.attributes
-            a.preferredDisplayModeId = mejor.modeId
-            a.preferredRefreshRate = mejor.refreshRate
-            w.attributes = a
-        } catch (e: Throwable) { Registro.anotar("frecuencia de pantalla", e) }
-    }
 
     override fun menuTeclado(opcion: String) {
         try {
