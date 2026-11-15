@@ -265,10 +265,6 @@ class Barra(context: Context) : View(context) {
     }
     private val pinturaFondo = Paint()
     private val pinturaCapsula = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var bordePlata: android.graphics.Shader? = null
-    private var bordePlataAlto = -1f
-    private var lineaRoja: android.graphics.Shader? = null
-    private var lineaRojaAncho = -1f
 
     private fun dibujarTodo(c: Canvas) {
         zonas.clear(); zonasLargas.clear()
@@ -278,33 +274,8 @@ class Barra(context: Context) : View(context) {
             // Diseño C: el mismo negro del teclado, sin matiz de la app (una sola pieza)
             pinturaFondo.color = tema.fondoBarra
             c.drawRect(0f, 0f, w, h, pinturaFondo)
-            // Cápsula compacta pegada al teclado: fondo grafito oscuro con el mismo contorno
-            // fino de las letras, para que barra y teclas se vean como un solo diseño
-            // La barra va en grafito y plata (neutra) para diferenciarse del teclado rojo
-            val l = dp(5f); val arr = dp(3f); val ab = dp(4f)
-            val radio = (h - arr - ab) / 2f
-            pinturaCapsula.style = Paint.Style.FILL; pinturaCapsula.color = 0xFF111113.toInt()
-            c.drawRoundRect(l, arr, w - l, h - ab, radio, radio, pinturaCapsula)
-            if (bordePlata == null || bordePlataAlto != h) {
-                bordePlata = android.graphics.LinearGradient(0f, arr, 0f, h - ab,
-                    intArrayOf(0xFF6E6E74.toInt(), 0xFF2E2E32.toInt(), 0xFF1A1A1D.toInt()), floatArrayOf(0f, 0.5f, 1f),
-                    android.graphics.Shader.TileMode.CLAMP)
-                bordePlataAlto = h
-            }
-            pinturaCapsula.style = Paint.Style.STROKE; pinturaCapsula.strokeWidth = dp(1f); pinturaCapsula.shader = bordePlata
-            val m = dp(0.5f)
-            c.drawRoundRect(l + m, arr + m, w - l - m, h - ab - m, radio, radio, pinturaCapsula)
-            pinturaCapsula.shader = null
-            // Línea de metal rojo que separa la barra del teclado (brilla al centro)
-            if (lineaRoja == null || lineaRojaAncho != w) {
-                lineaRoja = android.graphics.LinearGradient(0f, 0f, w, 0f,
-                    intArrayOf(0x00E0112F, 0xFF7A0A1A.toInt(), 0xFFFF2E4A.toInt(), 0xFF7A0A1A.toInt(), 0x00E0112F),
-                    floatArrayOf(0f, 0.2f, 0.5f, 0.8f, 1f), android.graphics.Shader.TileMode.CLAMP)
-                lineaRojaAncho = w
-            }
-            pinturaCapsula.style = Paint.Style.FILL; pinturaCapsula.shader = lineaRoja
-            c.drawRect(0f, h - dp(1.2f), w, h, pinturaCapsula)
-            pinturaCapsula.shader = null
+            // Diseño 4 «Tecla elegida»: barra en negro puro, sin cápsula ni líneas;
+            // solo la palabra que se pondrá va sobre una mini tecla carmesí (ver dibujarTeclaElegida)
         }
         // Línea finísima que separa la barra de las teclas (detalle premium, casi invisible)
         // Sin línea de borde: la barra y las teclas son una sola pieza de vidrio
@@ -460,7 +431,7 @@ class Barra(context: Context) : View(context) {
         // Dos puntitos muy tenues separan las sugerencias (ordenan sin líneas)
         if (!tema.claro) {
             relleno.style = Paint.Style.FILL; relleno.color = 0xFF3A3A3C.toInt()
-            for (j in 1..2) if (celdas[j - 1] != null && celdas[j] != null) c.drawCircle(j * ancho, h / 2f + dp(1f), dp(1.4f), relleno)
+            if (destacada < 0) for (j in 1..2) if (celdas[j - 1] != null && celdas[j] != null) c.drawCircle(j * ancho, h / 2f + dp(1f), dp(1.4f), relleno)
         }
         for (i in 0 until 3) {
             val s = celdas[i] ?: continue
@@ -504,13 +475,14 @@ class Barra(context: Context) : View(context) {
             }
             val mostrado = if (esLiteral[i]) "“$s”" else s
             val corto = recortar(mostrado, p, ancho - dp(22f))
+            if (elegidaAqui && !tema.claro) dibujarTeclaElegida(c, x0 + ancho / 2, h, p.measureText(corto), ancho, ec)
             val alfaBase = p.alpha
             p.alpha = (alfaBase * (0.2f + 0.8f * ec)).toInt()
             val rev = revision
             if (rev != null && !esLiteral[i] && corto == mostrado) textoConCambio(c, corto, rev, x0 + ancho / 2, h / 2 + p.textSize * 0.36f, p)
             else c.drawText(corto, x0 + ancho / 2, h / 2 + p.textSize * 0.36f, p)
-            if (elegidaAqui && rev == null) {
-                // Diseño C: la palabra que se pondrá sola lleva una rayita debajo (sin halo)
+            if (elegidaAqui && rev == null && tema.claro) {
+                // Tema claro: la palabra que se pondrá sola lleva una rayita debajo
                 val mitad = p.measureText(corto) / 2
                 val yL = h / 2 + p.textSize * 0.36f + dp(6f)
                 relleno.style = Paint.Style.FILL
@@ -566,6 +538,41 @@ class Barra(context: Context) : View(context) {
     }
 
     /** Cápsula de vidrio: relleno translúcido y filo de luz arriba */
+    /**
+     * Mini tecla de obsidiana carmesí detrás de la palabra que se pondrá sola: base roja
+     * asomando abajo, cara en rojo metálico y un reflejo finito arriba (como las teclas).
+     */
+    private val pinturaTecla = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val reflejoTecla = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x40FF8A96; strokeCap = Paint.Cap.ROUND }
+    private var caraTecla: android.graphics.LinearGradient? = null
+    private var caraAlto = -1f
+    private val rectTecla = RectF()
+    private fun dibujarTeclaElegida(c: Canvas, cx: Float, h: Float, anchoTexto: Float, ancho: Float, entrada: Float) {
+        val alto = h * 0.70f
+        val anchoT = (anchoTexto + dp(28f)).coerceIn(ancho * 0.55f, ancho - dp(6f))
+        val arriba = (h - alto) / 2f - dp(1f)
+        val radio = dp(8f)
+        val alfa = (255 * (0.2f + 0.8f * entrada)).toInt().coerceIn(0, 255)
+        rectTecla.set(cx - anchoT / 2, arriba, cx + anchoT / 2, arriba + alto)
+        // Base carmesí 2 dp más abajo
+        pinturaTecla.shader = null; pinturaTecla.color = 0xFF5A0F1A.toInt(); pinturaTecla.alpha = alfa
+        c.drawRoundRect(rectTecla.left, rectTecla.top + dp(2f), rectTecla.right, rectTecla.bottom + dp(2f), radio, radio, pinturaTecla)
+        // Cara en rojo metálico
+        if (caraTecla == null || caraAlto != alto) {
+            caraTecla = android.graphics.LinearGradient(0f, 0f, 0f, alto,
+                intArrayOf(0xFF52121D.toInt(), 0xFF3B0C14.toInt(), 0xFF2C0910.toInt()), floatArrayOf(0f, 0.55f, 1f),
+                android.graphics.Shader.TileMode.CLAMP)
+            caraAlto = alto
+        }
+        c.save(); c.translate(0f, arriba)
+        pinturaTecla.color = 0xFFFFFFFF.toInt(); pinturaTecla.alpha = alfa; pinturaTecla.shader = caraTecla
+        c.drawRoundRect(rectTecla.left, 0f, rectTecla.right, alto, radio, radio, pinturaTecla)
+        pinturaTecla.shader = null
+        reflejoTecla.strokeWidth = dp(0.8f); reflejoTecla.alpha = (0x40 * alfa) / 255
+        c.drawLine(rectTecla.left + radio, dp(0.7f), rectTecla.right - radio, dp(0.7f), reflejoTecla)
+        c.restore()
+    }
+
     private val filoCapsula = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private fun capsula(c: Canvas, rect: RectF, color: Int) {
         val rad = rect.height() / 2
