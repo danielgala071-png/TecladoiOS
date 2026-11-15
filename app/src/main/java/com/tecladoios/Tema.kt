@@ -7,39 +7,43 @@ import android.graphics.Color
 import java.util.concurrent.Executors
 
 /**
- * Colores del teclado: vidrio líquido oscuro (como el iPhone). El fondo desenfoca lo que hay
- * detrás y las teclas son vidrio translúcido: blanco con poca opacidad encima del fondo.
+ * Colores del teclado como el de iOS: teclas grises planas con una sombrita abajo.
+ * [claro] sigue el modo del celular (claro de día, oscuro si el sistema está en oscuro).
  */
-class Tema(val acento: Int = ROJO) {
-    val fondo = 0xFF000000.toInt()
-    val fondoAbajo = 0xFF000000.toInt()
-    // Grafito neutro para las letras; las teclas de función llevan un leve tinte vino
-    // Vidrio: blanco translúcido (letras un poco más claras que las de función)
-    // Letras más claras y teclas de función bien distintas (como el iPhone oscuro)
-    // Vidrio grafito con un tono frío apenas visible (sobre el negro AMOLED se ve premium)
-    val tecla = 0x40E8EEFF
-    val teclaFuncion = 0x1FC8D0F0
-    val teclaPresionada = 0x80EEF2FF.toInt()
-    val funcionPresionada = 0x55D8DEFF
-    val brillo = 0x1CFFFFFF
-    val texto = 0xFFF5F5F7.toInt()
-    val textoSuave = 0xB3EBEBF5.toInt()
-    val pista = 0x80EBEBF5.toInt()
-    val separador = 0x24FFFFFF
+class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
+    /** Fondo del teclado */
+    val fondo = if (claro) 0xFFD1D4DA.toInt() else 0xFF2C2C2E.toInt()
+    val fondoAbajo = fondo
+    /** Teclas de letras */
+    val tecla = if (claro) 0xFFFFFFFF.toInt() else 0xFF6B6B6E.toInt()
+    /** Mayúscula, borrar, 123, emoji, intro */
+    val teclaFuncion = if (claro) 0xFFABB0BA.toInt() else 0xFF464648.toInt()
+    /** Al tocar, las de función toman el color de las letras (como en iOS) */
+    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFF464648.toInt()
+    val funcionPresionada = tecla
+    /** Línea de sombra bajo cada tecla */
+    val sombra = if (claro) 0xFF898A8D.toInt() else 0xFF000000.toInt()
+    val brillo = 0x00FFFFFF
+    val texto = if (claro) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
+    val textoSuave = if (claro) 0x993C3C43.toInt() else 0xB3EBEBF5.toInt()
+    val pista = if (claro) 0x803C3C43.toInt() else 0x80EBEBF5.toInt()
+    val separador = if (claro) 0x383C3C43 else 0x29FFFFFF
     val barra = 0x00000000
-    val globo = 0xF5505057.toInt()
-    /** Fondo sin desenfoque (teléfonos que no lo permiten o con ahorro de batería) */
-    /** Negro AMOLED: los píxeles se apagan y no gastan batería */
-    val tarjeta = 0xFF000000.toInt()
-    /** Tinte oscuro encima del desenfoque */
-    val tarjetaVidrio = 0xBF141418.toInt()
-    val bordeTecla = 0x14FFFFFF
-    val bordePanel = acento
-    val rojo = ROJO
-    val rojoOscuro = 0xFF3634A3.toInt()
-    val brilloRojo = 0x665E5CE6                  // resplandor del acento, semitransparente
-    val estela = ROJO
-    val introActivo = ROJO
+    val globo = tecla
+    val tarjeta = fondo
+    val tarjetaVidrio = fondo
+    val bordeTecla = 0x00000000
+    val bordePanel = fondo
+    val rojo = AZUL
+    val rojoOscuro = AZUL
+    val brilloRojo = 0x00000000
+    val estela = AZUL
+    val introActivo = AZUL
+    /** Velo para resaltar: blanco en oscuro, negro en claro (a = opacidad 0..255) */
+    fun velo(a: Int): Int = (a shl 24) or (if (claro) 0x000000 else 0xFFFFFF)
+
+    /** Mayúscula activa: tecla blanca con flecha negra */
+    val shiftActivo = 0xFFFFFFFF.toInt()
 
     companion object {
         const val AZUL = 0xFF0A84FF.toInt()

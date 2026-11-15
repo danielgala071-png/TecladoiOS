@@ -39,7 +39,13 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         fun respuesta(tipo: Respuesta.Tipo)
         /** Quita la última letra escrita (para cambiarla por una tilde al mantener presionado) */
         fun deshacerLetra()
+        /** Trackpad: con otro dedo se empieza (o se termina) a seleccionar texto, como en iOS */
+        fun seleccionTrackpad(activa: Boolean)
+        /** Opción elegida en el menú que sale al mantener la tecla emoji */
+        fun menuTeclado(opcion: String)
     }
+
+    private var seleccionTrackpad = false
 
     var oyente: Oyente? = null
     var tema = Tema(Tema.AZUL); set(v) { field = v; ensuciar() }
@@ -50,7 +56,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         set(v) {
             // Transición abc ↔ 123: se guarda la imagen de la distribución que se va para que
             // sus letras salgan rodando mientras entran las nuevas, fila por fila
-            if (field.nombre != v.nombre && cacheFondo != null && cacheLetras != null && isShown) {
+            if (false && field.nombre != v.nombre && cacheFondo != null && cacheLetras != null && isShown) {
                 guardarLibre(anteriorFondo); guardarLibre(anteriorLetras)
                 anteriorFondo = cacheFondo; anteriorLetras = cacheLetras
                 cacheFondo = null; cacheLetras = null
@@ -65,7 +71,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     // La mayúscula solo cambia letras y el color de la tecla shift: no se redibuja todo
     var shift = 0; set(v) { if (field != v) { field = v; letrasSucias = true; shiftSucia = true; invalidate() } }
     /** Texto de la tecla intro ("buscar", "enviar"...) o null para la flecha */
-    var textoIntro: String? = null; set(v) { if (field != v) { field = v; letrasSucias = true; invalidate() } }
+    var textoIntro: String? = null; set(v) { if (field != v) { field = v; ensuciar() } }
     var introDestacado = false; set(v) { if (field != v) { field = v; ensuciar() } }
     /** Altura en % mientras se ajusta el tamaño (null = la de los ajustes) */
     var alturaForzada: Int? = null; set(v) { if (field != v) { field = v; requestLayout() } }
@@ -89,7 +95,12 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
         val filas = distribucion.filas.size
         val escala = (alturaForzada ?: config?.altura ?: 100) / 100f
-        val base = if (filas >= 5) 57f else 62f   // teclas más grandes (más fáciles a dos dedos)
+        var base = if (filas >= 5) 57f else 62f   // teclas más grandes (más fáciles a dos dedos)
+        // En horizontal: altura cómoda según la pantalla (ni aplastadas ni tapando todo)
+        if (resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+            val altoPantalla = resources.configuration.screenHeightDp.toFloat()
+            base = (altoPantalla * (if (filas >= 5) 0.12f else 0.14f)).coerceIn(44f, base)
+        }
         val h = (dp(base) * filas * escala + dp(8f) + dp(6f)).toInt()
         setMeasuredDimension(w, h)
     }
@@ -116,19 +127,34 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         }
         val filas = distribucion.filas
         altoFila = (h - arriba - abajo) / filas.size
-        val unidad = (der - izq) / distribucion.unidades
+        // Teclado dividido (celular echado): las letras se separan a los lados para los pulgares,
+        // como en el iPad. La fila de abajo (espacio) queda entera.
+        val dividido = config?.dividido != false && unaMano == 0 &&
+            resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE &&
+            distribucion.nombre != "num" && distribucion.nombre != "tel"
+        val hueco = if (dividido) (der - izq) * 0.24f else 0f
+        val unidadEntera = (der - izq) / distribucion.unidades
+        val unidad = (der - izq - hueco) / distribucion.unidades
         anchoTecla = unidad
         // Divisiones finas entre teclas: teclas más grandes y un aspecto más limpio
         // Más aire entre teclas. Solo cambia el dibujo: la zona que recibe el toque sigue siendo
         // la celda completa, así escribir rápido a dos dedos no pierde precisión.
-        val sepX = dp(5.4f) * if (unaMano != 0) 0.85f else 1f
-        val sepY = minOf(dp(9.5f), altoFila * 0.17f)
+        val sepX = dp(6f) * if (unaMano != 0) 0.85f else 1f
+        val sepY = minOf(dp(11f), altoFila * 0.2f)
         val lista = ArrayList<Colocada>(48)
         for ((fi, fila) in filas.withIndex()) {
-            var x = izq + (distribucion.unidades - fila.unidades) / 2 * unidad + fila.sangria * unidad
+            val partir = dividido && fila.teclas.none { it.tipo == K.ESPACIO }
+            val u = if (partir || !dividido) unidad else unidadEntera
+            var x = izq + (distribucion.unidades - fila.unidades) / 2 * u + fila.sangria * u
             val y0 = arriba + fi * altoFila
+            var enUnidades = fila.sangria
+            val mitad = fila.unidades / 2f - 0.01f
+            var saltado = false
             for (t in fila.teclas) {
-                val ancho = t.ancho * unidad
+                // Al cruzar la mitad de la fila se salta el hueco del centro
+                if (partir && !saltado && enUnidades >= mitad) { x += hueco; saltado = true }
+                enUnidades += t.ancho
+                val ancho = t.ancho * u
                 val toque = RectF(x, y0, x + ancho, y0 + altoFila)
                 val dib = RectF(x + sepX / 2, y0 + sepY / 2, x + ancho - sepX / 2, y0 + altoFila - sepY / 2)
                 if (t.tipo != K.VACIA) lista.add(Colocada(t, toque, dib, fi))
@@ -156,9 +182,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     private fun aprenderDesvio(ch: Char, x: Float, y: Float, centro: RectF) {
         val v = desvio.getOrPut(ch) { FloatArray(2) }
-        val lim = anchoTecla * 0.22f
-        v[0] = (v[0] * 0.97f + (x - centro.centerX()) * 0.03f).coerceIn(-lim, lim)
-        v[1] = (v[1] * 0.97f + (y - centro.centerY()) * 0.03f).coerceIn(-lim, lim)
+        // Aprende dónde sueles tocar cada tecla (como el iPhone, sin que se vea distinto)
+        val lim = anchoTecla * 0.3f
+        v[0] = (v[0] * 0.96f + (x - centro.centerX()) * 0.04f).coerceIn(-lim, lim)
+        v[1] = (v[1] * 0.96f + (y - centro.centerY()) * 0.04f).coerceIn(-lim, lim)
     }
 
     fun desviosTexto(): String = desvio.entries.joinToString(";") { "${it.key},${it.value[0] / anchoTecla},${it.value[1] / anchoTecla}" }
@@ -223,6 +250,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         var emitida = false
         /** Estaba en mayúscula al tocar (para la tilde, si se cambia) */
         var mayus = false
+        /** Mantuvo la tecla emoji: el menú de teclado está abierto */
+        var menu = false
         var x0 = 0f; var y0 = 0f; var x = 0f; var y = 0f
         var modo = Modo.NORMAL
         var acumX = 0f; var acumY = 0f
@@ -283,6 +312,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private fun mostrarGlobo(c: Colocada) {
         val t = c.tecla
         if (config?.vistaPrevia == false || t.tipo != K.TEXTO || t.texto.length > 2) return
+        if (distribucion.nombre == "num" || distribucion.nombre == "tel") return   // iOS: solo se aclara
         capa.mostrarGlobo(rectEnCapa(c.dibujo), textoVisible(t))
     }
 
@@ -324,6 +354,16 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     private fun bajar(id: Int, x: Float, y: Float) {
+        // Moviendo el cursor con el espacio: tocar con otro dedo empieza a seleccionar
+        // (y otro toque lo deja), como el trackpad del iPhone
+        if (dedos.values.any { it.modo == Modo.CURSOR || it.modo == Modo.TRACKPAD }) {
+            seleccionTrackpad = !seleccionTrackpad
+            oyente?.seleccionTrackpad(seleccionTrackpad)
+            oyente?.respuesta(Respuesta.Tipo.FUNCION)
+            val otro = Dedo(id); otro.modo = Modo.HECHO
+            dedos[id] = otro
+            return
+        }
         // Si otro dedo sigue en una tecla, esa tecla se escribe ya (dos pulgares rápidos). Antes
         // solo pasaba con letras: si el pulgar del ESPACIO se soltaba después de tocar la
         // siguiente letra, la letra salía antes que el espacio ("holaq ue"). Ahora el espacio
@@ -379,6 +419,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 buscar(x, y)?.let { presionar(it, x, y); liberar(it); pulsos[it]?.nivel = 0.85f }
             }
             K.ESPACIO -> postDelayed(dd.larga, retardo + 180L)
+            K.EMOJI -> postDelayed(dd.larga, retardo + 120L)
         }
         invalidate()
     }
@@ -482,6 +523,13 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 capa.mostrarOpciones(rectEnCapa(c.dibujo), lista, 0)
                 oyente?.respuesta(Respuesta.Tipo.FUNCION)
             }
+            // Como el globo terráqueo del iPhone: mantener emoji abre el menú del teclado
+            K.EMOJI -> {
+                dd.modo = Modo.OPCIONES
+                dd.menu = true
+                capa.mostrarOpciones(rectEnCapa(c.dibujo), MENU_TECLADO, 0, minOf(dp(76f), (width - dp(20f)) / MENU_TECLADO.size))
+                oyente?.respuesta(Respuesta.Tipo.FUNCION)
+            }
             K.ESPACIO -> {
                 dd.modo = Modo.TRACKPAD
                 dd.acumX = dd.x; dd.acumY = dd.y
@@ -519,7 +567,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             Modo.OPCIONES -> {
                 val elegida = capa.elegida()
                 capa.ocultarOpciones()
-                if (elegida != null) oyente?.tecla(elegida, dd.x0, dd.y0, false)
+                if (dd.menu) { if (elegida != null) oyente?.menuTeclado(elegida) }
+                else if (elegida != null) oyente?.tecla(elegida, dd.x0, dd.y0, false)
                 else if (dd.emitida) dd.tecla?.tecla?.let { t ->
                     // No eligió ninguna: vuelve la letra que había tocado
                     oyente?.tecla(if (dd.mayus) t.texto.uppercase() else t.texto, dd.x0, dd.y0, true)
@@ -536,7 +585,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             }
         }
         if (c != null) liberar(c)
-        if (dd.modo == Modo.CURSOR || dd.modo == Modo.TRACKPAD) modoTrackpad = dedos.values.any { it.modo == Modo.CURSOR || it.modo == Modo.TRACKPAD }
+        if (dd.modo == Modo.CURSOR || dd.modo == Modo.TRACKPAD) {
+            modoTrackpad = dedos.values.any { it.modo == Modo.CURSOR || it.modo == Modo.TRACKPAD }
+            if (!modoTrackpad && seleccionTrackpad) { seleccionTrackpad = false; oyente?.seleccionTrackpad(false) }
+        }
         if (dedos.values.none { it.modo == Modo.NORMAL && it.tecla?.tecla?.tipo == K.TEXTO }) capa.ocultarGlobo()
         invalidate()
     }
@@ -611,6 +663,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     // ---------- Pulsación: la tecla se hunde, se enciende desde el dedo y vuelve con resorte ----------
 
     private companion object {
+        val MENU_TECLADO = listOf("Ajustes", "Teclados", "◀ Mano", "Completo", "Mano ▶")
+        val LETRAS_TEL = mapOf("1" to "", "2" to "ABC", "3" to "DEF", "4" to "GHI", "5" to "JKL",
+            "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ", "0" to "+")
         const val SHIFT_BLANCO = 0xFFF5F5F7.toInt()
         const val SHIFT_BLANCO_APRETADO = 0xFFC7C7CC.toInt()
         const val FLECHA_NEGRA = 0xFF1C1C1E.toInt()
@@ -628,7 +683,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     // Como el iPhone: la tecla cambia de color al instante al tocarla y vuelve en un suspiro
     private val HUNDIR = 1f
     private val VOLVER = 1f
-    private val APAGAR = 200f   // al soltar sube con un rebote cortito y el brillo se apaga
+    private val APAGAR = 110f   // al soltar sube con un rebote cortito y el brillo se apaga
     private val BAJAR = 55f     // se hunde en un instante (se siente, pero no retrasa nada)
     private val EXPANDIR = 1f
     private val HUNDIMIENTO = 0f
@@ -704,84 +759,44 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     private fun colorTecla(t: Tecla, apretada: Boolean): Int = when {
+        // Como iOS: "buscar", "ir" y "enviar" van en una tecla azul con letras blancas
+        t.tipo == K.INTRO && introDestacado -> if (apretada) 0xFF0060DF.toInt() else Tema.AZUL
         // Como el iPhone: el enter es una tecla gris más y la mayúscula activa se pone blanca
         t.tipo == K.SHIFT && shift > 0 -> if (apretada) SHIFT_BLANCO_APRETADO else SHIFT_BLANCO
         t.funcion -> if (apretada) tema.funcionPresionada else tema.teclaFuncion
-        // Letras: con el globo encima basta un brillo leve (como el iPhone); sin globo, más marcado
-        apretada && t.tipo == K.TEXTO && config?.vistaPrevia != false && t.texto.length <= 2 ->
-            Tema.mezclar(tema.teclaPresionada, tema.tecla, 0.45f)
         apretada -> tema.teclaPresionada
         else -> tema.tecla
     }
 
-    /** Esquinas de vidrio: curva suave como el iPhone */
-    private fun radioDe(r: RectF) = minOf(dp(8.5f), r.height() * 0.18f)
+    /** Esquinas como las teclas de iOS: poco curvas */
+    private fun radioDe(r: RectF) = minOf(dp(5.5f), r.height() * 0.13f)
 
     /**
-     * Tecla de vidrio líquido con volumen. Se dibuja UNA vez en la imagen guardada, así que
-     * todo esto no gasta nada al escribir:
-     * - doble sombra suave solo por fuera (la tecla flota sobre el fondo),
-     * - cuerpo translúcido,
-     * - cúpula de luz arriba (como una gota de vidrio) y un brillo de refracción en la base,
-     * - filo luminoso: fuerte en el canto de arriba, tenue a los lados, un poco abajo.
+     * Tecla plana como en iOS: el color de la tecla y una línea de sombra de 1 dp abajo.
+     * Se dibuja una sola vez en la imagen guardada.
      */
     private fun dibujarCuerpo(c: Canvas, k: Colocada) {
         val r = k.dibujo
         val radio = radioDe(r)
-        val color = colorTecla(k.tecla, false)
         val blanca = k.tecla.tipo == K.SHIFT && shift > 0
-        camino.reset(); camino.addRoundRect(r, radio, radio, Path.Direction.CW)
-        // Sombras por fuera
-        c.save()
-        c.clipOutPath(camino)
-        sombra.color = 0x33000000
-        c.drawRoundRect(r.left - dp(0.5f), r.top + dp(2.5f), r.right + dp(0.5f), r.bottom + dp(3.5f), radio + dp(1f), radio + dp(1f), sombra)
-        sombra.color = 0x59000000
-        c.drawRoundRect(r.left + dp(0.3f), r.top + dp(1.2f), r.right - dp(0.3f), r.bottom + dp(1.4f), radio, radio, sombra)
-        c.restore()
-        // Cuerpo
         relleno.shader = null
-        relleno.color = color
+        relleno.color = tema.sombra
+        c.drawRoundRect(r.left, r.top + dp(1f), r.right, r.bottom + dp(1f), radio, radio, relleno)
+        relleno.color = colorTecla(k.tecla, false)
         c.drawRoundRect(r, radio, radio, relleno)
-        // Enter con el degradado azul → violeta (modelo Fusión)
-        if (k.tecla.tipo == K.INTRO) {
-            relleno.shader = android.graphics.LinearGradient(r.left, r.top, r.right, r.bottom,
-                Tema.AZUL_ACENTO, Tema.ROJO, android.graphics.Shader.TileMode.CLAMP)
-            c.drawRoundRect(r, radio, radio, relleno)
-            relleno.shader = null
-        }
-        if (!blanca) {
-            c.save()
-            c.clipPath(camino)
-            // Cúpula de luz arriba
-            relleno.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.55f,
-                0x24FFFFFF, 0x00FFFFFF, android.graphics.Shader.TileMode.CLAMP)
-            c.drawRect(r.left, r.top, r.right, r.top + r.height() * 0.55f, relleno)
-            // Refracción en la base
-            relleno.shader = android.graphics.LinearGradient(0f, r.bottom - r.height() * 0.28f, 0f, r.bottom,
-                0x00FFFFFF, 0x12FFFFFF, android.graphics.Shader.TileMode.CLAMP)
-            c.drawRect(r.left, r.bottom - r.height() * 0.28f, r.right, r.bottom, relleno)
-            // Teclas de función: un punto de luz violeta detrás del ícono (va en la imagen
-            // guardada, no cuesta nada al escribir)
-            val tipo = k.tecla.tipo
-            if (tipo == K.SHIFT || tipo == K.BORRAR || tipo == K.EMOJI) {
-                val rad = minOf(r.width(), r.height()) * 0.46f
-                relleno.shader = android.graphics.RadialGradient(r.centerX(), r.centerY(), rad,
-                    intArrayOf(0x595E5CE6, 0x265E5CE6, 0x005E5CE6), floatArrayOf(0f, 0.45f, 1f),
-                    android.graphics.Shader.TileMode.CLAMP)
-                c.drawCircle(r.centerX(), r.centerY(), rad, relleno)
-            }
-            relleno.shader = null
-            c.restore()
-            // Filo luminoso
-            brillo.strokeWidth = dp(0.9f)
-            brillo.shader = android.graphics.LinearGradient(0f, r.top, 0f, r.bottom,
-                intArrayOf(0x73FFFFFF, 0x14FFFFFF, 0x0AFFFFFF, 0x1FFFFFFF), floatArrayOf(0f, 0.3f, 0.7f, 1f),
-                android.graphics.Shader.TileMode.CLAMP)
-            c.drawRoundRect(r.left + dp(0.45f), r.top + dp(0.45f), r.right - dp(0.45f), r.bottom - dp(0.45f), radio, radio, brillo)
-            brillo.shader = null
-        }
         if (blanca) flechaNegra(c, k)
+        if (k.tecla.tipo == K.INTRO && introDestacado) introBlanco(c, k)
+    }
+
+    /** Texto blanco de la tecla intro azul (va en la imagen de cuerpos, no en la de letras) */
+    private fun introBlanco(c: Canvas, k: Colocada) {
+        if (modoTrackpad) return
+        val r = k.dibujo
+        val txt = textoIntro ?: return
+        val previo = chica.color
+        chica.color = 0xFFFFFFFF.toInt()
+        c.drawText(txt, r.centerX(), r.centerY() + chica.textSize * 0.36f, chica)
+        chica.color = previo
     }
 
     /** Flecha rellena negra de la mayúscula activa (con rayita debajo si está fija) */
@@ -808,7 +823,23 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 val p = if (txt.length > 1) chica else letra
                 p.color = tema.texto
                 val ajuste = if (t.esLetra && shift == 0) -p.textSize * 0.05f else 0f
-                c.drawText(txt, cx, cy + p.textSize * 0.36f + ajuste, p)
+                val letrasTel = if (distribucion.nombre == "num" && txt == "0") "" else if (distribucion.nombre == "tel" || distribucion.nombre == "num") LETRAS_TEL[txt] else null
+                if (letrasTel != null || ((distribucion.nombre == "tel" || distribucion.nombre == "num") && txt.length == 1 && txt[0].isDigit())) {
+                    // Teclado de teléfono como iOS: número grande y letras chiquitas debajo
+                    val tam = letra.textSize
+                    letra.textSize = minOf(r.height() * 0.5f, dp(28f))
+                    val subeN = if (letrasTel != null && letrasTel.isNotEmpty()) r.height() * 0.1f else 0f
+                    c.drawText(txt, cx, cy + letra.textSize * 0.36f - subeN, letra)
+                    letra.textSize = tam
+                    if (!letrasTel.isNullOrEmpty()) {
+                        val tp = pista.textSize
+                        pista.textSize = minOf(r.height() * 0.2f, dp(10.5f))
+                        pista.letterSpacing = 0.18f
+                        c.drawText(letrasTel, cx, cy + r.height() * 0.3f, pista)
+                        pista.letterSpacing = 0f
+                        pista.textSize = tp
+                    }
+                } else c.drawText(txt, cx, cy + p.textSize * 0.36f + ajuste, p)
                 if (config?.pistas != false && distribucion.nombre == "abc" && t.pista != null)
                     c.drawText(t.pista, r.right - r.width() * 0.2f, r.top + pista.textSize * 1.05f, pista)
             }
@@ -817,16 +848,17 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             K.SHIFT -> if (shift == 0) Iconos.fino { Iconos.shift(c, cx, cy, s, icono, false, false) }
             K.BORRAR -> Iconos.fino { Iconos.borrar(c, cx, cy, s, icono, false) }
             K.EMOJI -> Iconos.fino { Iconos.cara(c, cx, cy, s, icono) }
-            K.INTRO -> {
+            K.INTRO -> if (!introDestacado || textoIntro == null) {
                 val txt = textoIntro
                 if (txt != null) { chica.color = tema.texto; c.drawText(txt, cx, cy + chica.textSize * 0.36f, chica) }
                 else Iconos.intro(c, cx, cy, s, icono)
             }
             K.ESPACIO -> {
-                // Como en el iPhone: el espacio va limpio, solo el idioma chiquito en la esquina
-                pista.textAlign = Paint.Align.RIGHT
-                c.drawText("ES", r.right - dp(10f), r.bottom - dp(8f), pista)
-                pista.textAlign = Paint.Align.CENTER
+                // Como en iOS: el espacio dice "espacio" (en el teclado numérico va limpio)
+                if (distribucion.nombre != "tel" && distribucion.nombre != "num") {
+                    chica.color = tema.texto
+                    c.drawText("espacio", cx, cy + chica.textSize * 0.36f, chica)
+                }
             }
             else -> { chica.color = tema.texto; c.drawText(t.texto, cx, cy + chica.textSize * 0.36f, chica) }
         }
@@ -858,42 +890,21 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private fun dibujarPulso(c: Canvas, k: Colocada, p: Pulso, ahora: Long, fondo: Bitmap, letras: Bitmap) {
         val l = luzDe(p, ahora)
         if (l <= 0.01f) return
+        val t = k.tecla
+        // Letra con globo: el globo la tapa, como en iOS (la tecla no cambia)
+        if (!t.funcion && t.tipo == K.TEXTO && config?.vistaPrevia != false && t.texto.length <= 2 &&
+            distribucion.nombre != "num" && distribucion.nombre != "tel") return
         val r = k.dibujo
         val radio = radioDe(r)
-        val blanca = k.tecla.tipo == K.SHIFT && shift > 0
-        // Luz por debajo (halo violeta, un poco más abajo que la tecla)
-        val luzB = luzDebajo()
-        if (luzB != null) {
-            val ex = dp(12f)
-            dst.set(r.left - ex, r.top - ex + dp(5f), r.right + ex, r.bottom + ex + dp(5f))
-            pinturaHalo.alpha = (255 * l).toInt().coerceIn(0, 255)
-            c.drawBitmap(luzB, null, dst, pinturaHalo)
-        }
-        // Vuelve a pintar la tecla encima (el halo queda solo alrededor y por debajo)
-        src.set((r.left - 1).toInt().coerceAtLeast(0), (r.top - 1).toInt().coerceAtLeast(0),
-            (r.right + 1).toInt().coerceAtMost(fondo.width), (r.bottom + 1).toInt().coerceAtMost(fondo.height))
-        dst.set(src)
-        c.drawBitmap(fondo, src, dst, null)
-        // El vidrio se aclara y la luz violeta sube por dentro desde abajo
+        val blanca = t.tipo == K.SHIFT && shift > 0
+        // Cambia de color al instante y vuelve en un suspiro al soltar
         relleno.shader = null
-        relleno.color = colorTecla(k.tecla, true)
-        relleno.alpha = (Color.alpha(relleno.color) * l * (if (blanca) 1f else 0.75f)).toInt().coerceIn(0, 255)
+        relleno.color = colorTecla(t, true)
+        relleno.alpha = (255 * l).toInt().coerceIn(0, 255)
         c.drawRoundRect(r, radio, radio, relleno)
         relleno.alpha = 255
-        if (!blanca) {
-            // Sin recortes (que son caros): la luz se pinta con la misma forma redondeada
-            matrizLuz.setScale(1f, r.height() * 0.6f)
-            matrizLuz.postTranslate(0f, r.bottom - r.height() * 0.6f)
-            luzInterior.setLocalMatrix(matrizLuz)
-            pinturaInterior.alpha = (255 * l).toInt().coerceIn(0, 255)
-            c.drawRoundRect(r, radio, radio, pinturaInterior)
-            filoBajo.strokeWidth = dp(1f)
-            filoBajo.color = 0x73FFFFFF
-            filoBajo.alpha = (0x73 * l).toInt()
-            c.drawLine(r.left + radio, r.top + dp(0.6f), r.right - radio, r.top + dp(0.6f), filoBajo)
-        }
         if (blanca) { flechaNegra(c, k); return }
-        // La letra encima
+        if (t.tipo == K.INTRO && introDestacado && textoIntro != null) { introBlanco(c, k); return }
         src.set(r.left.toInt().coerceAtLeast(0), r.top.toInt().coerceAtLeast(0),
             (r.right + 1).toInt().coerceAtMost(letras.width), (r.bottom + 1).toInt().coerceAtMost(letras.height))
         dst.set(src)
@@ -952,13 +963,13 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     /** Cada letra que se va al mantener borrar deja un destello; más rápido, más intenso */
     private fun destelloBorrar(n: Int) {
         borrarMs = SystemClock.uptimeMillis()
-        borrarDura = (150f - minOf(n, 20) * 4f)
-        borrarFuerza = 0.5f + 0.5f * minOf(1f, n / 15f)
+        borrarDura = (80f - minOf(n, 20) * 1.7f)
+        borrarFuerza = 0.85f
         invalidate()
     }
 
     /** La barra espaciadora hace un pulso violeta suave (punto automático o mayúscula sola) */
-    fun respirarEspacio() { espacioMs = SystemClock.uptimeMillis(); invalidate() }
+    fun respirarEspacio() {}
 
     private fun teclaDe(tipo: Int): Colocada? { for (k in colocadas) if (k.tecla.tipo == tipo) return k; return null }
 
@@ -971,37 +982,50 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         c.drawRect(r.centerX() - ancho, r.centerY() - alto, r.centerX() + ancho, r.centerY() + alto, violetaPintura)
     }
 
+    /**
+     * Borrar con ritmo: manteniéndola, la tecla parpadea (vuelve a su gris un instante) con
+     * cada letra que se va, y el parpadeo se acorta a medida que el borrado acelera.
+     */
     private fun dibujarLuces(c: Canvas, ahora: Long) {
-        if (modoTrackpad) return
-        // Destello en borrar
-        if (borrarMs != 0L) {
-            val t = (ahora - borrarMs) / borrarDura
-            if (t >= 1f) borrarMs = 0L
-            else teclaDe(K.BORRAR)?.let { k ->
-                val u = 1f - t
-                luzVioleta(c, k.dibujo, borrarFuerza * u * u, k.dibujo.width() * 0.75f, k.dibujo.height() * 0.85f)
-                postInvalidateOnAnimation()
-            }
+        if (modoTrackpad || borrarMs == 0L) return
+        val t = (ahora - borrarMs) / borrarDura
+        if (t >= 1f) { borrarMs = 0L; return }
+        val k = teclaDe(K.BORRAR) ?: return
+        val r = k.dibujo
+        val radio = radioDe(r)
+        val u = 1f - t
+        relleno.shader = null
+        relleno.color = tema.teclaFuncion
+        relleno.alpha = (255 * borrarFuerza * u).toInt().coerceIn(0, 255)
+        c.drawRoundRect(r, radio, radio, relleno)
+        relleno.alpha = 255
+        // El ícono encima (copiado de la imagen de letras)
+        val letras = cacheLetras
+        if (letras != null && !letras.isRecycled) {
+            src.set(r.left.toInt().coerceAtLeast(0), r.top.toInt().coerceAtLeast(0),
+                (r.right + 1).toInt().coerceAtMost(letras.width), (r.bottom + 1).toInt().coerceAtMost(letras.height))
+            dst.set(src)
+            pinturaLetras.color = tema.texto
+            c.drawBitmap(letras, src, dst, pinturaLetras)
         }
-        // Espacio que respira: sube y baja una vez
-        if (espacioMs != 0L) {
-            val t = (ahora - espacioMs) / RESPIRA
-            if (t >= 1f) espacioMs = 0L
-            else teclaDe(K.ESPACIO)?.let { k ->
-                val f = kotlin.math.sin(Math.PI * t).toFloat()
-                luzVioleta(c, k.dibujo, 0.55f * f, k.dibujo.width() * 0.55f, k.dibujo.height() * 0.9f)
-                postInvalidateOnAnimation()
-            }
-        }
-        // Bloqueo de mayúsculas: la tecla blanca queda con un aro de luz violeta
-        if (shift == 2) teclaDe(K.SHIFT)?.let { k ->
-            val r = k.dibujo
-            val rad = radioDe(r)
-            aroMayus.strokeWidth = dp(4f); aroMayus.color = 0x405E5CE6
-            c.drawRoundRect(r.left - dp(1.5f), r.top - dp(1.5f), r.right + dp(1.5f), r.bottom + dp(1.5f), rad + dp(1.5f), rad + dp(1.5f), aroMayus)
-            aroMayus.strokeWidth = dp(1.4f); aroMayus.color = 0xD99A98FF.toInt()
-            c.drawRoundRect(r.left - dp(0.6f), r.top - dp(0.6f), r.right + dp(0.6f), r.bottom + dp(0.6f), rad + dp(0.6f), rad + dp(0.6f), aroMayus)
-        }
+        postInvalidateOnAnimation()
+    }
+
+    // ---------- Rebote del cursor al llegar al inicio o al final del texto ----------
+    private var reboteMs = 0L
+    private var reboteLado = 0f
+    private val REBOTE = 260f
+
+    /** [lado] -1 = chocó con el inicio, 1 = con el final */
+    fun rebotar(lado: Int) { reboteMs = SystemClock.uptimeMillis(); reboteLado = lado.toFloat(); invalidate() }
+
+    private fun desplazamientoRebote(ahora: Long): Float {
+        if (reboteMs == 0L) return 0f
+        val t = (ahora - reboteMs) / REBOTE
+        if (t >= 1f) { reboteMs = 0L; return 0f }
+        postInvalidateOnAnimation()
+        // Choca, se pasa un poquito y vuelve (resorte amortiguado)
+        return reboteLado * dp(7f) * kotlin.math.sin(Math.PI.toFloat() * t * 1.5f) * (1f - t) * (1f - t)
     }
 
     // Entrada en cascada al abrir el teclado
@@ -1009,7 +1033,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private val ENTRADA_FILA = 170f
     private val ENTRADA_ESCALON = 35f
 
-    fun animarEntrada() { entradaMs = SystemClock.uptimeMillis(); invalidate() }
+    /** En iOS el teclado solo sube con la ventana: sin cascada */
+    fun animarEntrada() {}
 
     /** Las filas aparecen una tras otra, subiendo un poquito */
     private fun dibujarEntrada(c: Canvas, t: Float, filas: Int, fondo: Bitmap, letras: Bitmap) {
@@ -1118,6 +1143,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         }
 
         val ahora = SystemClock.uptimeMillis()
+        // Rebote del cursor: todo el teclado se mueve apenas hacia el lado del choque
+        val rebote = desplazamientoRebote(ahora)
+        if (rebote != 0f) c.translate(rebote, 0f)
         val viejoF = anteriorFondo; val viejoL = anteriorLetras
         val filas = distribucion.filas.size
         var cambiando = false
@@ -1152,13 +1180,13 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             if (pulsos.values.any { it.suelta != 0L || ahora - it.t0 < BAJAR }) postInvalidateOnAnimation()
         }
 
+
         dibujarLuces(c, ahora)
 
         // Cursor de vidrio: al mover el cursor con el espacio, el teclado queda como un panel
         // de vidrio vacío y un punto de luz sigue tu dedo
         if (modoTrackpad) {
-            c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), veloCursor)
-            val dd = dedos.values.firstOrNull { it.modo == Modo.CURSOR || it.modo == Modo.TRACKPAD }
+            val dd: Dedo? = null   // iOS: las letras se ocultan y nada más
             if (dd != null) {
                 matrizOnda.setScale(dp(22f), dp(22f))
                 matrizOnda.postTranslate(dd.x, dd.y)

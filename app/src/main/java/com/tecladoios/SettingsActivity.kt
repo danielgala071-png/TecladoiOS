@@ -39,18 +39,39 @@ class SettingsActivity : Activity() {
     private lateinit var lista: LinearLayout
     private var estado: TextView? = null
 
+    // Colores de Ajustes del iPhone: claro u oscuro según el celular
+    private val oscuro by lazy {
+        (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+    }
+    private val cFondo get() = if (oscuro) Color.BLACK else 0xFFF2F2F7.toInt()
+    private val cTarjeta get() = if (oscuro) 0xFF1C1C1E.toInt() else Color.WHITE
+    private val cTexto get() = if (oscuro) Color.WHITE else Color.BLACK
+    private val cGris = 0xFF8E8E93.toInt()
+    private val cLinea get() = if (oscuro) 0xFF38383A.toInt() else 0xFFC6C6C8.toInt()
+    private val cToque get() = if (oscuro) 0xFF2C2C2E.toInt() else 0xFFD1D1D6.toInt()
+
+    /** Fila que se oscurece al tocarla, como en iOS */
+    private fun alTocar(v: View) {
+        v.background = android.graphics.drawable.StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_pressed), android.graphics.drawable.ColorDrawable(cToque))
+            addState(intArrayOf(), android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        }
+    }
+
     private fun dp(v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics).toInt()
 
     override fun onCreate(guardado: Bundle?) {
         super.onCreate(guardado)
-        window.statusBarColor = Color.BLACK
-        window.navigationBarColor = Color.BLACK
+        window.statusBarColor = cFondo
+        window.navigationBarColor = cFondo
+        if (!oscuro) window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
         lista = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16f), dp(24f), dp(16f), dp(40f))
         }
         val scroll = ScrollView(this).apply {
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(cFondo)
             addView(lista)
             fitsSystemWindows = true
         }
@@ -68,7 +89,7 @@ class SettingsActivity : Activity() {
 
     private fun titulo(t: String) {
         lista.addView(TextView(this).apply {
-            text = t; setTextColor(Color.WHITE); textSize = 32f
+            text = t; setTextColor(cTexto); textSize = 34f
             Fuentes.aplicar(this, 700)
             setPadding(dp(4f), dp(8f), 0, dp(18f))
         })
@@ -76,13 +97,13 @@ class SettingsActivity : Activity() {
 
     private fun seccion(t: String, nota: String? = null): LinearLayout {
         lista.addView(TextView(this).apply {
-            text = t.uppercase(); setTextColor(0xFF8E8E93.toInt()); textSize = 12.5f
+            text = t.uppercase(); setTextColor(cGris); textSize = 12.5f
             Fuentes.aplicar(this, 500)
             setPadding(dp(16f), dp(18f), 0, dp(7f))
         })
         val caja = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply { setColor(0xFF1C1C1E.toInt()); cornerRadius = dp(12f).toFloat() }
+            background = GradientDrawable().apply { setColor(cTarjeta); cornerRadius = dp(10f).toFloat() }
             clipToOutline = true
         }
         lista.addView(caja)
@@ -95,7 +116,7 @@ class SettingsActivity : Activity() {
 
     private fun separador(caja: LinearLayout) {
         if (caja.childCount == 0) return
-        caja.addView(View(this).apply { setBackgroundColor(0xFF38383A.toInt()) },
+        caja.addView(View(this).apply { setBackgroundColor(cLinea) },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply { marginStart = dp(16f) })
     }
 
@@ -106,19 +127,21 @@ class SettingsActivity : Activity() {
             setPadding(dp(16f), dp(11f), dp(12f), dp(11f))
         }
         val textos = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        textos.addView(TextView(this).apply { text = texto; setTextColor(Color.WHITE); textSize = 16.5f })
+        textos.addView(TextView(this).apply { text = texto; setTextColor(cTexto); textSize = 17f })
         if (sub != null) textos.addView(TextView(this).apply { text = sub; setTextColor(0xFF8E8E93.toInt()); textSize = 12.5f })
         fila.addView(textos, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val sw = Switch(this).apply {
             isChecked = prefs.getBoolean(clave, porDefecto)
             thumbTintList = ColorStateList.valueOf(Color.WHITE)
-            trackTintList = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(0xFF30D158.toInt(), 0xFF39393D.toInt()))
+            trackTintList = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                intArrayOf(if (oscuro) 0xFF30D158.toInt() else 0xFF34C759.toInt(), if (oscuro) 0xFF39393D.toInt() else 0xFFE9E9EA.toInt()))
             setOnCheckedChangeListener { b, si ->
                 val ok = alCambiar?.invoke(si) ?: true
                 if (ok) prefs.edit().putBoolean(clave, si).apply() else b.isChecked = !si
             }
         }
         fila.addView(sw)
+        alTocar(fila)
         fila.setOnClickListener { sw.toggle() }
         caja.addView(fila)
     }
@@ -126,7 +149,7 @@ class SettingsActivity : Activity() {
     private fun deslizador(caja: LinearLayout, texto: String, clave: String, min: Int, max: Int, porDefecto: Int, formato: (Int) -> String) {
         separador(caja)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16f), dp(11f), dp(12f), dp(8f)) }
-        val etiqueta = TextView(this).apply { setTextColor(Color.WHITE); textSize = 16.5f }
+        val etiqueta = TextView(this).apply { setTextColor(cTexto); textSize = 17f }
         val actual = prefs.getInt(clave, porDefecto)
         etiqueta.text = "$texto: ${formato(actual)}"
         col.addView(etiqueta)
@@ -146,12 +169,18 @@ class SettingsActivity : Activity() {
 
     private fun boton(caja: LinearLayout, texto: String, color: Int = acento, sub: String? = null, accion: () -> Unit): TextView {
         separador(caja)
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16f), dp(13f), dp(12f), dp(13f)) }
-        val t = TextView(this).apply { text = texto; setTextColor(color); textSize = 16.5f }
+        // Fila como en Ajustes del iPhone: texto a la izquierda y "›" gris a la derecha
+        val fila = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16f), dp(12f), dp(8f), dp(12f)) }
+        val t = TextView(this).apply { text = texto; setTextColor(if (color == Color.WHITE) cTexto else color); textSize = 17f }
         col.addView(t)
-        if (sub != null) col.addView(TextView(this).apply { text = sub; setTextColor(0xFF8E8E93.toInt()); textSize = 12.5f })
+        if (sub != null) col.addView(TextView(this).apply { text = sub; setTextColor(cGris); textSize = 12.5f })
+        fila.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        fila.addView(TextView(this).apply { text = "›"; setTextColor(0xFFC4C4C7.toInt()); textSize = 22f; setPadding(0, 0, dp(14f), dp(2f)) })
         col.setOnClickListener { accion() }
-        caja.addView(col)
+        fila.setOnClickListener { col.performClick() }
+        alTocar(fila)
+        caja.addView(fila)
         return t
     }
 
@@ -180,7 +209,7 @@ class SettingsActivity : Activity() {
         val prueba = seccion("Probar")
         prueba.addView(EditText(this).apply {
             hint = "Escribe aquí para probar…"
-            setHintTextColor(0xFF8E8E93.toInt()); setTextColor(Color.WHITE)
+            setHintTextColor(0xFF8E8E93.toInt()); setTextColor(cTexto)
             background = null
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             minLines = 2
@@ -190,6 +219,9 @@ class SettingsActivity : Activity() {
         val corr = seccion("Corrección y sugerencias", "Las sugerencias tienen en cuenta dónde tocas cada tecla, la palabra anterior y cómo escribes tú. Si borras justo después de una corrección, vuelve lo que escribiste y el teclado lo aprende.")
         interruptor(corr, "Corrección automática", Ajustes.AUTOCORRECCION, true)
         interruptor(corr, "Mayúsculas automáticas", Ajustes.MAYUS_AUTO, true)
+        interruptor(corr, "Bloqueo de mayúsculas", Ajustes.BLOQUEO_MAYUS, true, "Toca dos veces la mayúscula para dejarla fija")
+        interruptor(corr, "Cierre automático", Ajustes.CIERRE, true, "Si abriste ( « ¿ ¡ la barra te ofrece cerrarlo")
+        interruptor(corr, "Puntuación inteligente", Ajustes.PUNTUACION, true, "Dos guiones seguidos se vuelven una raya (—)")
         interruptor(corr, "Punto con doble espacio", Ajustes.PUNTO_DOBLE_ESPACIO, true)
         interruptor(corr, "Espacio después de signos", Ajustes.ESPACIO_AUTO, true, "Después de , . ? ! al usar una sugerencia")
         interruptor(corr, "Barra de sugerencias", Ajustes.SUGERENCIAS, true)
@@ -210,9 +242,9 @@ class SettingsActivity : Activity() {
 
         val tec = seccion("Teclado")
         interruptor(tec, "Fila de números", Ajustes.FILA_NUMEROS, false)
+        interruptor(tec, "Teclado dividido en horizontal", Ajustes.DIVIDIDO, true, "Con el celular echado, las letras se separan a los lados para escribir con los pulgares")
         interruptor(tec, "Símbolos en las teclas", Ajustes.PISTAS, false, "Mantén una letra para escribir su símbolo o tilde")
         interruptor(tec, "Vista previa al tocar", Ajustes.VISTA_PREVIA, true)
-        interruptor(tec, "Detalles del color de la app", Ajustes.BORDES_APP, true, "Trazo al deslizar y tecla enviar")
         interruptor(tec, "Barra de herramientas", Ajustes.BARRA_HERRAMIENTAS, true, "Emojis, portapapeles, edición, una mano, tamaño y ajustes")
         opciones(tec, "Modo una mano", Ajustes.UNA_MANO, listOf("Apagado", "Izquierda", "Derecha"), 0)
         deslizador(tec, "Altura", Ajustes.ALTURA, 75, 135, 100) { "$it %" }
@@ -220,7 +252,6 @@ class SettingsActivity : Activity() {
         deslizador(tec, "Ancho", Ajustes.ANCHO, 70, 100, 100) { "$it %" }
         interruptor(tec, "Escribir al tocar", Ajustes.AL_TOCAR, true, "La letra sale apenas tocas (más rápido a dos dedos)")
         interruptor(tec, "¿ y ¡ automáticos", Ajustes.SIGNOS_INICIO, true, "Al cerrar con ? o ! se pone ¿ o ¡ al inicio de la frase")
-        interruptor(tec, "Vidrio con desenfoque", Ajustes.VIDRIO, false, "Android 12+. Desenfoca lo que hay detrás (gasta un poco más). Apagado: negro AMOLED")
         deslizador(tec, "Mantener presionado", Ajustes.RETARDO_LARGA, 150, 700, 320) { "$it ms" }
 
         val son = seccion("Sonido y vibración")
@@ -246,13 +277,28 @@ class SettingsActivity : Activity() {
                 .setNegativeButton("Cancelar", null).show()
         }
 
-        val ata = seccion("Atajos de texto", "Escribe la clave y toca espacio: se pone la frase completa. Si borras justo después, vuelve lo que escribiste.")
+        val auto = seccion("Autocompletar", "Como en iPhone: la barra te ofrece códigos, contraseñas y tus datos con un toque.")
+        interruptor(auto, "Códigos de SMS en la barra", Ajustes.CODIGOS, false,
+            "Cuando llega un código por mensaje, aparece en la barra unos minutos. Necesita acceso a las notificaciones; nada sale del celular") { si ->
+            if (si && !accesoNotificaciones()) {
+                try { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) } catch (e: Exception) { }
+            }
+            true
+        }
+        interruptor(auto, "Contraseñas en la barra", Ajustes.CONTRASENAS, true,
+            "En campos de usuario y contraseña aparecen las guardadas en tu gestor de contraseñas (Google u otro)")
+        boton(auto, "Elegir gestor de contraseñas", sub = "Ajustes de Android → Autocompletar") {
+            try { startActivity(Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE, Uri.parse("package:com.google.android.gms"))) }
+            catch (e: Exception) { try { startActivity(Intent(Settings.ACTION_SETTINGS)) } catch (_: Exception) { } }
+        }
+        boton(auto, "Mis datos", sub = "Nombre, correo, teléfono y dirección para llenar formularios") { misDatos() }
+
+        val ata = seccion("Sustitución de texto", "Escribe el atajo y toca espacio: se pone la frase completa. Si borras justo después, vuelve lo que escribiste.")
         boton(ata, "Mis atajos", sub = "Toca uno para cambiarlo o borrarlo") { verAtajos() }
         boton(ata, "Agregar un atajo") { editarAtajo(null) }
 
-        val copia = seccion("Copia de seguridad", "Guarda en un archivo tus palabras, costumbres y atajos para pasarlos a otro celular o recuperarlos.")
-        boton(copia, "Exportar lo aprendido") { exportarCerebro() }
-        boton(copia, "Importar una copia", sub = "Se suma a lo que el teclado ya sabe") { importarCerebro() }
+        val est = seccion("Mis estadísticas", "Solo números: nunca se guarda lo que escribes.")
+        boton(est, "Ver mis estadísticas") { verEstadisticas() }
 
         val otros = seccion("Otros")
         interruptor(otros, "Ocultar el ícono de la app", Ajustes.ICONO_OCULTO, false, "Abre los ajustes desde el engranaje del teclado") { si ->
@@ -342,6 +388,43 @@ class SettingsActivity : Activity() {
             }.setNegativeButton("Cancelar", null).show()
     }
 
+    // ---------- Estadísticas ----------
+
+    private fun verEstadisticas() = conMotor { m ->
+        val top = synchronized(m.aprendido) { m.aprendido.uso.entries.sortedByDescending { it.value }.take(10).map { it.key to it.value } }
+        AlertDialog.Builder(this).setTitle("Mis estadísticas")
+            .setMessage(Estadisticas.resumen(prefs, top))
+            .setNegativeButton("Reiniciar") { _, _ -> Estadisticas.reiniciar(prefs) }
+            .setPositiveButton("Cerrar", null).show()
+    }
+
+    // ---------- Autocompletar ----------
+
+    private fun accesoNotificaciones(): Boolean = try {
+        val nm = getSystemService(android.app.NotificationManager::class.java)
+        nm.isNotificationListenerAccessGranted(android.content.ComponentName(this, CodigosService::class.java))
+    } catch (e: Exception) { false }
+
+    private fun misDatos() {
+        val caja = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20f), dp(8f), dp(20f), 0) }
+        val campos = listOf(
+            Triple(Ajustes.DATO_NOMBRE, "Nombre completo", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PERSON_NAME or InputType.TYPE_TEXT_FLAG_CAP_WORDS),
+            Triple(Ajustes.DATO_CORREO, "Correo", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS),
+            Triple(Ajustes.DATO_TELEFONO, "Teléfono", InputType.TYPE_CLASS_PHONE),
+            Triple(Ajustes.DATO_DIRECCION, "Dirección", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_POSTAL_ADDRESS or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES),
+        ).map { (clave, pista, tipo) ->
+            val e = EditText(this).apply { hint = pista; inputType = tipo; setText(prefs.getString(clave, "")) }
+            caja.addView(e); clave to e
+        }
+        AlertDialog.Builder(this).setTitle("Mis datos").setView(caja)
+            .setPositiveButton("Guardar") { _, _ ->
+                val ed = prefs.edit()
+                for ((clave, e) in campos) ed.putString(clave, e.text.toString().trim())
+                ed.apply()
+            }
+            .setNegativeButton("Cancelar", null).show()
+    }
+
     // ---------- Atajos de texto ----------
 
     private fun verAtajos() {
@@ -376,59 +459,6 @@ class SettingsActivity : Activity() {
             .setNegativeButton("Cancelar", null)
         if (clave != null) d.setNeutralButton("Borrar") { _, _ -> m.remove(clave); Atajos.guardar(prefs, m) }
         d.show()
-    }
-
-    // ---------- Copia de seguridad del cerebro ----------
-
-    private val PEDIR_EXPORTAR = 41
-    private val PEDIR_IMPORTAR = 42
-
-    private fun exportarCerebro() = conMotor {
-        val i = Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("text/plain")
-            .putExtra(Intent.EXTRA_TITLE, "tecladoios-cerebro.txt")
-        try { startActivityForResult(i, PEDIR_EXPORTAR) } catch (e: Exception) { aviso("No se pudo abrir el selector de archivos.") }
-    }
-
-    private fun importarCerebro() = conMotor {
-        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
-        try { startActivityForResult(i, PEDIR_IMPORTAR) } catch (e: Exception) { aviso("No se pudo abrir el selector de archivos.") }
-    }
-
-    private fun aviso(t: String) { AlertDialog.Builder(this).setMessage(t).setPositiveButton("OK", null).show() }
-
-    @Deprecated("Activity sencilla, sin AndroidX")
-    override fun onActivityResult(pedido: Int, resultado: Int, datos: Intent?) {
-        super.onActivityResult(pedido, resultado, datos)
-        val uri = datos?.data
-        if (resultado != RESULT_OK || uri == null) return
-        val m = Cerebro.motor ?: run { aviso("El diccionario aún no está listo. Inténtalo de nuevo."); return }
-        when (pedido) {
-            PEDIR_EXPORTAR -> try {
-                contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter(Charsets.UTF_8).use { w ->
-                    w.write("#TecladoiOS-cerebro 1\n")
-                    for ((k, v) in Atajos.leer(prefs)) w.write("A\t$k\t$v\n")
-                    m.aprendido.escribir(w)
-                }
-                aviso("Listo: copia guardada.")
-            } catch (e: Exception) { Registro.anotar("exportar", e); aviso("No se pudo guardar la copia.") }
-            PEDIR_IMPORTAR -> try {
-                val lineas = contentResolver.openInputStream(uri)!!.bufferedReader(Charsets.UTF_8).use { it.readLines() }
-                if (lineas.firstOrNull()?.startsWith("#TecladoiOS-cerebro") != true && lineas.firstOrNull()?.startsWith("#TPA") != true) {
-                    aviso("Ese archivo no es una copia del teclado."); return
-                }
-                val atajos = Atajos.leer(prefs)
-                var n = 0
-                for (l in lineas) {
-                    if (l.startsWith("A\t")) {
-                        val p = l.split('\t', limit = 3)
-                        if (p.size == 3 && Atajos.claveValida(p[1]) && p[2].isNotBlank()) { atajos[p[1]] = p[2]; n++ }
-                    } else if (m.aprendido.mezclar(l)) n++
-                }
-                Atajos.guardar(prefs, atajos)
-                m.aprendido.guardar()
-                aviso(if (n > 0) "Listo: copia importada." else "La copia estaba vacía.")
-            } catch (e: Exception) { Registro.anotar("importar", e); aviso("No se pudo leer la copia.") }
-        }
     }
 
     private fun verRegistro() {

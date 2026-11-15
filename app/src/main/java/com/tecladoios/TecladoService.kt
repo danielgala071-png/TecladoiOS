@@ -3,6 +3,7 @@ package com.tecladoios
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Bundle
 import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Bitmap
@@ -123,9 +124,15 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         prefs.registerOnSharedPreferenceChangeListener(this)
         Cerebro.iniciar(this) { Cerebro.motor?.separarPegadas = cfg.separarPegadas; actualizarBarra() }
         (getSystemService(CLIPBOARD_SERVICE) as? ClipboardManager)?.addPrimaryClipChangedListener(alCopiar)
+        // Un código de SMS que llega con el teclado abierto aparece al instante en la barra
+        Codigos.alLlegar = { principal.post { if (palabra.isEmpty() && cfg.codigos) actualizarBarra() } }
+        Estadisticas.cargar(prefs)
+        // Sube y baja con la curva del iPhone (en algunos Android la animación la pone el sistema)
+        try { window?.window?.setWindowAnimations(R.style.AnimacionTeclado) } catch (e: Throwable) { Registro.anotar("animación ventana", e) }
     }
 
     override fun onDestroy() {
+        Codigos.alLlegar = null
         if (android.os.Build.VERSION.SDK_INT >= 31) oyenteDesenfoque?.let {
             try { getSystemService(android.view.WindowManager::class.java)?.removeCrossWindowBlurEnabledListener(it) } catch (_: Throwable) { }
         }
@@ -173,7 +180,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         }
         val columna = LinearLayout(c).apply {
             orientation = LinearLayout.VERTICAL
-            addView(br, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (44 * resources.displayMetrics.density).toInt()))
+            addView(zonaBarra(c, br), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (44 * resources.displayMetrics.density).toInt()))
             addView(cuerpo, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         val m = Marco(c).apply {
@@ -245,11 +252,6 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         teclado?.unaMano = cfg.unaMano
         barra?.herramientasActivas = cfg.barraHerramientas
         leerCampo(info)
-        // Modo privado: contraseñas e incógnito no aprenden ni guardan lo copiado
-        privado = esPrivado(info)
-        if (privado) aprender = false
-        barra?.privado = privado
-        barra?.estilo = estiloDe(info.packageName)
         // Al abrirse, las filas entran en cascada (una décima y media de segundo)
         if (!restarting) teclado?.animarEntrada()
         // Algunas apps reinician el campo al enviar: si la palabra ya no está, se suelta
@@ -277,6 +279,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        ocultarLlaves()
+        Estadisticas.guardar(prefs)
         teclado?.cancelarTodo()
         principal.removeCallbacks(reabrirTrasBorrar)
         if (ajusteTamano?.visibility == View.VISIBLE) cerrarTamano()
@@ -295,7 +299,10 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         aprender = cfg.aprender && (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) == 0
         mayusCampo = false
         when (clase) {
-            InputType.TYPE_CLASS_NUMBER, InputType.TYPE_CLASS_DATETIME -> { modo = Distribuciones.NUMEROS; sugerir = false; corregir = false }
+            InputType.TYPE_CLASS_NUMBER, InputType.TYPE_CLASS_DATETIME -> {
+                modo = Distribuciones.NUMEROS; sugerir = false; corregir = false
+                if (clase == InputType.TYPE_CLASS_NUMBER && (t and InputType.TYPE_NUMBER_FLAG_DECIMAL) != 0) campo = Distribuciones.CAMPO_DECIMAL
+            }
             InputType.TYPE_CLASS_PHONE -> { modo = Distribuciones.TELEFONO; sugerir = false; corregir = false }
             InputType.TYPE_CLASS_TEXT -> {
                 when (variacion) {
@@ -362,7 +369,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             EditorInfo.IME_ACTION_GO -> "ir" to true
             EditorInfo.IME_ACTION_SEND -> "enviar" to true
             EditorInfo.IME_ACTION_NEXT -> "siguiente" to false
-            EditorInfo.IME_ACTION_DONE -> "OK" to false
+            EditorInfo.IME_ACTION_DONE -> "listo" to false
             else -> null to false
         }
         teclado?.textoIntro = txt
@@ -371,11 +378,141 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     private fun aplicarTema(acento: Int) {
         acentoApp = acento
-        val t = Tema(Tema.ROJO)
+        // Claro u oscuro según el modo del celular, como en iOS
+        val claro = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) !=
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val t = Tema(Tema.AZUL, claro)
         tema = t
         marco?.tema = t; teclado?.tema = t; barra?.tema = t; capa?.tema = t
         panelEmoji?.tema = t; panelEdicion?.tema = t; panelCopiado?.tema = t; ajusteTamano?.tema = t
         marco?.conBorde = false   // negro puro: sin filo de color
+    }
+
+    // ---------- Autocompletar (códigos, mis datos y contraseñas) ----------
+
+    private var ofertaEscribir: String? = null
+
+    /** Lo que cierra a cada signo de apertura */
+    private val CIERRES = mapOf('(' to ')', '«' to '»', '¿' to '?', '¡' to '!', '“' to '”', '[' to ']')
+
+    /**
+     * El signo que falta cerrar en la frase actual (solo si ya escribiste algo después de
+     * abrirlo y estás entre palabras), o null.
+     */
+    private fun cierrePendiente(t: String): String? {
+        if (t.isEmpty() || t.last() != ' ') return null
+        var inicio = t.length - 1
+        while (inicio >= 0 && t[inicio] != '.' && t[inicio] != '\n') inicio--
+        val pila = ArrayList<Pair<Char, Int>>(4)
+        for (i in inicio + 1 until t.length) {
+            val ch = t[i]
+            if (ch in CIERRES.keys) pila.add(ch to i)
+            else if (pila.isNotEmpty() && CIERRES[pila.last().first] == ch) pila.removeAt(pila.size - 1)
+        }
+        val abierto = pila.lastOrNull() ?: return null
+        val despues = t.substring(abierto.second + 1)
+        if (despues.count { it.isLetterOrDigit() } < 2) return null
+        return CIERRES[abierto.first]?.toString()
+    }
+
+    /** (etiqueta, texto) que la barra ofrece con el campo vacío, o null */
+    private fun ofertaAutocompletar(leido: String?): Pair<String, String>? {
+        if ((leido ?: antes(1)).isNotEmpty()) return null
+        if (cfg.codigos) Codigos.actual()?.let { return "De Mensajes" to it }
+        val info = currentInputEditorInfo ?: return null
+        val clase = info.inputType and InputType.TYPE_MASK_CLASS
+        val v = info.inputType and InputType.TYPE_MASK_VARIATION
+        val pista = (info.hintText?.toString() ?: "").lowercase()
+        val texto = clase == InputType.TYPE_CLASS_TEXT
+        val dato = when {
+            texto && (v == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS || v == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS ||
+                "correo" in pista || "email" in pista || "e-mail" in pista) -> "Tu correo" to cfg.datoCorreo
+            clase == InputType.TYPE_CLASS_PHONE || (texto && ("teléfono" in pista || "telefono" in pista || "celular" in pista)) -> "Tu teléfono" to cfg.datoTelefono
+            texto && (v == InputType.TYPE_TEXT_VARIATION_POSTAL_ADDRESS || "dirección" in pista || "direccion" in pista) -> "Tu dirección" to cfg.datoDireccion
+            texto && (v == InputType.TYPE_TEXT_VARIATION_PERSON_NAME || "nombre" in pista) -> "Tu nombre" to cfg.datoNombre
+            else -> null
+        }
+        return dato?.takeIf { it.second.isNotEmpty() }
+    }
+
+    private var llaves: android.widget.HorizontalScrollView? = null
+    private var filaLlaves: LinearLayout? = null
+
+    /** La barra con, encima, la fila de contraseñas guardadas (aparece solo cuando las hay) */
+    private fun zonaBarra(c: Context, br: View): View {
+        val fila = LinearLayout(c).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL }
+        val desliza = android.widget.HorizontalScrollView(c).apply {
+            isHorizontalScrollBarEnabled = false
+            visibility = View.GONE
+            setBackgroundColor(tema.fondo)
+            addView(fila, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        llaves = desliza; filaLlaves = fila
+        return FrameLayout(c).apply {
+            addView(br, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            addView(desliza, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+    }
+
+    private fun ocultarLlaves() {
+        filaLlaves?.removeAllViews()
+        llaves?.visibility = View.GONE
+    }
+
+    /** Estilo de las sugerencias de contraseñas: chips del color de las teclas, como iOS */
+    private fun estiloLlaves(): Bundle {
+        val d = resources.displayMetrics.density
+        val fondo = android.graphics.drawable.Icon.createWithResource(this, R.drawable.chip_llave).setTint(tema.teclaFuncion)
+        val chip = androidx.autofill.inline.common.ViewStyle.Builder()
+            .setBackground(fondo)
+            .setPadding((12 * d).toInt(), 0, (12 * d).toInt(), 0)
+            .build()
+        val titulo = androidx.autofill.inline.common.TextViewStyle.Builder().setTextColor(tema.texto).setTextSize(15f).build()
+        val sub = androidx.autofill.inline.common.TextViewStyle.Builder().setTextColor(tema.textoSuave).setTextSize(12f).build()
+        val estilo = androidx.autofill.inline.v1.InlineSuggestionUi.newStyleBuilder()
+            .setChipStyle(chip).setTitleStyle(titulo).setSubtitleStyle(sub).build()
+        return androidx.autofill.inline.UiVersions.newStylesBuilder().addStyle(estilo).build()
+    }
+
+    override fun onCreateInlineSuggestionsRequest(uiExtras: Bundle): android.view.inputmethod.InlineSuggestionsRequest? {
+        if (!cfg.contrasenas) return null
+        return try {
+            val d = resources.displayMetrics.density
+            val spec = android.widget.inline.InlinePresentationSpec.Builder(
+                android.util.Size((60 * d).toInt(), (34 * d).toInt()),
+                android.util.Size((280 * d).toInt(), (34 * d).toInt()),
+            ).setStyle(estiloLlaves()).build()
+            android.view.inputmethod.InlineSuggestionsRequest.Builder(listOf(spec)).setMaxSuggestionCount(6).build()
+        } catch (e: Throwable) { Registro.anotar("pedir contraseñas", e); null }
+    }
+
+    override fun onInlineSuggestionsResponse(response: android.view.inputmethod.InlineSuggestionsResponse): Boolean {
+        val fila = filaLlaves ?: return false
+        val lista = response.inlineSuggestions
+        fila.removeAllViews()
+        if (lista.isEmpty()) { llaves?.visibility = View.GONE; return true }
+        val vistas = arrayOfNulls<View>(lista.size)
+        var faltan = lista.size
+        val d = resources.displayMetrics.density
+        for ((i, sug) in lista.withIndex()) {
+            try {
+                sug.inflate(this, android.util.Size(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT), mainExecutor) { v ->
+                    vistas[i] = v
+                    faltan--
+                    if (faltan == 0) {
+                        fila.removeAllViews()
+                        for (x in vistas) if (x != null) {
+                            val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                            lp.marginStart = (6 * d).toInt()
+                            fila.addView(x, lp)
+                        }
+                        llaves?.setBackgroundColor(tema.fondo)
+                        llaves?.visibility = if (fila.childCount > 0 && palabra.isEmpty()) View.VISIBLE else View.GONE
+                    }
+                }
+            } catch (e: Throwable) { faltan--; Registro.anotar("contraseña", e) }
+        }
+        return true
     }
 
     // ---------- Ayudas de texto ----------
@@ -469,6 +606,12 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         try {
             teclaReal(texto, x, y, esLetra)
             if ((texto == "?" || texto == "!") && sugerir && cfg.signosInicio) signoDeApertura(texto[0])
+            // Como en iOS: el apóstrofo en 123 te devuelve a las letras
+            if ((texto == "'" || texto == "’") && (modo == Distribuciones.SIMBOLOS || modo == Distribuciones.SIMBOLOS2)) volverLetras()
+            // Puntuación inteligente (iOS): dos guiones seguidos se vuelven una raya
+            if (texto == "-" && cfg.puntuacion && campo == Distribuciones.CAMPO_TEXTO && antes(2) == "--") {
+                ic()?.let { ic -> ic.beginBatchEdit(); ic.deleteSurroundingText(2, 0); ic.commitText("—", 1); ic.endBatchEdit() }
+            }
         } catch (e: Throwable) { Registro.anotar("tecla", e) }
     }
 
@@ -506,6 +649,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     private fun teclaReal(texto: String, x: Float, y: Float, esLetra: Boolean) {
         if (buscandoEmoji) { consultaEmoji.append(texto.lowercase()); buscarEmoji(); return }
+        if (aprender) Estadisticas.letra()
         val ic = ic() ?: return
         var t = texto
         if (texto.length == 1 && texto[0].isLetter() && shift > 0) t = texto.uppercase()
@@ -569,7 +713,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 val ahora = SystemClock.uptimeMillis()
                 shift = when {
                     shift == 0 -> 1
-                    shift == 1 && ahora - ultimoShiftMs < 350 -> 2
+                    shift == 1 && ahora - ultimoShiftMs < 350 && cfg.bloqueoMayus -> 2
                     else -> 0
                 }
                 ultimoShiftMs = ahora
@@ -690,6 +834,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         }
         ic.endBatchEdit()
         if (atajo == null) aprenderPalabra(resultado, ctx)
+        Estadisticas.palabra(resultado != escrito && atajo == null)
         ultimaCorreccion = if (resultado != escrito || anteriorNueva != null) {
             val puesta = if (anteriorNueva != null) "$anteriorNueva $resultado" else resultado
             val original = if (anteriorVieja != null) "$anteriorVieja $escrito" else escrito
@@ -885,10 +1030,20 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private fun actualizarBarra(leido: String? = null) {
         val b = barra ?: return
         if (buscandoEmoji) return
+        // Autocompletar como en iPhone: código de SMS o tus datos (con el campo vacío)
+        val oferta = if (palabra.isEmpty()) ofertaAutocompletar(leido) else null
+        ofertaEscribir = oferta?.second
         // Lo copiado se ofrece un minuto
-        val chip = chipTexto?.takeIf { SystemClock.uptimeMillis() - chipMs < 60_000 && cfg.portapapeles }
-        if (chip == null) chipTexto = null
-        b.chip(chip)
+        val copiado = chipTexto?.takeIf { SystemClock.uptimeMillis() - chipMs < 60_000 && cfg.portapapeles }
+        if (copiado == null) chipTexto = null
+        val chip = oferta?.second ?: copiado
+        b.chip(chip, oferta?.first)
+        // Las contraseñas guardadas se ven mientras el campo está vacío
+        llaves?.let { ll ->
+            val hay = (filaLlaves?.childCount ?: 0) > 0
+            val vacio = palabra.isEmpty() && (leido ?: antes(1)).isEmpty()
+            ll.visibility = if (hay && vacio) View.VISIBLE else View.GONE
+        }
         if (palabra.isNotEmpty()) b.avisarCorreccion(null)
         if (palabra.isNotEmpty() && sugerir) {
             // Un atajo va al centro y se pone solo con espacio
@@ -921,6 +1076,12 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         if (palabra.isEmpty() && sugerir && cfg.prediccion && Cerebro.motor != null && chip == null && (captura == null || (leido?.takeLast(1) ?: antes(1)).isNotEmpty()) && selIni == selFin) {
             val t = leido ?: antes(80)
             val pred = Cerebro.motor?.predecir(contexto(t), inicioDeFrase(t)) ?: emptyList()
+            // Cierre automático: si quedó abierto un ( « ¿ ¡ “ [, la barra ofrece cerrarlo
+            val cierre = if (cfg.cierre && campo == Distribuciones.CAMPO_TEXTO) cierrePendiente(t) else null
+            if (cierre != null) {
+                b.mostrarSugerencias(if (pred.isEmpty()) listOf(cierre) else listOf(pred[0], cierre) + pred.drop(1).filter { it != cierre }, null, false)
+                return
+            }
             if (pred.isNotEmpty()) { b.mostrarSugerencias(pred, null, false); return }
         }
         b.limpiar()
@@ -933,6 +1094,15 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private fun elegirReal(texto: String, esLiteral: Boolean) {
         val ic = ic() ?: return
         marcarEdicion()
+        // Cierre elegido en la barra: va pegado a la última palabra ("(hola)" y no "(hola )")
+        if (palabra.isEmpty() && texto.length == 1 && texto[0] in CIERRES.values) {
+            ic.beginBatchEdit()
+            if (antes(1) == " ") ic.deleteSurroundingText(1, 0)
+            ic.commitText("$texto ", 1)
+            ic.endBatchEdit()
+            refrescar()
+            return
+        }
         val ctx = contexto()
         ic.beginBatchEdit()
         if (palabra.isNotEmpty()) {
@@ -1034,18 +1204,46 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         ultimaCorreccion = null; espacioAuto = false
     }
 
+    /** Trackpad seleccionando: las flechas van con mayúscula (extienden la selección) */
+    private var seleccionandoTrackpad = false
+
+    override fun seleccionTrackpad(activa: Boolean) {
+        if (activa) soltarComposicion()
+        seleccionandoTrackpad = activa
+    }
+
+    /** Flecha con Shift apretado: mueve un extremo de la selección (funciona en casi todas las apps) */
+    private fun flechaConShift(codigo: Int) {
+        val ic = ic() ?: return
+        val t = SystemClock.uptimeMillis()
+        val meta = KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
+        ic.sendKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_SHIFT_LEFT, 0, meta))
+        ic.sendKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, codigo, 0, meta))
+        ic.sendKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_UP, codigo, 0, meta))
+        ic.sendKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_SHIFT_LEFT, 0, 0))
+    }
+
+    private var chocado = 0
+
     override fun cursor(pasos: Int) {
         soltarComposicion()
+        // Al llegar al inicio o al final del texto, el cursor "choca": rebote y vibración suave
+        val lado = if (pasos < 0 && selFin <= 0) -1 else if (pasos > 0 && despues(1).isEmpty()) 1 else 0
+        if (lado != 0 && !seleccionandoTrackpad) {
+            if (chocado != lado) { chocado = lado; teclado?.rebotar(lado); respuesta.tocar(Respuesta.Tipo.FUNCION) }
+            return
+        }
+        chocado = 0
         marcarEdicion()
         val tecla = if (pasos < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
-        repeat(kotlin.math.abs(pasos).coerceAtMost(20)) { sendDownUpKeyEvents(tecla) }
+        repeat(kotlin.math.abs(pasos).coerceAtMost(20)) { if (seleccionandoTrackpad) flechaConShift(tecla) else sendDownUpKeyEvents(tecla) }
     }
 
     override fun cursorVertical(pasos: Int) {
         soltarComposicion()
         marcarEdicion()
         val tecla = if (pasos < 0) KeyEvent.KEYCODE_DPAD_UP else KeyEvent.KEYCODE_DPAD_DOWN
-        repeat(kotlin.math.abs(pasos).coerceAtMost(10)) { sendDownUpKeyEvents(tecla) }
+        repeat(kotlin.math.abs(pasos).coerceAtMost(10)) { if (seleccionandoTrackpad) flechaConShift(tecla) else sendDownUpKeyEvents(tecla) }
     }
 
     override fun seleccionBorrar(palabras: Int) {
@@ -1166,8 +1364,13 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         val antes = panel
         panel = p
         val animar = antes != p && marco?.isShown == true
-        transicion(teclado, p == Panel.TECLADO, View.INVISIBLE, animar)
-        transicion(panelEmoji, p == Panel.EMOJI, View.GONE, animar)
+        if (animar && (p == Panel.EMOJI || antes == Panel.EMOJI) && (p == Panel.TECLADO || antes == Panel.TECLADO)) {
+            // Emojis como en iOS: el panel sube desde abajo tapando las letras, y al volver baja
+            deslizarEmojis(p == Panel.EMOJI)
+        } else {
+            transicion(teclado, p == Panel.TECLADO, View.INVISIBLE, animar)
+            transicion(panelEmoji, p == Panel.EMOJI, View.GONE, animar)
+        }
         transicion(panelEdicion, p == Panel.EDICION, View.GONE, animar)
         transicion(panelCopiado, p == Panel.PORTAPAPELES, View.GONE, animar)
         when (p) {
@@ -1207,6 +1410,39 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 }.start()
             } else v.visibility = oculto
         }
+    }
+
+    private fun deslizarEmojis(subir: Boolean) {
+        val pe = panelEmoji ?: return
+        val kb = teclado ?: return
+        val curva = android.view.animation.PathInterpolator(0.2f, 0.9f, 0.25f, 1f)
+        pe.animate().cancel()
+        pe.setBackgroundColor(tema.fondo)
+        val alto = (pe.height.takeIf { it > 0 } ?: kb.height).toFloat()
+        if (subir) {
+            pe.visibility = View.VISIBLE; pe.alpha = 1f
+            pe.translationY = alto
+            kb.visibility = View.VISIBLE
+            pe.animate().translationY(0f).setDuration(280L).setInterpolator(curva).withLayer()
+                .withEndAction { if (panel == Panel.EMOJI) kb.visibility = View.INVISIBLE }.start()
+        } else {
+            kb.visibility = View.VISIBLE; kb.alpha = 1f; kb.translationY = 0f
+            pe.animate().translationY(alto).setDuration(240L).setInterpolator(curva).withLayer()
+                .withEndAction { if (panel != Panel.EMOJI) { pe.visibility = View.GONE; pe.translationY = 0f } }.start()
+        }
+    }
+
+    override fun menuTeclado(opcion: String) {
+        try {
+            when (opcion) {
+                "Ajustes" -> startActivity(Intent(this, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                "Teclados" -> (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker()
+                // Teclado a una mano, como en el iPhone (izquierda, completo o derecha)
+                "◀ Mano" -> prefs.edit().putInt(Ajustes.UNA_MANO, 1).apply()
+                "Completo" -> prefs.edit().putInt(Ajustes.UNA_MANO, 0).apply()
+                "Mano ▶" -> prefs.edit().putInt(Ajustes.UNA_MANO, 2).apply()
+            }
+        } catch (e: Throwable) { Registro.anotar("menú teclado", e) }
     }
 
     override fun abc() {
@@ -1299,7 +1535,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             val sensible = clip.description?.extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE) == true
             val t = clip.getItemAt(0).coerceToText(this)?.toString() ?: return@OnPrimaryClipChangedListener
             if (t.isBlank()) return@OnPrimaryClipChangedListener
-            if (!sensible && !esClave() && !privado) portapapeles.agregar(t)
+            if (!sensible && !esClave()) portapapeles.agregar(t)
             chipTexto = if (sensible) "••••••" else t
             chipSensible = if (sensible) t else null
             chipMs = SystemClock.uptimeMillis()
@@ -1309,7 +1545,16 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private var chipSensible: String? = null
 
     override fun pegarChip() {
-        val t = chipSensible ?: chipTexto ?: return
+        val oferta = ofertaEscribir
+        if (oferta != null && oferta == Codigos.actual()) Codigos.usado()
+        ofertaEscribir = null
+        val t = oferta ?: chipSensible ?: chipTexto ?: return
+        if (oferta != null) {
+            soltarComposicion(); marcarEdicion()
+            ic()?.commitText(t, 1)
+            refrescar()
+            return
+        }
         soltarComposicion()
         marcarEdicion()
         ic()?.commitText(t, 1)
@@ -1404,7 +1649,7 @@ class Marco(c: Context) : FrameLayout(c) {
     /** Espacio extra a cada lado cuando el teclado es más angosto (en px) */
     var margenLado = 0; set(v) { if (field != v) { field = v; aplicarRelleno(); requestLayout() } }
 
-    private val lado = (6 * resources.displayMetrics.density).toInt()
+    private val lado = (2 * resources.displayMetrics.density).toInt()
 
     init {
         setWillNotDraw(false)
@@ -1439,18 +1684,11 @@ class Marco(c: Context) : FrameLayout(c) {
      * no desenfoca), apenas más claro arriba. Esquinas curvas arriba, recto abajo y SIN líneas
      * de borde.
      */
+    /** Como en iOS: un fondo liso y recto, sin esquinas ni líneas */
     override fun onDraw(c: Canvas) {
-        val w = width.toFloat(); val h = height.toFloat()
-        val arriba = 22 * d
-        forma.reset()
-        r.set(0f, 0f, w, h)
-        forma.addRoundRect(r, floatArrayOf(arriba, arriba, arriba, arriba, 0f, 0f, 0f, 0f), Path.Direction.CW)
-        val base = if (vidrio) tema.tarjetaVidrio else tema.tarjeta
-        fondo.shader = android.graphics.LinearGradient(0f, 0f, 0f, h,
-            Tema.mezclar(0xFFFFFFFF.toInt(), base, 0.035f).let { (base and 0xFF000000.toInt()) or (it and 0xFFFFFF) },
-            base, android.graphics.Shader.TileMode.CLAMP)
-        c.drawPath(forma, fondo)
         fondo.shader = null
+        fondo.color = tema.tarjeta
+        c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fondo)
     }
 }
 

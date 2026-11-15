@@ -75,7 +75,7 @@ class AjusteTamano(context: Context) : View(context) {
         // Marco del teclado
         val m = dp(4f)
         caja.set(m, m, w - m, h - m)
-        marco.color = 0x665E5CE6; marco.strokeWidth = dp(1.2f)
+        marco.color = 0x660A84FF; marco.strokeWidth = dp(1.2f)
         c.drawRoundRect(caja, dp(12f), dp(12f), marco)
         // Cuatro esquinas para arrastrar (en L, gruesas)
         val activo = arrastre

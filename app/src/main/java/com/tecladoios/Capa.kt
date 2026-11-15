@@ -36,7 +36,7 @@ class Capa(context: Context) : View(context) {
     }
 
     private fun imagenGlobo(): android.graphics.Bitmap? {
-        val clave = "${limites.left.toInt()},${limites.top.toInt()},${limites.right.toInt()},${tecla.bottom.toInt()},$globoTexto"
+        val clave = "${tema.claro},${limites.left.toInt()},${limites.top.toInt()},${limites.right.toInt()},${tecla.bottom.toInt()},$globoTexto"
         globos[clave]?.let { return it }
         return try {
             val m = MARGEN * d
@@ -45,34 +45,25 @@ class Capa(context: Context) : View(context) {
             val b = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
             val c = Canvas(b)
             c.translate(m - limites.left, m - limites.top)
-            sombra.alpha = 0x8C
-            c.save(); c.translate(0f, 3f * d); c.drawPath(forma, sombra); c.restore()
-            aura.alpha = 0xBF
-            c.drawPath(forma, aura)
-            pintura.shader = android.graphics.LinearGradient(0f, limites.top, 0f, tecla.bottom,
-                0xFF3A3C4E.toInt(), 0xFF262844.toInt(), android.graphics.Shader.TileMode.CLAMP)
-            pintura.alpha = 255
-            c.drawPath(forma, pintura)
+            // Como en iOS: el globo es la misma tecla que crece hacia arriba, del mismo color,
+            // con una sombra suave y la letra grande
+            // Sombra difusa alrededor (más marcada abajo), como en iOS
+            sombraSuave.color = if (tema.claro) 0x38000000 else 0x8C000000.toInt()
+            c.save(); c.translate(0f, 2f * d); c.drawPath(forma, sombraSuave); c.restore()
             pintura.shader = null
-            brilloG.shader = android.graphics.LinearGradient(0f, limites.top, 0f, tecla.bottom,
-                intArrayOf(0x8CFFFFFF.toInt(), 0x337A8CFF, 0x997A8CFF.toInt()), floatArrayOf(0f, 0.6f, 1f), android.graphics.Shader.TileMode.CLAMP)
-            brilloG.alpha = 255
-            c.drawPath(forma, brilloG)
-            brilloG.shader = null
+            pintura.color = tema.tecla
+            c.drawPath(forma, pintura)
             letraP.color = tema.texto; letraP.alpha = 255
-            letraP.textSize = tecla.height() * 0.78f
-            letraP.setShadowLayer(9f * d, 0f, 0f, 0xD9A0AAFF.toInt())
+            letraP.textSize = tecla.height() * 0.8f
             val cy = limites.top + (tecla.top - limites.top) * 0.5f
             c.drawText(globoTexto, limites.centerX(), cy + letraP.textSize * 0.35f, letraP)
-            letraP.clearShadowLayer()
             globos[clave] = b
             b
         } catch (e: Throwable) { Registro.anotar("globo", e); null }
     }
-    // Globo retroiluminado: aura violeta difuminada alrededor
-    private val aura = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xBF5E5CE6.toInt()
-        maskFilter = android.graphics.BlurMaskFilter(14f * resources.displayMetrics.density, android.graphics.BlurMaskFilter.Blur.OUTER)
+    // Sombra difuminada del globo (se dibuja una sola vez por globo guardado)
+    private val sombraSuave = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        maskFilter = android.graphics.BlurMaskFilter(7f * resources.displayMetrics.density, android.graphics.BlurMaskFilter.Blur.NORMAL)
     }
     private val brilloG = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.2f * resources.displayMetrics.density }
 
@@ -101,8 +92,8 @@ class Capa(context: Context) : View(context) {
     private var apareceMs = 0L
     private var seVaMs = 0L
     // Como el iPhone: el globo aparece al instante y se va en un suspiro
-    private val APARECE = 80f
-    private val SE_VA = 90f
+    private val APARECE = 1f
+    private val SE_VA = 45f
 
     fun mostrarGlobo(r: RectF, texto: String) {
         val ahora = android.os.SystemClock.uptimeMillis()
@@ -119,8 +110,9 @@ class Capa(context: Context) : View(context) {
 
     private fun armarForma() {
         val w = tecla.width()
-        val ext = w * 0.32f
-        val alto = tecla.height() * 1.12f
+        // Como el globo de iOS: más ancho arriba que la tecla y un poco más alto
+        val ext = w * 0.4f
+        val alto = tecla.height() * 1.18f
         var izq = tecla.left - ext
         var der = tecla.right + ext
         // Que no se salga por los costados
@@ -148,10 +140,10 @@ class Capa(context: Context) : View(context) {
     }
 
     /** Muestra las opciones arriba de la tecla [r]; devuelve false si no hay espacio */
-    fun mostrarOpciones(r: RectF, lista: List<String>, inicial: Int) {
+    fun mostrarOpciones(r: RectF, lista: List<String>, inicial: Int, anchoMin: Float = 0f) {
         opciones = lista
         seleccion = inicial.coerceIn(0, lista.size - 1)
-        anchoOpcion = maxOf(r.width() * 0.95f, 34 * d)
+        anchoOpcion = maxOf(r.width() * 0.95f, 34 * d, anchoMin)
         val w = anchoOpcion * lista.size + 8 * d
         val h = r.height() * 1.05f
         var izq = r.centerX() - anchoOpcion / 2 - 4 * d - anchoOpcion * seleccion
@@ -200,15 +192,12 @@ class Capa(context: Context) : View(context) {
             if (globo) {
                 // Aparece rapidísimo creciendo apenas desde la tecla
                 // Brota de la tecla con un pequeño rebote (como el globo del iPhone)
-                val t = ((ahora - apareceMs) / APARECE).coerceIn(0f, 1f)
-                val u = t - 1f
-                val e = 1f + 2.0f * u * u * u + 1.0f * u * u
-                alfa = (0.4f + 1.2f * t).coerceAtMost(1f); escala = 0.86f + 0.14f * e; subeLetra = (1f - e) * 4f * d
-                if (t < 1f) postInvalidateOnAnimation()
+                // Aparece al instante, como en iOS
+                alfa = 1f; escala = 1f; subeLetra = 0f
             } else {
                 // Y se va desvaneciendo en un suspiro
                 val t = ((ahora - seVaMs) / SE_VA).coerceIn(0f, 1f)
-                alfa = 1f - t; escala = 1f - 0.04f * t; subeLetra = 0f
+                alfa = 1f - t; escala = 1f; subeLetra = 0f
                 postInvalidateOnAnimation()
             }
             // El globo (sombra, aura difuminada, vidrio, filo y letra brillante) se arma UNA vez
@@ -227,33 +216,23 @@ class Capa(context: Context) : View(context) {
             val tA = ((ahora - opcionesMs) / DESPLIEGUE).coerceIn(0f, 1f)
             val uA = tA - 1f
             val eA = 1f + 2.2f * uA * uA * uA + 1.2f * uA * uA
-            if (tA < 1f) postInvalidateOnAnimation()
             c.save()
-            c.scale(0.7f + 0.3f * eA, 0.55f + 0.45f * eA, tecla.centerX().coerceIn(caja.left, caja.right), caja.bottom)
-            c.saveLayerAlpha(caja.left - 8 * d, caja.top - 8 * d, caja.right + 8 * d, caja.bottom + 8 * d, (255 * minOf(1f, tA * 2f)).toInt())
+            c.save()
             c.save(); c.translate(0f, 2f * d)
-            sombra.alpha = 0x66
-            c.drawRoundRect(caja, 8 * d, 8 * d, sombra); c.restore()
+            sombraSuave.color = if (tema.claro) 0x40000000 else 0x80000000.toInt()
+            c.drawRoundRect(caja, 8 * d, 8 * d, sombraSuave); c.restore()
             pintura.color = tema.globo
             c.drawRoundRect(caja, 8 * d, 8 * d, pintura)
-            // Filo de luz del vidrio
-            borde.shader = android.graphics.LinearGradient(0f, caja.top, 0f, caja.bottom,
-                intArrayOf(0x66FFFFFF, 0x10FFFFFF, 0x1AFFFFFF), floatArrayOf(0f, 0.5f, 1f), android.graphics.Shader.TileMode.CLAMP)
-            borde.strokeWidth = 0.9f * d
-            c.drawRoundRect(caja, 8 * d, 8 * d, borde)
-            borde.shader = null
             letraP.textSize = minOf(caja.height() * 0.5f, anchoOpcion * 0.62f)
             for ((i, o) in opciones.withIndex()) {
                 val x0 = caja.left + 4 * d + anchoOpcion * i
                 if (i == seleccion) {
-                    // Opción elegida: pastilla con el degradado azul → violeta del teclado
-                    pintura.shader = android.graphics.LinearGradient(x0, caja.top, x0 + anchoOpcion, caja.bottom,
-                        Tema.AZUL_ACENTO, Tema.ROJO, android.graphics.Shader.TileMode.CLAMP)
+                    // Opción elegida: azul con letra blanca, como en iOS
+                    pintura.color = Tema.AZUL
                     c.drawRoundRect(x0 + 1 * d, caja.top + 5 * d, x0 + anchoOpcion - 1 * d, caja.bottom - 5 * d, 6 * d, 6 * d, pintura)
-                    pintura.shader = null
                 }
-                letraP.color = tema.texto
-                val tam = if (o.length > 2) letraP.textSize * 0.62f else letraP.textSize
+                letraP.color = if (i == seleccion) 0xFFFFFFFF.toInt() else tema.texto
+                val tam = if (o.length > 4) minOf(letraP.textSize * 0.62f, 15f * d) else if (o.length > 2) letraP.textSize * 0.62f else letraP.textSize
                 val previo = letraP.textSize
                 letraP.textSize = tam
                 c.drawText(o, x0 + anchoOpcion / 2, caja.centerY() + tam * 0.36f, letraP)

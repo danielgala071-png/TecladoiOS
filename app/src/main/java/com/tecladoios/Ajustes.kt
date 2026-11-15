@@ -37,6 +37,8 @@ object Ajustes {
     const val ANCHO = "ancho"                // 70..100 (%), el teclado queda centrado
     const val VIDRIO = "vidrio"              // desenfoque real detrás del teclado (Android 12+)
     const val AL_TOCAR = "al_tocar"          // las letras se escriben al tocar (no al soltar)
+    const val BLOQUEO_MAYUS = "bloqueo_mayus"   // doble toque en mayúscula la deja fija (iOS)
+    const val PUNTUACION = "puntuacion_inteligente"   // "--" → "—" (iOS)
     const val SIGNOS_INICIO = "signos_inicio"  // ¿ y ¡ automáticos al cerrar la pregunta
     const val RETARDO_LARGA = "retardo_larga"// ms
     const val BORDES_APP = "bordes_app_v2"
@@ -52,6 +54,15 @@ object Ajustes {
     const val PORTAPAPELES = "portapapeles"
     const val CAPTURAS = "capturas"
     const val ICONO_OCULTO = "icono_oculto"
+    const val DIVIDIDO = "teclado_dividido"       // letras separadas con el celular echado
+    const val CIERRE = "cierre_automatico"        // ofrecer ) » ? ! al cerrar la frase
+    const val CODIGOS = "codigos_sms"             // códigos de verificación en la barra
+    const val CONTRASENAS = "contrasenas_barra"   // llave con tus contraseñas guardadas
+    // Mis datos (para ofrecerlos en campos de correo, teléfono, dirección y nombre)
+    const val DATO_NOMBRE = "dato_nombre"
+    const val DATO_CORREO = "dato_correo"
+    const val DATO_TELEFONO = "dato_telefono"
+    const val DATO_DIRECCION = "dato_direccion"
 
     fun prefs(c: Context): SharedPreferences =
         c.applicationContext.getSharedPreferences(ARCHIVO, Context.MODE_PRIVATE)
@@ -81,9 +92,19 @@ class Config(p: SharedPreferences) {
     val altura = p.getInt(Ajustes.ALTURA, 100).coerceIn(75, 135)
     val margenAbajo = p.getInt(Ajustes.MARGEN_ABAJO, 0).coerceIn(0, 120)
     val ancho = p.getInt(Ajustes.ANCHO, 100).coerceIn(70, 100)
-    val vidrio = p.getBoolean(Ajustes.VIDRIO, false)
+    val vidrio = false   // estilo iOS: teclado opaco
     val alTocar = p.getBoolean(Ajustes.AL_TOCAR, true)
     val signosInicio = p.getBoolean(Ajustes.SIGNOS_INICIO, true)
+    val bloqueoMayus = p.getBoolean(Ajustes.BLOQUEO_MAYUS, true)
+    val codigos = p.getBoolean(Ajustes.CODIGOS, false)
+    val dividido = p.getBoolean(Ajustes.DIVIDIDO, true)
+    val cierre = p.getBoolean(Ajustes.CIERRE, true)
+    val contrasenas = p.getBoolean(Ajustes.CONTRASENAS, true)
+    val datoNombre = p.getString(Ajustes.DATO_NOMBRE, "")?.trim().orEmpty()
+    val datoCorreo = p.getString(Ajustes.DATO_CORREO, "")?.trim().orEmpty()
+    val datoTelefono = p.getString(Ajustes.DATO_TELEFONO, "")?.trim().orEmpty()
+    val datoDireccion = p.getString(Ajustes.DATO_DIRECCION, "")?.trim().orEmpty()
+    val puntuacion = p.getBoolean(Ajustes.PUNTUACION, true)
     val retardoLarga = p.getInt(Ajustes.RETARDO_LARGA, 320).coerceIn(150, 800)
     val bordesApp = p.getBoolean(Ajustes.BORDES_APP, true)
     val barraHerramientas = p.getBoolean(Ajustes.BARRA_HERRAMIENTAS, true)

@@ -369,7 +369,7 @@ class PanelEmoji(context: Context) : View(context) {
                     // Aviso centrado en el espacio reservado, con un marco punteado tenue
                     r.set(x0 + dp(2f), arribaGrilla() + dp(4f), x0 + anchoR - dp(2f), arribaGrilla() + cel * FILAS - dp(6f))
                     relleno.style = Paint.Style.STROKE; relleno.strokeWidth = d
-                    relleno.color = 0x24FFFFFF
+                    relleno.color = tema.velo(0x24)
                     relleno.pathEffect = android.graphics.DashPathEffect(floatArrayOf(dp(5f), dp(4f)), 0f)
                     c.drawRoundRect(r, dp(14f), dp(14f), relleno)
                     relleno.pathEffect = null; relleno.style = Paint.Style.FILL
@@ -389,7 +389,7 @@ class PanelEmoji(context: Context) : View(context) {
                 if (gx > w || gx + cols * colW < 0) continue
                 // Línea finita entre grupos (separa sin recargar)
                 if (g > 0) {
-                    relleno.color = 0x1AFFFFFF
+                    relleno.color = tema.velo(0x1A)
                     val lx = gx - SEPARACION_GRUPO_DP * d / 2
                     c.drawRect(lx - d * 0.35f, arribaGrilla() + cel * 0.6f, lx + d * 0.35f, arribaGrilla() + cel * (FILAS - 0.6f), relleno)
                 }
@@ -400,12 +400,9 @@ class PanelEmoji(context: Context) : View(context) {
                     val cx = gx + col * colW + colW / 2
                     val cy = arribaGrilla() + fila * cel + cel / 2
                     if (e == presionado) {
-                        // Vidrio con tinte violeta bajo el emoji que tocas
-                        relleno.color = 0x335E5CE6
+                        // Gris suave bajo el emoji que tocas (como en iOS)
+                        relleno.color = tema.velo(0x29)
                         c.drawRoundRect(cx - cel * 0.46f, cy - cel * 0.46f, cx + cel * 0.46f, cy + cel * 0.46f, dp(10f), dp(10f), relleno)
-                        filoIndicador.strokeWidth = dp(0.8f); filoIndicador.color = 0x59B9B8FF
-                        c.drawRoundRect(cx - cel * 0.46f, cy - cel * 0.46f, cx + cel * 0.46f, cy + cel * 0.46f, dp(10f), dp(10f), filoIndicador)
-                        filoIndicador.color = 0xFFFFFFFF.toInt()
                     }
                     dibujarEmoji(c, e, cx, cy, emojiP.textSize)
                 }
@@ -413,11 +410,7 @@ class PanelEmoji(context: Context) : View(context) {
         }
         c.restore()
 
-        // Franja de vidrio de las categorías (a juego con el teclado)
-        relleno.shader = vidrioAbajo(yAbajo, h)
-        c.drawRect(0f, yAbajo, w, h, relleno)
-        relleno.shader = null
-        relleno.color = 0x1FFFFFFF
+        relleno.color = tema.velo(0x1F)
         c.drawRect(0f, yAbajo, w, yAbajo + d * 0.6f, relleno)
 
         // Abajo: ABC, buscar, categorías, borrar
@@ -442,16 +435,9 @@ class PanelEmoji(context: Context) : View(context) {
             if (kotlin.math.abs(falta) > 0.5f) postInvalidateOnAnimation() else indicadorX = meta
             val cy = yAbajo + altoAbajo() / 2
             val rad = minOf(paso * 0.48f, dp(17f))
-            // Círculo violeta de vidrio con un halo suave
-            relleno.color = if (deslizandoCat) 0x2E5E5CE6 else 0x1A5E5CE6
-            c.drawCircle(indicadorX, cy, rad + dp(3.5f), relleno)
-            relleno.color = if (deslizandoCat) 0x805E5CE6.toInt() else 0x5C5E5CE6
+            // Círculo gris en la categoría actual, como en iOS
+            relleno.color = tema.velo(if (deslizandoCat) 0x3D else 0x29)
             c.drawCircle(indicadorX, cy, rad, relleno)
-            filoIndicador.strokeWidth = dp(0.8f)
-            filoIndicador.shader = android.graphics.LinearGradient(0f, cy - rad, 0f, cy + rad,
-                intArrayOf(0x8CFFFFFF.toInt(), 0x00B9B8FF, 0x33B9B8FF), floatArrayOf(0f, 0.55f, 1f), android.graphics.Shader.TileMode.CLAMP)
-            c.drawCircle(indicadorX, cy, rad - dp(0.4f), filoIndicador)
-            filoIndicador.shader = null
         }
         for (k in 0 until paradas) {
             val cx = izq + paso * k + paso / 2
@@ -480,7 +466,7 @@ class PanelEmoji(context: Context) : View(context) {
             for ((i, e) in opciones.withIndex()) {
                 val x0 = cajaTonos.left + anch * i
                 if (i == tonoElegido) {
-                    relleno.color = Tema.ROJO
+                    relleno.color = tema.velo(0x33)
                     c.drawRoundRect(x0 + dp(3f), cajaTonos.top + dp(5f), x0 + anch - dp(3f), cajaTonos.bottom - dp(5f), dp(8f), dp(8f), relleno)
                 }
                 c.drawText(e, x0 + anch / 2, cajaTonos.centerY() + emojiP.textSize * 0.35f, emojiP)

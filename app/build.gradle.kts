@@ -73,5 +73,7 @@ android {
 }
 
 dependencies {
+    // Estilo de las sugerencias de contraseñas (la llave en la barra, como en iPhone)
+    implementation("androidx.autofill:autofill:1.1.0")
     testImplementation("junit:junit:4.13.2")
 }

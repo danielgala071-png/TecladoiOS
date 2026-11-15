@@ -133,7 +133,12 @@ class Barra(context: Context) : View(context) {
 
     fun hayContenido() = sugerencias.isNotEmpty() || literal != null
 
-    fun chip(texto: String?) { chipTexto = texto; invalidate() }
+    /** [etiqueta]: "De Mensajes", "Tu correo"… (sin etiqueta es lo copiado) */
+    fun chip(texto: String?, etiqueta: String? = null) {
+        if (chipTexto == texto && chipEtiqueta == etiqueta) return
+        chipTexto = texto; chipEtiqueta = etiqueta; invalidate()
+    }
+    private var chipEtiqueta: String? = null
 
     fun captura(b: Bitmap?) { captura = b; invalidate() }
 
@@ -149,6 +154,7 @@ class Barra(context: Context) : View(context) {
     private val fuerte = TextPaint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 600) }
     private val icono = Paint(Paint.ANTI_ALIAS_FLAG)
     private val linea = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val pequeno = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 500) }
     private val relleno = Paint(Paint.ANTI_ALIAS_FLAG)
     private val r = RectF()
 
@@ -202,12 +208,13 @@ class Barra(context: Context) : View(context) {
         c.drawText(pregunta, dp(14f), h / 2 + texto.textSize * 0.36f, texto)
         texto.textAlign = Paint.Align.CENTER
         val apretado = { r: RectF -> tocando && toqueX >= r.left && toqueX <= r.right }
-        relleno.color = if (apretado(cancelar)) 0x42FFFFFF else 0x1FFFFFFF
+        relleno.color = if (apretado(cancelar)) tema.velo(0x42) else tema.velo(0x1F)
         c.drawRoundRect(cancelar, bh / 2, bh / 2, relleno)
         relleno.color = if (apretado(eliminar)) 0xFFC81E2B.toInt() else 0xFFFF3B30.toInt()
         c.drawRoundRect(eliminar, bh / 2, bh / 2, relleno)
-        fuerte.textSize = dp(14.5f); fuerte.color = 0xFFFFFFFF.toInt()
+        fuerte.textSize = dp(14.5f); fuerte.color = tema.texto
         c.drawText("Cancelar", cancelar.centerX(), h / 2 + fuerte.textSize * 0.36f, fuerte)
+        fuerte.color = 0xFFFFFFFF.toInt()
         c.drawText("Eliminar", eliminar.centerX(), h / 2 + fuerte.textSize * 0.36f, fuerte)
         texto.textSize = dp(16.5f); fuerte.textSize = dp(16.5f)
         zonas.add(RectF(cancelar.left - dp(4f), 0f, cancelar.right + dp(4f), h) to { porEliminar = null; invalidate() })
@@ -220,12 +227,12 @@ class Barra(context: Context) : View(context) {
     private val celdaMs = LongArray(3)
     private val celdaDura = FloatArray(3)
     private val celdaSube = FloatArray(3)
-    private val RETRASO_CELDA = longArrayOf(30L, 0L, 60L)
+    private val RETRASO_CELDA = longArrayOf(20L, 0L, 40L)
 
     // Destello de la palabra que elegiste
     private var elegidaMs = 0L
     private var elegidaCelda = -1
-    private val DESTELLO = 260f
+    private val DESTELLO = 150f
 
     private fun dibujarSugerencias(c: Canvas, w: Float, h: Float) {
         // Orden: [izquierda, centro (la mejor), derecha]
@@ -236,8 +243,6 @@ class Barra(context: Context) : View(context) {
         if (literal != null) { celdas[0] = literal; esLiteral[0] = true; celdas[2] = sugerencias.getOrNull(1) }
         else { celdas[0] = sugerencias.getOrNull(1); celdas[2] = sugerencias.getOrNull(2) }
         // La palabra recién corregida ocupa la izquierda y brilla en violeta
-        val corr = if (literal == null && destacada < 0) corregidaVisible() else null
-        if (corr != null) celdas[0] = corr
         // Botón de herramientas a la izquierda (cuatro puntitos, como Gboard)
         val boton = dp(40f)
         val ahora = android.os.SystemClock.uptimeMillis()
@@ -275,69 +280,38 @@ class Barra(context: Context) : View(context) {
                 celdaMs[i] = ahora + if (desdeVacio) RETRASO_CELDA[i] else RETRASO_CELDA[i] / 2
                 // Fundido cortito como el iPhone (al aparecer, sube apenas)
                 // Mientras escribes, las palabras cambian al instante (sin esperar ningún fundido)
-                celdaDura[i] = if (desdeVacio) 120f else 0f
-                celdaSube[i] = if (desdeVacio) dp(3f) else 0f
+                // Barra sin saltos: mientras escribes, las palabras cambian con un fundido
+                // rapidísimo en su lugar (nada se mueve). Solo al aparecer desde vacío entran
+                // con un deslizamiento cortito.
+                celdaDura[i] = if (desdeVacio) 140f else 70f
+                celdaSube[i] = if (desdeVacio) dp(8f) else 0f
                 celdaPrevia[i] = celdas[i]
             }
         }
         for (i in 0 until 3) {
             val s = celdas[i] ?: continue
             val x0 = i * ancho
-            val p = if (i == 1 && destacada >= 0) fuerte else texto
+            val p = texto
             val destacadaAqui = i == 1 && destacada >= 0
             val tc = if (celdaDura[i] > 0f) ((ahora - celdaMs[i]) / celdaDura[i]).coerceIn(0f, 1f) else 1f
             if (tc < 1f) seguir = true
             val uc = 1f - tc
             val ec = 1f - uc * uc * uc
             c.save()
-            c.translate(0f, celdaSube[i] * (1f - ec))
-            val escalaC = 0.97f + 0.03f * ec
-            c.scale(escalaC, escalaC, x0 + ancho / 2, h / 2)
-            // Sin cápsula ni color: la palabra que se pondrá sola brilla (blanco intenso con un
-            // halo suave) y las demás quedan en un blanco más tenue
-            // Todas legibles; la que se pondrá sola (o la que tocas) blanca con un reflejo de luz
-            val brillaTocada = i == celdaTocada
-            val brillaElegida = if (i == elegidaCelda) brilloElegida else 0f
-            val esCorregida = i == 0 && corr != null
-            p.color = if (destacadaAqui || brillaTocada || brillaElegida > 0f) 0xFFFFFFFF.toInt() else 0xD9EBEBF5.toInt()
-            var halo = when {
-                brillaElegida > 0f -> brillaElegida
-                destacadaAqui -> 0.75f
-                brillaTocada -> 0.55f
-                else -> 0f
+            c.translate(celdaSube[i] * (1f - ec), 0f)
+            // Como en iOS: todas en el mismo color; al tocar una, un fondo gris redondeado
+            val esCorregida = false
+            p.color = tema.texto
+            if (i == celdaTocada || (i == elegidaCelda && brilloElegida > 0f)) {
+                relleno.style = Paint.Style.FILL
+                relleno.color = if (tema.claro) 0x24000000 else tema.velo(0x29)
+                c.drawRoundRect(x0 + dp(3f), h * 0.12f, x0 + ancho - dp(3f), h * 0.88f, dp(7f), dp(7f), relleno)
             }
-            if (esCorregida) {
-                // Destello violeta que se apaga despacio; la palabra queda en lila suave
-                val tcorr = ((ahora - corregidaMs) / 900f).coerceIn(0f, 1f)
-                val fuerzaC = 1f - tcorr * tcorr
-                if (tcorr < 1f) seguir = true
-                p.color = Tema.mezclar(0xFFFFFFFF.toInt(), 0xFFB9B8FF.toInt(), 0.35f + 0.65f * fuerzaC)
-                halo = 0f
-                p.setShadowLayer(dp(4f) + dp(9f) * fuerzaC, 0f, 0f, ((0x60 + (0x9F * fuerzaC).toInt()) shl 24) or 0x5E5CE6)
-            } else if (halo > 0f) p.setShadowLayer(dp(5f) + dp(7f) * halo, 0f, 0f, ((0xCC * halo).toInt() shl 24) or 0xFFFFFF)
-            val mostrado = if (esLiteral[i]) "«$s»" else if (esCorregida) "↶ $s" else s
+            val mostrado = if (esLiteral[i]) "“$s”" else s
             val corto = TextUtils.ellipsize(mostrado, p, ancho - dp(22f), TextUtils.TruncateAt.MIDDLE).toString()
-            val alfaBase = p.alpha
-            p.alpha = (alfaBase * (0.15f + 0.85f * ec)).toInt()
+            p.alpha = (255 * (0.2f + 0.8f * ec)).toInt()
             c.drawText(corto, x0 + ancho / 2, h / 2 + p.textSize * 0.36f, p)
-            p.alpha = alfaBase
-            // Línea de luz azul → violeta bajo la palabra principal (más fuerte al elegirla)
-            val fuerza = maxOf(if (destacadaAqui) 0.55f else 0f, brillaElegida)
-            if (fuerza > 0f) {
-                val medio = minOf(p.measureText(corto) * 0.42f, ancho / 2 - dp(10f))
-                val yl = h / 2 + p.textSize * 0.36f + dp(7f)
-                // Degradado armado una vez; aquí solo se estira a la palabra
-                matrizLinea.setScale(medio * 2f, 1f)
-                matrizLinea.postTranslate(x0 + ancho / 2 - medio, 0f)
-                degradadoLinea.setLocalMatrix(matrizLinea)
-                val lin = if (estilo == 1) degradadoCalido else degradadoLinea
-                lin.setLocalMatrix(matrizLinea)
-                lineaLuz.shader = lin
-                lineaLuz.alpha = (255 * fuerza).toInt().coerceIn(0, 255)
-                lineaLuz.setShadowLayer(dp(6f) + dp(6f) * fuerza, 0f, 0f, if (estilo == 1) 0xE6FF7A6B.toInt() else 0xE65E5CE6.toInt())
-                c.drawRoundRect(x0 + ancho / 2 - medio, yl, x0 + ancho / 2 + medio, yl + dp(2.5f), dp(1.25f), dp(1.25f), lineaLuz)
-            }
-            if (halo > 0f || esCorregida) p.clearShadowLayer()
+            p.alpha = 255
             c.restore()
             val rr = RectF(desplazamiento + x0, 0f, desplazamiento + x0 + ancho, h)
             val lit = esLiteral[i]
@@ -347,7 +321,8 @@ class Barra(context: Context) : View(context) {
             if (!lit) zonasLargas.add(rr to { porEliminar = s; invalidate() })
         }
         // Separadores: no se dibujan junto a una casilla vacía
-        for (i in 1..2) if (celdas[i - 1] != null && celdas[i] != null) c.drawLine(i * ancho, h * 0.3f, i * ancho, h * 0.7f, linea)
+        // Tres lugares fijos: las dos líneas siempre en su sitio, aunque falte alguna palabra
+        for (i in 1..2) c.drawLine(i * ancho, h * 0.3f, i * ancho, h * 0.7f, linea)
         c.restore()
         if (seguir) postInvalidateOnAnimation()
     }
@@ -398,7 +373,7 @@ class Barra(context: Context) : View(context) {
             // Volver a las palabras
             val cx = dp(22f); val cy = h / 2
             val apretado = tocando && toqueX in 0f..dp(42f)
-            relleno.color = if (apretado) 0x42FFFFFF else 0x17FFFFFF
+            relleno.color = if (apretado) tema.velo(0x42) else tema.velo(0x17)
             c.drawCircle(cx, cy, dp(15f), relleno)
             icono.color = tema.textoSuave
             Iconos.flecha(c, cx, cy, dp(30f), icono, 0f)
@@ -428,19 +403,25 @@ class Barra(context: Context) : View(context) {
         if (chip != null) {
             texto.textSize = dp(14f)
             val maxChip = (w - izq - espacioHerr - dp(16f)).coerceAtLeast(dp(60f))
-            val corto = TextUtils.ellipsize(chip.replace('\n', ' '), texto, maxChip - dp(36f), TextUtils.TruncateAt.END).toString()
-            val anchoChip = texto.measureText(corto) + dp(36f)
+            val etq = chipEtiqueta
+            val anchoEtq = if (etq != null) { pequeno.textSize = dp(11.5f); pequeno.measureText(etq) + dp(8f) } else 0f
+            val sangria = if (etq != null) dp(14f) + anchoEtq else dp(28f)
+            val corto = TextUtils.ellipsize(chip.replace('\n', ' '), texto, maxChip - sangria - dp(8f), TextUtils.TruncateAt.END).toString()
+            val anchoChip = texto.measureText(corto) + sangria + dp(14f)
             r.set(izq, dp(7f), izq + anchoChip, h - dp(7f))
             relleno.color = tema.teclaFuncion
             c.drawRoundRect(r, r.height() / 2, r.height() / 2, relleno)
-            relleno.style = Paint.Style.STROKE; relleno.strokeWidth = dp(1f); relleno.color = Tema.mezclar(tema.acento, 0, 0.7f)
-            c.drawRoundRect(r, r.height() / 2, r.height() / 2, relleno)
-            relleno.style = Paint.Style.FILL
-            icono.color = tema.textoSuave
-            Iconos.portapapeles(c, r.left + dp(16f), r.centerY(), dp(22f), icono)
+            if (etq != null) {
+                pequeno.color = tema.textoSuave; pequeno.textAlign = Paint.Align.LEFT
+                c.drawText(etq, r.left + dp(14f), r.centerY() + pequeno.textSize * 0.36f, pequeno)
+                pequeno.textAlign = Paint.Align.CENTER
+            } else {
+                icono.color = tema.textoSuave
+                Iconos.portapapeles(c, r.left + dp(16f), r.centerY(), dp(22f), icono)
+            }
             texto.color = tema.texto
             texto.textAlign = Paint.Align.LEFT
-            c.drawText(corto, r.left + dp(28f), r.centerY() + texto.textSize * 0.36f, texto)
+            c.drawText(corto, r.left + sangria, r.centerY() + texto.textSize * 0.36f, texto)
             texto.textAlign = Paint.Align.CENTER
             zonas.add(RectF(r) to { oyente?.pegarChip() })
             texto.textSize = dp(16.5f)
@@ -454,7 +435,7 @@ class Barra(context: Context) : View(context) {
             val cx = x + anchoHerr / 2; val cy = h / 2
             // Cada herramienta en un botón redondo oscuro
             val apretado = toqueX in x..(x + anchoHerr) && tocando
-            relleno.color = if (apretado) 0x42FFFFFF else 0x17FFFFFF
+            relleno.color = if (apretado) tema.velo(0x42) else tema.velo(0x17)
             c.drawCircle(cx, cy, dp(17f), relleno)
             // Aro de luz finísimo: el botón se ve con relieve
             linea.color = 0x1AFFFFFF; linea.strokeWidth = d * 0.7f
@@ -511,7 +492,7 @@ class Barra(context: Context) : View(context) {
         for ((i, e) in resultados.withIndex()) {
             if (i == recientes && recientes > 0) {
                 // Separador finito: después de tus recientes vienen los emojis normales
-                relleno.color = 0x33FFFFFF
+                relleno.color = tema.velo(0x33)
                 val lx = x + hueco / 2
                 c.drawRect(lx - d * 0.5f, h * 0.25f, lx + d * 0.5f, h * 0.75f, relleno)
                 x += hueco

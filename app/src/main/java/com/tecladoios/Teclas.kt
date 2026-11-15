@@ -50,6 +50,8 @@ object Distribuciones {
     const val CAMPO_TEXTO = 0
     const val CAMPO_CORREO = 1
     const val CAMPO_WEB = 2
+    /** Montos (número con decimales): teclado numérico con la coma o el punto de tu país */
+    const val CAMPO_DECIMAL = 3
 
     private val PISTAS = mapOf(
         'q' to "1", 'w' to "2", 'e' to "3", 'r' to "4", 't' to "5", 'y' to "6", 'u' to "7", 'i' to "8", 'o' to "9", 'p' to "0",
@@ -100,8 +102,9 @@ object Distribuciones {
         return when (campo) {
             CAMPO_CORREO -> Fila(listOf(izquierda, emoji, texto("@", 1f), Tecla(K.ESPACIO, "", 3.6f),
                 texto(".", 1f, listOf(",", "-", "_", ".com", ".pe", ".gob.pe")), intro))
-            CAMPO_WEB -> Fila(listOf(izquierda, emoji, texto("/", 1f), Tecla(K.ESPACIO, "", 3.6f),
-                texto(".", 1f, listOf(".com", ".pe", ".gob.pe", ".org", "-", "_")), intro))
+            // Como en iOS: en direcciones web van "/" "." y ".com" (manteniéndolo: .pe .org .net…)
+            CAMPO_WEB -> Fila(listOf(izquierda, emoji, texto("/", 1f), Tecla(K.ESPACIO, "", 2.2f),
+                texto(".", 1f, listOf("-", "_", ":")), texto(".com", 1.4f, listOf(".pe", ".com.pe", ".gob.pe", ".org", ".net", ".es")), intro))
             // Sin la tecla del punto: el espacio ocupa su lugar (el punto sale con doble espacio o en 123)
             else -> Fila(listOf(izquierda, emoji, Tecla(K.ESPACIO, "", 5.6f), intro))
         }
@@ -131,17 +134,26 @@ object Distribuciones {
                 texto("°"), texto("§"), texto("…"), Tecla(K.BORRAR, "", 1.5f))),
             filaAbajo(modo, campo),
         ), "#+=")
+        // Teclado numérico como el de iOS: 3 columnas, número grande con letras debajo.
+        // Abajo a la izquierda va intro (para enviar el código); manteniendo el 0 salen . , -
         NUMEROS -> Distribucion(listOf(
-            Fila(listOf(texto("1", 2f), texto("2", 2f), texto("3", 2f), texto("-", 1.4f))),
-            Fila(listOf(texto("4", 2f), texto("5", 2f), texto("6", 2f), texto(",", 1.4f))),
-            Fila(listOf(texto("7", 2f), texto("8", 2f), texto("9", 2f), Tecla(K.BORRAR, "", 1.4f))),
-            Fila(listOf(texto(".", 2f), texto("0", 2f), Tecla(K.ESPACIO, "", 2f), Tecla(K.INTRO, "", 1.4f))),
+            Fila(listOf(texto("1", 2f), texto("2", 2f), texto("3", 2f))),
+            Fila(listOf(texto("4", 2f), texto("5", 2f), texto("6", 2f))),
+            Fila(listOf(texto("7", 2f), texto("8", 2f), texto("9", 2f))),
+            if (campo == CAMPO_DECIMAL) {
+                // Como el teclado decimal de iOS: abajo a la izquierda va el separador de tu país
+                // (en Perú, el punto); manteniéndolo salen el otro separador y el signo menos
+                val sep = java.text.DecimalFormatSymbols.getInstance().decimalSeparator.toString()
+                val otro = if (sep == ".") "," else "."
+                Fila(listOf(Tecla(K.TEXTO, sep, 2f, null, listOf(otro, "-"), funcion = true),
+                    texto("0", 2f), Tecla(K.BORRAR, "", 2f)))
+            } else Fila(listOf(Tecla(K.INTRO, "", 2f), texto("0", 2f, listOf(".", ",", "-")), Tecla(K.BORRAR, "", 2f))),
         ), "num")
         TELEFONO -> Distribucion(listOf(
-            Fila(listOf(texto("1", 2f), texto("2", 2f), texto("3", 2f), texto("+", 1.4f))),
-            Fila(listOf(texto("4", 2f), texto("5", 2f), texto("6", 2f), texto("*", 1.4f))),
-            Fila(listOf(texto("7", 2f), texto("8", 2f), texto("9", 2f), Tecla(K.BORRAR, "", 1.4f))),
-            Fila(listOf(texto("#", 2f), texto("0", 2f), Tecla(K.ESPACIO, "", 2f), Tecla(K.INTRO, "", 1.4f))),
+            Fila(listOf(texto("1", 2f), texto("2", 2f), texto("3", 2f))),
+            Fila(listOf(texto("4", 2f), texto("5", 2f), texto("6", 2f))),
+            Fila(listOf(texto("7", 2f), texto("8", 2f), texto("9", 2f))),
+            Fila(listOf(texto("+", 2f, listOf("*", "#", ",", ";")), texto("0", 2f, listOf("+")), Tecla(K.BORRAR, "", 2f))),
         ), "tel")
         else -> {
             val filas = ArrayList<Fila>(5)
