@@ -303,7 +303,7 @@ class SettingsActivity : Activity() {
 
         // Sin sonido (gasta batería): solo queda la vibración, corta e igual en todas las teclas
         val son = seccion("Vibración")
-        interruptor(son, "Vibración al tocar", Ajustes.VIBRACION, true, "Un toque corto en cada tecla")
+        interruptor(son, "Vibración al tocar", Ajustes.VIBRACION, true, "Un toque seco en las letras y otro golpe en espacio, borrar, intro, mayúscula, 123 y emoji")
 
         val por = seccion("Portapapeles y capturas", "Lo copiado se guarda una hora (lo fijado, siempre). Las contraseñas copiadas no se guardan.")
         interruptor(por, "Historial del portapapeles", Ajustes.PORTAPAPELES, true)

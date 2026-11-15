@@ -50,11 +50,13 @@ class Respuesta(c: Context) {
 
     fun tocar(t: Tipo) {
         val cfg = config ?: return
-        // Ahorro: sin sonido y vibración corta igual para todas las teclas
+        // Sin sonido (gasta batería); la vibración sí, con su textura por tecla
         val vib = cfg.vibracion; val son = cfg.sonido && !Ahorro.activo; val vol = cfg.volumen
         if (!vib && !son) return
         manejador.post {
-            if (vib) vibrar(if (Ahorro.activo) Tipo.SUAVE else t)
+            // Vibración con textura: letras un «tic» seco; mayúscula, 123, emoji, espacio,
+            // intro y borrar cada una con su propio golpe
+            if (vib) vibrar(t)
             if (son) {
                 cargarSonidos()
                 val v = vol / 100f
