@@ -71,6 +71,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     // La mayúscula solo cambia letras y el color de la tecla shift: no se redibuja todo
     var shift = 0; set(v) {
         if (field != v) {
+            // La tecla mayúscula pasa de gris a blanco (o al revés) con un fundido
+            shiftAntes = field; shiftCambioMs = SystemClock.uptimeMillis()
             // Minúsculas ↔ mayúsculas con un fundido cortito (se guarda cómo se veían)
             val l = cacheLetras
             if (l != null && !l.isRecycled && isShown && distribucion.nombre == "abc" && !modoTrackpad) {
@@ -1060,7 +1062,52 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     /** La barra espaciadora hace un pulso violeta suave (punto automático o mayúscula sola) */
-    fun respirarEspacio() {}
+    /** Al terminar una frase, la fila de abajo hace un pulso de luz muy tenue */
+    fun respirarEspacio() { respiroMs = SystemClock.uptimeMillis(); invalidate() }
+    private var respiroMs = 0L
+    private val RESPIRO = 460f
+
+    private var shiftAntes = 0
+    private var shiftCambioMs = 0L
+    private val FUNDIDO_SHIFT = 130f
+    private val iconoVivo = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+
+    /** Dibuja encima la tecla mayúscula como estaba antes, desvaneciéndose */
+    private fun dibujarFundidoShift(c: Canvas, ahora: Long) {
+        if (shiftCambioMs == 0L || modoTrackpad) return
+        val t = (ahora - shiftCambioMs) / FUNDIDO_SHIFT
+        if (t >= 1f) { shiftCambioMs = 0L; return }
+        val k = teclaDe(K.SHIFT) ?: return
+        val r = k.dibujo
+        val radio = radioDe(r)
+        val a = ((1f - suave(t)) * 255).toInt().coerceIn(0, 255)
+        relleno.shader = null
+        relleno.color = if (shiftAntes > 0) SHIFT_BLANCO else tema.teclaFuncion
+        relleno.alpha = a
+        c.drawRoundRect(r, radio, radio, relleno)
+        relleno.alpha = 255
+        iconoVivo.color = if (shiftAntes > 0) FLECHA_NEGRA else tema.texto
+        iconoVivo.alpha = a
+        iconoVivo.style = Paint.Style.STROKE
+        Iconos.shift(c, r.centerX(), r.centerY(), minOf(r.height(), r.width()), iconoVivo, shiftAntes > 0, shiftAntes == 2)
+        postInvalidateOnAnimation()
+    }
+
+    /** Pulso tenue en la fila de abajo (punto final o mayúscula de frase nueva) */
+    private fun dibujarRespiro(c: Canvas, ahora: Long) {
+        if (respiroMs == 0L || modoTrackpad) return
+        val t = (ahora - respiroMs) / RESPIRO
+        if (t >= 1f) { respiroMs = 0L; return }
+        val f = kotlin.math.sin(Math.PI.toFloat() * t)
+        val ultima = colocadas.maxOfOrNull { it.fila } ?: return
+        relleno.shader = null
+        relleno.color = tema.velo((0x1C * f).toInt())
+        for (k in colocadas) if (k.fila == ultima) {
+            val radio = radioDe(k.dibujo)
+            c.drawRoundRect(k.dibujo, radio, radio, relleno)
+        }
+        postInvalidateOnAnimation()
+    }
 
     private fun teclaDe(tipo: Int): Colocada? { for (k in colocadas) if (k.tecla.tipo == tipo) return k; return null }
 
@@ -1323,6 +1370,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
 
         dibujarLuces(c, ahora)
+        dibujarFundidoShift(c, ahora)
+        dibujarRespiro(c, ahora)
 
         // Cursor de vidrio: al mover el cursor con el espacio, el teclado queda como un panel
         // de vidrio vacío y un punto de luz sigue tu dedo
