@@ -804,8 +804,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     /** 0 = en reposo, 1 = hundida del todo (al volver puede pasar un pelito a negativo: resorte) */
     private fun hundimiento(p: Pulso, ahora: Long): Float {
-        // Ahorro: sin hundirse ni rebotar (cero cuadros de animación)
-        if (Ahorro.activo) return 0f
+        // Profundidad sin gasto: hundida del todo mientras la tocas y en su lugar al soltar
+        // (dos dibujos por toque, ningún cuadro de animación)
+        if (Ahorro.activo) return if (p.suelta == 0L) 1f else 0f
         if (p.suelta == 0L) return suave(((ahora - p.t0) / HUNDIR).coerceIn(0f, 1f))
         val r = ((ahora - p.suelta) / VOLVER).coerceIn(0f, 1f)
         // Resorte de goma más fluido: vuelve, se pasa una sola vez y se asienta suave
@@ -1597,7 +1598,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 if (terminado(e.value, ahora)) { it.remove(); continue }
                 dibujarPulso(c, e.key, e.value, ahora, fondo, letras)
             }
-            if (pulsos.values.any { it.suelta != 0L || ahora - it.t0 < maxOf(HUNDIR, EXPANDE) }) postInvalidateOnAnimation()
+            if (!Ahorro.activo && pulsos.values.any { it.suelta != 0L || ahora - it.t0 < maxOf(HUNDIR, EXPANDE) }) postInvalidateOnAnimation()
         }
 
 
