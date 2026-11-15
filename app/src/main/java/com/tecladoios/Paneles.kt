@@ -31,6 +31,11 @@ abstract class PanelBase(context: Context) : View(context) {
 
     protected fun boton(c: Canvas, r: RectF, txt: String?, ic: Int, funcion: Boolean, repite: Boolean = false, accion: () -> Unit) {
         val apretado = activo?.r == r
+        if (!tema.claro && !apretado) {
+            // Obsidiana carmesí: base roja asomando bajo cada botón, como las teclas
+            relleno.color = tema.sombra
+            c.drawRoundRect(r.left, r.top + dp(2f), r.right, r.bottom + dp(2f), dp(8f), dp(8f), relleno)
+        }
         relleno.color = if (apretado) tema.teclaPresionada else if (funcion) tema.teclaFuncion else tema.tecla
         c.drawRoundRect(r, dp(8f), dp(8f), relleno)
         borde.color = tema.bordeTecla; borde.strokeWidth = dp(0.8f)
@@ -179,10 +184,21 @@ class PanelPortapapeles(context: Context) : PanelBase(context) {
                 val r = RectF(x0, y0, x0 + anchoT, y0 + altoT)
                 tarjetas.add(r to e)
                 if (r.bottom < 0 || r.top > fondoAbajo) continue
-                relleno.color = if (marcado == e) tema.teclaPresionada else tema.tecla
+                // Fichas de obsidiana: base carmesí abajo; la marcada se enciende en rojo metálico
+                // y las fijadas llevan un filo carmesí
+                if (!tema.claro) {
+                    relleno.color = tema.sombra
+                    c.drawRoundRect(r.left, r.top + dp(2.5f), r.right, r.bottom + dp(2.5f), dp(10f), dp(10f), relleno)
+                }
+                relleno.color = if (marcado == e) (if (tema.claro) tema.teclaPresionada else tema.teclaFuncion) else tema.tecla
                 c.drawRoundRect(r, dp(10f), dp(10f), relleno)
-                borde.color = if (e.fijo) tema.acento else tema.bordeTecla; borde.strokeWidth = dp(if (e.fijo) 1.4f else 0.8f)
-                c.drawRoundRect(r, dp(10f), dp(10f), borde)
+                if (e.fijo || tema.claro) {
+                    borde.color = if (e.fijo) tema.acento else tema.bordeTecla; borde.strokeWidth = dp(if (e.fijo) 1.4f else 0.8f)
+                    c.drawRoundRect(r, dp(10f), dp(10f), borde)
+                } else {
+                    relleno.color = 0x30FF8A96
+                    c.drawRect(r.left + dp(10f), r.top + dp(0.5f), r.right - dp(10f), r.top + dp(1.3f), relleno)
+                }
                 val lay = StaticLayout.Builder.obtain(e.texto, 0, minOf(e.texto.length, 300), chico, (anchoT - dp(20f)).toInt())
                     .setAlignment(Layout.Alignment.ALIGN_NORMAL).setMaxLines(3)
                     .setEllipsize(android.text.TextUtils.TruncateAt.END).build()

@@ -663,13 +663,28 @@ class Barra(context: Context) : View(context) {
         var x = w - dp(4f) - espacioHerr
         if (chip == null && cap == null) x = maxOf(izq, (w - espacioHerr) / 2f)
         icono.color = tema.textoSuave
-        val s = dp(30f)
+        val s = if (tema.claro) dp(30f) else dp(24f)
         for (hId in herrs) {
             val cx = x + anchoHerr / 2; val cy = h / 2
             // Cada herramienta en un botón redondo oscuro
             // Solo el ícono dentro de la cápsula (más limpio); el círculo aparece al tocarlo
             val apretado = toqueX in x..(x + anchoHerr) && tocando
-            if (apretado) { relleno.color = tema.velo(0x30); c.drawCircle(cx, cy, dp(16f), relleno) }
+            if (tema.claro) {
+                if (apretado) { relleno.color = tema.velo(0x30); c.drawCircle(cx, cy, dp(16f), relleno) }
+            } else {
+                // Obsidiana carmesí: cada herramienta es una mini tecla roja metálica con base;
+                // al tocarla se hunde sobre su base
+                val lado = minOf(anchoHerr - dp(8f), h - dp(10f)) / 2f
+                val hundir = if (apretado) dp(1.5f) else 0f
+                relleno.style = Paint.Style.FILL
+                relleno.color = 0xFF5A0F1A.toInt()
+                c.drawRoundRect(cx - lado, cy - lado + dp(2f), cx + lado, cy + lado + dp(2f), dp(7f), dp(7f), relleno)
+                relleno.color = if (apretado) 0xFF5C1420.toInt() else 0xFF3B0C14.toInt()
+                c.drawRoundRect(cx - lado, cy - lado + hundir, cx + lado, cy + lado + hundir, dp(7f), dp(7f), relleno)
+                relleno.color = 0x40FF8A96
+                c.drawRect(cx - lado + dp(7f), cy - lado + hundir + dp(0.4f), cx + lado - dp(7f), cy - lado + hundir + dp(1.2f), relleno)
+                icono.color = 0xFFF5F2EA.toInt()
+            }
             when (hId) {
                 H_EMOJI -> Iconos.cara(c, cx, cy, s, icono)
                 H_PORTAPAPELES -> Iconos.portapapeles(c, cx, cy, s, icono)

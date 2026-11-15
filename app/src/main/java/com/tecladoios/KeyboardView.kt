@@ -611,7 +611,12 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             Modo.NORMAL -> if (c != null) {
                 when (c.tecla.tipo) {
                     K.TEXTO -> if (dd.emitida) capa.ocultarGlobo() else emitir(dd)
-                    K.ESPACIO, K.INTRO, K.EMOJI -> oyente?.codigo(c.tecla.tipo)
+                    K.ESPACIO, K.INTRO, K.EMOJI -> {
+                        if (c.tecla.tipo == K.INTRO && !tema.claro) {
+                            ondaIntro.set(c.dibujo); ondaMs = SystemClock.uptimeMillis(); postInvalidateOnAnimation()
+                        }
+                        oyente?.codigo(c.tecla.tipo)
+                    }
                 }
             }
             Modo.DESLIZAR -> {
@@ -1286,6 +1291,28 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         postInvalidateOnAnimation()
     }
 
+    /** Pulso al enviar: dos ondas carmesí salen de la tecla intro y se apagan (300 ms) */
+    private val ondaIntro = RectF()
+    private var ondaMs = 0L
+    private val pinturaOnda = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0xFFE0112F.toInt() }
+    private fun dibujarOndaIntro(c: Canvas, ahora: Long) {
+        if (ondaMs == 0L) return
+        val t = (ahora - ondaMs) / 300f
+        if (t >= 1f) { ondaMs = 0L; return }
+        val radio = radioDe(ondaIntro)
+        for (k in 0..1) {
+            val tk = (t - k * 0.22f).coerceIn(0f, 1f)
+            if (tk <= 0f) continue
+            val e = 1f - (1f - tk) * (1f - tk)
+            val crece = dp(9f) * e
+            pinturaOnda.strokeWidth = dp(1.6f) * (1f - e) + dp(0.4f)
+            pinturaOnda.alpha = (200 * (1f - tk)).toInt().coerceIn(0, 255)
+            c.drawRoundRect(ondaIntro.left - crece, ondaIntro.top - crece, ondaIntro.right + crece, ondaIntro.bottom + crece,
+                radio + crece, radio + crece, pinturaOnda)
+        }
+        postInvalidateOnAnimation()
+    }
+
     /** Pulso tenue en la fila de abajo (punto final o mayúscula de frase nueva) */
     private fun dibujarRespiro(c: Canvas, ahora: Long) {
         if (respiroMs == 0L || modoTrackpad) return
@@ -1575,6 +1602,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         dibujarFundidoShift(c, ahora)
         dibujarRespiro(c, ahora)
         dibujarComida(c, ahora)
+        dibujarOndaIntro(c, ahora)
 
         // Cursor de vidrio: al mover el cursor con el espacio, el teclado queda como un panel
         // de vidrio vacío y un punto de luz sigue tu dedo
