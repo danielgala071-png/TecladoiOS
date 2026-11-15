@@ -1294,7 +1294,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     /** Pulso al enviar: dos ondas carmesí salen de la tecla intro y se apagan (300 ms) */
     private val ondaIntro = RectF()
     private var ondaMs = 0L
-    private val pinturaOnda = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0xFFE0112F.toInt() }
+    private val pinturaIntro = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0xFFE0112F.toInt() }
     private fun dibujarOndaIntro(c: Canvas, ahora: Long) {
         if (ondaMs == 0L) return
         val t = (ahora - ondaMs) / 300f
@@ -1305,10 +1305,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             if (tk <= 0f) continue
             val e = 1f - (1f - tk) * (1f - tk)
             val crece = dp(9f) * e
-            pinturaOnda.strokeWidth = dp(1.6f) * (1f - e) + dp(0.4f)
-            pinturaOnda.alpha = (200 * (1f - tk)).toInt().coerceIn(0, 255)
+            pinturaIntro.strokeWidth = dp(1.6f) * (1f - e) + dp(0.4f)
+            pinturaIntro.alpha = (200 * (1f - tk)).toInt().coerceIn(0, 255)
             c.drawRoundRect(ondaIntro.left - crece, ondaIntro.top - crece, ondaIntro.right + crece, ondaIntro.bottom + crece,
-                radio + crece, radio + crece, pinturaOnda)
+                radio + crece, radio + crece, pinturaIntro)
         }
         postInvalidateOnAnimation()
     }
