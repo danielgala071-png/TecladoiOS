@@ -264,6 +264,7 @@ class Barra(context: Context) : View(context) {
         p.textAlign = alin
     }
     private val pinturaFondo = Paint()
+    private val pinturaCapsula = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private fun dibujarTodo(c: Canvas) {
         zonas.clear(); zonasLargas.clear()
@@ -273,6 +274,15 @@ class Barra(context: Context) : View(context) {
             // Diseño C: el mismo negro del teclado, sin matiz de la app (una sola pieza)
             pinturaFondo.color = tema.fondoBarra
             c.drawRect(0f, 0f, w, h, pinturaFondo)
+            // Cápsula compacta pegada al teclado: fondo grafito oscuro con el mismo contorno
+            // fino de las letras, para que barra y teclas se vean como un solo diseño
+            val l = dp(5f); val arr = dp(3f); val ab = dp(1f)
+            val radio = (h - arr - ab) / 2f
+            pinturaCapsula.style = Paint.Style.FILL; pinturaCapsula.color = 0xFF0E0E10.toInt()
+            c.drawRoundRect(l, arr, w - l, h - ab, radio, radio, pinturaCapsula)
+            pinturaCapsula.style = Paint.Style.STROKE; pinturaCapsula.strokeWidth = dp(1f); pinturaCapsula.color = 0xFF38383A.toInt()
+            val m = dp(0.5f)
+            c.drawRoundRect(l + m, arr + m, w - l - m, h - ab - m, radio, radio, pinturaCapsula)
         }
         // Línea finísima que separa la barra de las teclas (detalle premium, casi invisible)
         // Sin línea de borde: la barra y las teclas son una sola pieza de vidrio
@@ -310,13 +320,14 @@ class Barra(context: Context) : View(context) {
         val f = kotlin.math.sin(Math.PI.toFloat() * t)
         pinturaLineaC.shader = degradadoLineaC
         pinturaLineaC.alpha = (255 * f * (if (tema.claro) 0.5f else 0.75f)).toInt().coerceIn(0, 255)
-        c.drawRect(0f, h - dp(0.8f), w, h, pinturaLineaC)
+        // Dentro de la cápsula, en su borde de abajo
+        c.drawRect(dp(5f) + h / 2f, h - dp(2.6f), w - dp(5f) - h / 2f, h - dp(1.8f), pinturaLineaC)
         postInvalidateOnAnimation()
     }
 
     private fun dibujarContenido(c: Canvas, w: Float, h: Float) {
         // En el navegador la barra es más compacta (letra algo menor)
-        val tam = if (estilo == 2) dp(15.5f) else dp(17.5f)
+        val tam = if (estilo == 2) dp(15f) else dp(16.5f)   // cápsula compacta
         texto.textSize = tam; fuerte.textSize = tam
         linea.color = tema.separador; linea.strokeWidth = dp(0.8f); linea.strokeCap = Paint.Cap.ROUND
         if (buscando) { dibujarBusqueda(c, w, h); return }

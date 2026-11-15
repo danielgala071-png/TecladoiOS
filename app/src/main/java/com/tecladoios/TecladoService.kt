@@ -207,7 +207,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         }
         val columna = LinearLayout(c).apply {
             orientation = LinearLayout.VERTICAL
-            addView(zonaBarra(c, br), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (44 * resources.displayMetrics.density).toInt()))
+            // Barra compacta (cápsula de 38 dp pegada al teclado)
+            addView(zonaBarra(c, br), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (38 * resources.displayMetrics.density).toInt()))
             addView(cuerpo, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         val m = Marco(c).apply {

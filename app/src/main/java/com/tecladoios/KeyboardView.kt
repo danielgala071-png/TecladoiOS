@@ -761,7 +761,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     // Reacción instantánea: ya en el primer cuadro del toque la tecla se ve hundida
     private val HUNDIR = 40f     // se hunde en un instante
     private val VOLVER = 280f    // al soltar vuelve con un rebote elástico
-    private val ENCOGE = 0.05f   // cuánto se achica (la profundidad la da la inclinación)
+    private val ENCOGE = 0.04f   // cuánto se achica al hundirse
     private val EXPANDE = 120f   // la almohadilla de color crece desde el centro
     private val APAGAR = 110f   // al soltar sube con un rebote cortito y el brillo se apaga
     private val BAJAR = 55f     // se hunde en un instante (se siente, pero no retrasa nada)
@@ -1077,17 +1077,11 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         }
 
         c.save()
-        // 2. Profundidad 3D: la tecla se inclina hacia adentro (el borde de arriba se va al
-        //    fondo, girando sobre su base) y se encoge apenas; al soltar rebota como goma
-        camara.save()
-        camara.rotateX(INCLINA * h)
-        camara.getMatrix(matrizInclina)
-        camara.restore()
-        matrizInclina.preTranslate(-r.centerX(), -r.bottom)
-        matrizInclina.postTranslate(r.centerX(), r.bottom)
-        c.concat(matrizInclina)
+        // 2. Profundidad: la tecla se hunde derecho (baja 3 dp y se achica apenas, sin
+        //    inclinarse); al soltar sube y rebota como goma
+        c.translate(0f, HUNDE * h)
         val esc = 1f - ENCOGE * h
-        c.scale(esc, esc, r.centerX(), r.bottom)
+        c.scale(esc, esc, r.centerX(), r.centerY())
         cuerpoTecla(c, r, radio, t, blanca)
         // 3. La almohadilla: la tecla se llena al instante y el relleno se apaga al soltar
         if (l > 0.01f) {
@@ -1129,10 +1123,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         c.restore()
     }
 
-    // Profundidad 3D al presionar
-    private val camara = android.graphics.Camera().apply { setLocation(0f, 0f, -12f) }
-    private val matrizInclina = android.graphics.Matrix()
-    private val INCLINA = 24f    // grados que se inclina hacia adentro
+    // Profundidad al presionar: cuánto baja la tecla
+    private val HUNDE by lazy { dp(3f) }
     private val sombraInterior = android.graphics.LinearGradient(0f, 0f, 0f, 1f,
         intArrayOf(0xB0000000.toInt(), 0x40000000, 0x00000000), floatArrayOf(0f, 0.35f, 0.7f), android.graphics.Shader.TileMode.CLAMP)
     private val matrizSombra = android.graphics.Matrix()
