@@ -69,6 +69,8 @@ android {
     testOptions {
         // Las pruebas corren en la computadora de GitHub (sin Android): lo de Android devuelve vacío
         unitTests.isReturnDefaultValues = true
+        // Armar el diccionario completo al compilar necesita más memoria
+        unitTests.all { it.maxHeapSize = "2g" }
     }
 }
 

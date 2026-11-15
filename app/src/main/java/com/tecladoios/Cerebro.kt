@@ -66,59 +66,26 @@ object Cerebro {
     }
 
     private fun lineas(c: Context, archivo: String): List<String> = try {
-        c.assets.open(archivo).bufferedReader().useLines { ls -> ls.map { it.trim() }.filter { it.isNotEmpty() && it[0] != '#' }.toList() }
+        c.assets.open(archivo).bufferedReader().useLines { ls -> ArmarDiccionario.utiles(ls) }
     } catch (e: Throwable) { Registro.anotar("leer $archivo", e); emptyList() }
 
     private fun armar(c: Context): Motor {
         // Rápido: el diccionario ya armado de la vez anterior (mientras no se actualice la app)
         val marca = try { c.packageManager.getPackageInfo(c.packageName, 0).lastUpdateTime } catch (_: Throwable) { 0L }
         val guardado = File(c.filesDir, "diccionario.bin")
-        val dic = Diccionario.leer(guardado, marca) ?: armarDiccionario(c).also { d ->
-            hilo.execute { try { d.guardar(guardado, marca) } catch (e: Throwable) { Registro.anotar("guardar diccionario", e) } }
+        // 1) El de la vez anterior; 2) el que viene ya armado dentro del APK (recién instalada o
+        //    actualizada: arranque instantáneo); 3) si no hay ninguno, se arma aquí (lento)
+        val dic = Diccionario.leer(guardado, marca) ?: run {
+            val listo = try { Diccionario.leer(c.assets.open(ArmarDiccionario.ARCHIVO_LISTO), Diccionario.PRECOMPILADO) } catch (_: Throwable) { null }
+            (listo ?: ArmarDiccionario.armar { lineas(c, it) }).also { d ->
+                hilo.execute { try { d.guardar(guardado, marca) } catch (e: Throwable) { Registro.anotar("guardar diccionario", e) } }
+            }
         }
         val big = HashMap<String, Array<String>>(4096)
         try { c.assets.open("bigramas.txt").bufferedReader().useLines { Motor.leerBigramas(it, big) } } catch (e: Throwable) { Registro.anotar("bigramas", e) }
         val aprendido = Aprendizaje(File(c.filesDir, "aprendido.tsv"))
         aprendido.cargar()
         return Motor(dic, Errores.cargar(c), aprendido, big, geo)
-    }
-
-    private fun palabrasDeFrases(c: Context): List<String> {
-        val res = LinkedHashSet<String>()
-        for (l in lineas(c, "bigramas.txt")) {
-            val i = l.indexOf(':')
-            if (i <= 0) continue
-            for (parte in l.substring(0, i).split(' ') + l.substring(i + 1).split(',')) {
-                val w = parte.trim()
-                if (w.isNotEmpty() && w.all { it.isLetter() }) res.add(w)
-            }
-        }
-        return res.toList()
-    }
-
-    private fun armarDiccionario(c: Context): Diccionario {
-        val frecuentes = lineas(c, "frecuentes.txt")
-        val peru = lineas(c, "peruano.txt")
-        val corte = peru.indexOf("@medio")
-        val fijas = if (corte >= 0) peru.subList(0, corte) else peru
-        val medio = if (corte >= 0) peru.subList(corte + 1, peru.size) else emptyList()
-        val principal = ArrayList<String>(300_000)
-        principal.addAll(frecuentes)
-        var conFijas = false
-        var conMedio = false
-        for (w in lineas(c, "diccionario.txt")) {
-            if (w == "@fijas") { principal.addAll(fijas); conFijas = true; continue }
-            principal.add(w)
-            if (!conMedio && principal.size >= 30_000) { principal.addAll(medio); conMedio = true }
-        }
-        if (!conFijas) principal.addAll(fijas)
-        if (!conMedio) principal.addAll(medio)
-        // Toda palabra que el teclado puede predecir es válida (nunca se toma como error). Van
-        // al final: si ya estaban, no cambian su frecuencia; si faltaban, solo dejan de corregirse
-        principal.addAll(palabrasDeFrases(c))
-        val ingles = lineas(c, "ingles.txt")
-        val portugues = lineas(c, "portugues.txt")
-        return Diccionario.armar(principal, listOf(ingles to 1.4f, portugues to 1.9f))
     }
 
     fun cargarContactos(c: Context) {

@@ -106,6 +106,15 @@ jobs:
             exit 1
           fi
 
+      - name: Precompilar el diccionario (arranque instantáneo al instalar o actualizar)
+        # Si falla, el teclado lo arma él mismo la primera vez (como antes)
+        continue-on-error: true
+        env:
+          GENERAR_DICCIONARIO: "1"
+        run: |
+          gradle testDebugUnitTest --tests com.tecladoios.GenerarDiccionarioTest --stacktrace
+          ls -la app/src/main/assets/diccionario_listo.bin || true
+
       - name: Probar el cerebro y la autocorrección
         # Si una prueba falla, el APK se compila igual y el resultado queda para revisarlo
         continue-on-error: true

@@ -1149,6 +1149,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 if (ic.setComposingRegion(rv.ini, rv.fin)) ic.commitText(texto, 1)
                 ic.endBatchEdit()
                 aprenderPalabra(texto)
+                if (aprender) Cerebro.motor?.aprendido?.confundir(rv.original, texto)
             }
             refrescar()
             return
@@ -1169,6 +1170,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             ic.commitText("$texto ", 1)
             if (esLiteral && aprender) Cerebro.motor?.aprendido?.agregar(texto)
             ultimaCorreccion = if (texto != escrito && !esLiteral) Correccion(escrito, texto, " ", Atajos.expandir(cfg.atajos, escrito) == texto) else null
+            // Mis confusiones: elegiste la corrección tú mismo → aprende qué letra confundiste
+            if (!esLiteral && texto != escrito && aprender) Cerebro.motor?.aprendido?.confundir(escrito, texto)
         } else {
             val previo = antes(1)
             val pre = if (previo.isNotEmpty() && previo != " " && previo != "\n") " " else ""

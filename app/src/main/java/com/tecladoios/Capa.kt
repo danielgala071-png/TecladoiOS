@@ -89,8 +89,9 @@ class Capa(context: Context) : View(context) {
     private var apareceMs = 0L
     private var seVaMs = 0L
     // Como el iPhone: el globo aparece al instante y se va en un suspiro
-    private val APARECE = 85f
-    private val POP = 150f
+    // A juego con el efecto 6: el globo sale con un rebote de goma
+    private val APARECE = 210f
+    private val POP = 230f
     private var popMs = 0L
     private val SE_VA = 45f
 
@@ -219,14 +220,15 @@ class Capa(context: Context) : View(context) {
             if (globo) {
                 // Almohadilla que se expande: brota desde la tecla y crece hasta su tamaño
                 // en un instante (sin rebote), suave y sin retrasar la escritura
+                // Rebote elástico: crece, se pasa un poquito, vuelve y se asienta (como goma)
                 val t = ((ahora - apareceMs) / APARECE).coerceIn(0f, 1f)
-                val e = 1f - (1f - t) * (1f - t) * (1f - t)
-                alfa = (0.5f + 0.5f * e); escala = 0.72f + 0.28f * e; subeLetra = 0f
+                val e = 1f - kotlin.math.exp(-5.5f * t) * kotlin.math.cos(9f * t) * (1f - t)
+                alfa = (t / 0.3f).coerceIn(0f, 1f) * 0.5f + 0.5f; escala = 0.62f + 0.38f * e; subeLetra = 0f
                 if (t < 1f) postInvalidateOnAnimation()
             } else {
                 // Y se va desvaneciendo en un suspiro
                 val t = ((ahora - seVaMs) / SE_VA).coerceIn(0f, 1f)
-                alfa = 1f - t; escala = 1f; subeLetra = 0f
+                alfa = 1f - t; escala = 1f - 0.12f * t; subeLetra = 0f
                 postInvalidateOnAnimation()
             }
             // El globo (sombra, aura difuminada, vidrio, filo y letra brillante) se arma UNA vez
@@ -241,7 +243,8 @@ class Capa(context: Context) : View(context) {
             }
             // La letra hace un "pop": crece un poquito más que el globo y se asienta
             val tl = ((ahora - popMs) / POP).coerceIn(0f, 1f)
-            val pop = if (globo) 1f + 0.16f * kotlin.math.sin(Math.PI.toFloat() * tl) else 1f
+            // La letra rebota como goma: crece, se encoge apenas y se asienta
+            val pop = if (globo) 1f + 0.2f * kotlin.math.exp(-4.5f * tl) * kotlin.math.sin(Math.PI.toFloat() * 2.2f * tl) else 1f
             if (globo && tl < 1f) postInvalidateOnAnimation()
             letraP.color = tema.texto; letraP.alpha = (alfa * 255).toInt().coerceIn(0, 255)
             letraP.textSize = tecla.height() * 0.8f

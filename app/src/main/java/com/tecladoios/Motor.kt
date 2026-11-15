@@ -96,7 +96,14 @@ class Motor(
         }
         // Ajustado con el banco de pruebas (toques simulados a dos dedos): un toque que cae
         // entre dos teclas cuesta un poco menos, como en el modelo de toques de Gboard
-        return ((d - 0.45f) * 0.75f).coerceIn(0.15f, 1.0f)
+        val base = ((d - 0.45f) * 0.75f).coerceIn(0.15f, 1.0f)
+        // Mis confusiones: si sueles poner esta letra en vez de la otra, cambiarla cuesta menos
+        val ie = Texto.indice(e); val ic = Texto.indice(c)
+        if (ie >= 0 && ic >= 0) {
+            val desc = aprendido.descuento[ie * 27 + ic]
+            if (desc > 0f) return (base * (1f - desc)).coerceAtLeast(0.06f)
+        }
+        return base
     }
 
     private fun costoSobra(i: Int): Float {
@@ -352,7 +359,8 @@ class Motor(
         // Las formas con tilde de lo escrito también se ofrecen (esta / está)
         for (i in formasExactas) meter(dic.palabras[i], lista.firstOrNull()?.puntaje ?: 0f, false, false)
         lista.sortBy { it.puntaje }
-        return Propuesta(lista.take(8), auto, valida)
+        // Siglas: «dni» → «DNI», «sunat» → «SUNAT» (y las tuyas en mayúsculas)
+        return Siglas.aplicar(escrito, Propuesta(lista.take(8), auto, valida), aprendido, corregir)
     }
 
     /** Descarte barato antes de la comparación completa: largo parecido y mismo comienzo */

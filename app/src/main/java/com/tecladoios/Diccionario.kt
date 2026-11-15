@@ -104,11 +104,20 @@ class Diccionario private constructor(
     companion object {
         private const val MAGIA = 0x54504432  // "TPD2" (con la marca de otros idiomas)
 
+        /** Marca del diccionario que viene ya armado dentro del APK (se arma al compilar) */
+        const val PRECOMPILADO = -0x7EC1L
+
         /** Lee el diccionario guardado; null si no existe, está dañado o es de otra versión */
         fun leer(archivo: java.io.File, marca: Long): Diccionario? {
             if (!archivo.exists()) return null
+            return try { leer(java.io.FileInputStream(archivo), marca) }
+            catch (ex: Throwable) { Registro.anotar("leer diccionario guardado", ex); null }
+        }
+
+        /** Igual, desde cualquier fuente (por ejemplo, el que viene dentro del APK) */
+        fun leer(entrada: java.io.InputStream, marca: Long): Diccionario? {
             return try {
-                java.io.DataInputStream(java.io.BufferedInputStream(java.io.FileInputStream(archivo), 1 shl 16)).use { e ->
+                java.io.DataInputStream(java.io.BufferedInputStream(entrada, 1 shl 16)).use { e ->
                     if (e.readInt() != MAGIA || e.readLong() != marca) return null
                     val n = e.readInt(); val nodos = e.readInt()
                     val texto = ByteArray(e.readInt()); e.readFully(texto)

@@ -24,6 +24,53 @@ class Aprendizaje(private val archivo: File) {
     /** Palabras nuevas usadas una sola vez: si en la limpieza siguiente siguen igual, se olvidan */
     val enEspera = HashSet<String>()
 
+    // ---------- Mis confusiones ----------
+    /**
+     * Letras que confundes: "ab" → cuántas veces pusiste «a» donde iba «b» (se cuenta cuando
+     * eliges la corrección en la barra o al tocar una palabra mal escrita).
+     */
+    val confusiones = HashMap<String, Int>()
+
+    /**
+     * Descuento listo para el cerebro (sin candado): [escrita * 27 + correcta] = 0..0.6.
+     * Cuantas más veces confundiste ese par, más barato le sale corregirlo.
+     */
+    @Volatile var descuento = FloatArray(27 * 27)
+        private set
+
+    private fun rehacerDescuento() {
+        val d = FloatArray(27 * 27)
+        for ((par, v) in confusiones) {
+            if (par.length != 2) continue
+            val a = Texto.indice(par[0]); val b = Texto.indice(par[1])
+            if (a < 0 || b < 0) continue
+            // 1 vez: 15 %, 2: 27 %, 3: 37 %… hasta 60 %
+            d[a * 27 + b] = (0.6f * (1f - Math.pow(0.75, v.toDouble()).toFloat())).coerceIn(0f, 0.6f)
+        }
+        descuento = d
+    }
+
+    /**
+     * Compara lo que escribiste con la corrección que elegiste: si son del mismo largo y
+     * difieren en 1 o 2 letras, aprende esos pares («cosa» → «casa»: pones o por a).
+     */
+    @Synchronized
+    fun confundir(escrito: String, correcto: String) {
+        val a = Texto.normal(escrito); val b = Texto.normal(correcto)
+        if (a.length != b.length || a == b || a.length < 2) return
+        val pares = ArrayList<String>(2)
+        for (i in a.indices) if (a[i] != b[i]) {
+            pares.add("${a[i]}${b[i]}")
+            if (pares.size > 2) return
+        }
+        // Dos letras cambiadas de lugar («cosa» ↔ «csoa») no es confusión de letras
+        if (pares.size == 2 && pares[0][0] == pares[1][1] && pares[0][1] == pares[1][0]) return
+        for (p in pares) confusiones[p] = minOf((confusiones[p] ?: 0) + 1, 50)
+        if (confusiones.size > 400) confusiones.entries.minByOrNull { it.value }?.let { confusiones.remove(it.key) }
+        rehacerDescuento()
+        cambios++
+    }
+
     /**
      * Limpieza semanal: olvida las palabras nuevas que aprendió una sola vez y no volviste a
      * usar en toda una semana (casi siempre son errores de dedo). Las que fijaste o usaste más
@@ -158,6 +205,7 @@ class Aprendizaje(private val archivo: File) {
     @Synchronized
     fun borrarTodo() {
         propias.clear(); uso.clear(); siguientes.clear(); rechazadas.clear(); eliminadas.clear()
+        confusiones.clear(); rehacerDescuento()
         cambios++
         try { archivo.delete() } catch (_: Throwable) { }
     }
@@ -191,6 +239,7 @@ class Aprendizaje(private val archivo: File) {
         for (r in rechazadas) w.write("R\t$r\n")
         for (x in eliminadas) w.write("X\t$x\n")
         for (x in enEspera) w.write("W\t$x\n")
+        for ((k, v) in confusiones) w.write("C\t$k\t$v\n")
     }
 
     /** Suma una línea de una copia de seguridad a lo que ya sabe (gana el número mayor) */
@@ -211,6 +260,7 @@ class Aprendizaje(private val archivo: File) {
             } else return false
             "R" -> if (p.size >= 2) rechazadas.add(p[1]) else return false
             "X" -> if (p.size >= 2) eliminadas.add(p[1]) else return false
+            "C" -> if (p.size >= 3) { confusiones[p[1]] = maxOf(confusiones[p[1]] ?: 0, p[2].toIntOrNull() ?: 1); rehacerDescuento() } else return false
             else -> return false
         }
         cambios++
@@ -231,9 +281,11 @@ class Aprendizaje(private val archivo: File) {
                         "R" -> if (p.size >= 2) rechazadas.add(p[1])
                         "X" -> if (p.size >= 2) eliminadas.add(p[1])
                         "W" -> if (p.size >= 2) enEspera.add(p[1])
+                        "C" -> if (p.size >= 3) confusiones[p[1]] = p[2].toIntOrNull() ?: 1
                     }
                 }
             }
+            rehacerDescuento()
         } catch (e: Throwable) { Registro.anotar("leer aprendizaje", e) }
     }
 }
