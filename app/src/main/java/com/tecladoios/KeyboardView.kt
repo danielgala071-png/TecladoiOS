@@ -110,6 +110,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private var colocadas: Array<Colocada> = emptyArray()
     private var anchoTecla = 1f
     private var altoFila = 1f
+    private val ARRIBA get() = dp(3f)
     private val panelMano = RectF()
     private val botonExpandir = RectF()
     private val botonCambiar = RectF()
@@ -140,7 +141,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         if (w <= 0 || h <= 0) return
         // Menos margen a los costados y abajo: ese espacio se lo lleva la fila de abajo
         // (123, emoji, espacio e intro), que queda más alta
-        val arriba = dp(8f); val abajo = dp(2f)
+        // Menos espacio entre la barra y la primera fila (3 dp): ese alto se lo llevan las teclas
+        val arriba = ARRIBA; val abajo = dp(2f)
         val lado = dp(1.5f)
         var izq = lado; var der = w - lado
         panelMano.setEmpty()
@@ -155,7 +157,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val filas = distribucion.filas
         // Los 7 dp que eran margen (abajo y debajo del teclado) van enteros a la fila de abajo;
         // las demás filas quedan del mismo alto que antes
-        val extraAbajo = if (filas.size >= 2 && filas.last().teclas.any { it.tipo == K.ESPACIO }) dp(7f) else 0f
+        // La fila de abajo (123, emoji, espacio, intro) es más alta: se lleva 12 dp extra
+        val extraAbajo = if (filas.size >= 2 && filas.last().teclas.any { it.tipo == K.ESPACIO }) dp(12f) else 0f
         altoFila = (h - arriba - abajo - extraAbajo) / filas.size
         // Teclado dividido (celular echado): las letras se separan a los lados para los pulgares,
         // como en el iPad. La fila de abajo (espacio) queda entera.
@@ -170,7 +173,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         // Más aire entre teclas. Solo cambia el dibujo: la zona que recibe el toque sigue siendo
         // la celda completa, así escribir rápido a dos dedos no pierde precisión.
         val sepX = dp(6f) * if (unaMano != 0) 0.85f else 1f
-        val sepY = minOf(dp(11f), altoFila * 0.2f)
+        // Menos aire entre filas (antes hasta 11 dp): las teclas quedan más altas y el
+        // teclado mide lo mismo. Toda la celda sigue recibiendo el toque.
+        val sepY = minOf(dp(6f), altoFila * 0.1f)
         val lista = ArrayList<Colocada>(48)
         for ((fi, fila) in filas.withIndex()) {
             val partir = dividido && fila.teclas.none { it.tipo == K.ESPACIO }
@@ -187,7 +192,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 val ancho = t.ancho * u
                 val altoEsta = if (fi == filas.size - 1) altoFila + extraAbajo else altoFila
                 val toque = RectF(x, y0, x + ancho, y0 + altoEsta)
-                val dib = RectF(x + sepX / 2, y0 + sepY / 2, x + ancho - sepX / 2, y0 + altoEsta - sepY / 2)
+                // Mayúscula, borrar y la fila de abajo se ven más grandes: menos margen a los lados
+                val grande = t.tipo == K.SHIFT || t.tipo == K.BORRAR || fi == filas.size - 1
+                val sx = if (grande) sepX * 0.6f else sepX
+                val dib = RectF(x + sx / 2, y0 + sepY / 2, x + ancho - sx / 2, y0 + altoEsta - sepY / 2)
                 if (t.tipo != K.VACIA) lista.add(Colocada(t, toque, dib, fi))
                 if (t.esLetra) geo.poner(t.texto[0], dib.centerX(), dib.centerY())
                 x += ancho
@@ -1345,7 +1353,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     /** Las filas aparecen una tras otra, subiendo un poquito */
     private fun dibujarEntrada(c: Canvas, t: Float, filas: Int, fondo: Bitmap, letras: Bitmap) {
         val w = width.toFloat()
-        val arriba = dp(8f)
+        val arriba = ARRIBA
         val sube = dp(18f)
         pinturaLetras.color = tema.texto
         for (k in 0 until filas) {
@@ -1575,7 +1583,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
      */
     private fun dibujarCambio(c: Canvas, t: Float, filas: Int, fondo: Bitmap, letras: Bitmap, viejoF: Bitmap, viejoL: Bitmap) {
         val w = width.toFloat()
-        val arriba = dp(8f)
+        val arriba = ARRIBA
         val sube = altoFila * 0.08f   // las letras nuevas suben apenas mientras aparecen
         val medio = sepYActual / 2f
         for (k in 0 until filas) {
