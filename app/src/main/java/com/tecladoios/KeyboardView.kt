@@ -707,8 +707,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val MENU_TECLADO = listOf("Ajustes", "Teclados", "◀ Mano", "Completo", "Mano ▶")
         val LETRAS_TEL = mapOf("1" to "", "2" to "ABC", "3" to "DEF", "4" to "GHI", "5" to "JKL",
             "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ", "0" to "+")
-        const val SHIFT_BLANCO = 0xFFF5F5F7.toInt()
-        const val SHIFT_BLANCO_APRETADO = 0xFFC7C7CC.toInt()
+        const val SHIFT_BLANCO = 0xFFD1D1D6.toInt()          // gris claro, no blanco puro
+        const val SHIFT_BLANCO_APRETADO = 0xFFAEAEB2.toInt()
         const val FLECHA_NEGRA = 0xFF1C1C1E.toInt()
     }
 
@@ -802,7 +802,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     private fun colorTecla(t: Tecla, apretada: Boolean): Int = when {
         // Como iOS: "buscar", "ir" y "enviar" van en una tecla azul con letras blancas
-        t.tipo == K.INTRO && introDestacado -> if (apretada) 0xFF0060DF.toInt() else Tema.AZUL
+        // Diseño C: el intro va en grafito como las demás principales (sin azul)
+        t.tipo == K.INTRO && introDestacado -> if (apretada) tema.funcionPresionada else tema.teclaFuncion
         // Como el iPhone: el enter es una tecla gris más y la mayúscula activa se pone blanca
         t.tipo == K.SHIFT && shift > 0 -> if (apretada) SHIFT_BLANCO_APRETADO else SHIFT_BLANCO
         t.funcion -> if (apretada) tema.funcionPresionada else tema.teclaFuncion
@@ -843,6 +844,23 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         return g
     }
 
+    /** ¿Esta tecla va solo con contorno? (las letras y símbolos en el diseño C) */
+    private fun deContorno(t: Tecla, blanca: Boolean) =
+        tema.contorno && (!t.funcion || t.tipo == K.ESPACIO) && !blanca
+
+    /** Cuerpo según el diseño: contorno fino para letras, relleno plano para las principales */
+    private fun cuerpoTecla(c: Canvas, r: RectF, radio: Float, t: Tecla, blanca: Boolean) {
+        if (deContorno(t, blanca)) {
+            borde.color = tema.lineaTecla; borde.strokeWidth = dp(1f)
+            val m = dp(0.5f)
+            c.drawRoundRect(r.left + m, r.top + m, r.right - m, r.bottom - m, radio, radio, borde)
+            borde.strokeWidth = dp(0.6f); borde.color = tema.bordeTecla
+        } else if (tema.contorno) {
+            relleno.shader = null; relleno.color = colorTecla(t, false)
+            c.drawRoundRect(r, radio, radio, relleno)
+        } else cuerpoConRelieve(c, r, radio, colorTecla(t, false), blanca)
+    }
+
     /** Esquinas como las teclas de iOS: poco curvas */
     private fun radioDe(r: RectF) = minOf(dp(5.5f), r.height() * 0.13f)
 
@@ -855,9 +873,11 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val radio = radioDe(r)
         val blanca = k.tecla.tipo == K.SHIFT && shift > 0
         relleno.shader = null
-        relleno.color = tema.sombra
-        c.drawRoundRect(r.left, r.top + dp(1.5f), r.right, r.bottom + dp(1.5f), radio, radio, relleno)
-        cuerpoConRelieve(c, r, radio, colorTecla(k.tecla, false), blanca)
+        if (!tema.contorno) {
+            relleno.color = tema.sombra
+            c.drawRoundRect(r.left, r.top + dp(1.5f), r.right, r.bottom + dp(1.5f), radio, radio, relleno)
+        }
+        cuerpoTecla(c, r, radio, k.tecla, blanca)
         if (blanca) flechaNegra(c, k)
         if (k.tecla.tipo == K.INTRO && introDestacado) introBlanco(c, k)
     }
@@ -1014,13 +1034,15 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         relleno.color = tema.fondo
         c.drawRect(r.left - 1f, r.top - 1f, r.right + 1f, r.bottom + prof + 1f, relleno)
         relleno.shader = null
-        relleno.color = tema.sombra
-        c.drawRoundRect(r.left, r.top + prof, r.right, r.bottom + prof, radio, radio, relleno)
+        if (!tema.contorno) {
+            relleno.color = tema.sombra
+            c.drawRoundRect(r.left, r.top + prof, r.right, r.bottom + prof, radio, radio, relleno)
+        }
 
         c.save()
         c.translate(0f, dy)
         // 2. La tecla, hundida
-        cuerpoConRelieve(c, r, radio, colorTecla(t, false), blanca)
+        cuerpoTecla(c, r, radio, t, blanca)
         // 3. La almohadilla de color: crece desde el centro y se apaga al soltar
         if (l > 0.01f) {
             val e = suave(((ahora - p.t0) / EXPANDE).coerceIn(0f, 1f))

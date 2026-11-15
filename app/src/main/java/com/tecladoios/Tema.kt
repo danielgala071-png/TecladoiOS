@@ -19,10 +19,16 @@ class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
     val tecla = if (claro) 0xFFFFFFFF.toInt() else 0xFF2C2C2F.toInt()
     /** Mayúscula, borrar, 123, emoji, intro */
     /** Las principales (mayúscula, borrar, 123, emoji, espacio, intro): grafito más oscuro */
-    val teclaFuncion = if (claro) 0xFFABB0BA.toInt() else 0xFF141826.toInt()   // azul medianoche
+    val teclaFuncion = if (claro) 0xFFABB0BA.toInt() else 0xFF2C2C2E.toInt()   // gris grafito (diseño C)
     /** Al tocar, las de función toman el color de las letras (como en iOS) */
-    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFF4A4A4F.toInt()
-    val funcionPresionada = if (claro) 0xFFFFFFFF.toInt() else 0xFF262C40.toInt()
+    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFF3A3A3C.toInt()
+    val funcionPresionada = if (claro) 0xFFFFFFFF.toInt() else 0xFF48484A.toInt()
+    /**
+     * Diseño C «Contorno nocturno»: las letras son solo un contorno fino sobre negro puro
+     * (en AMOLED casi no gasta) y las teclas principales van rellenas.
+     */
+    val contorno = !claro
+    val lineaTecla = 0xFF38383A.toInt()
     /** Línea de sombra bajo cada tecla */
     /** Borde de abajo de cada tecla (da la profundidad; en AMOLED es un gris muy oscuro) */
     val sombra = if (claro) 0xFF898A8D.toInt() else 0xFF0E0E10.toInt()
@@ -30,7 +36,7 @@ class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
     /** Letras en blanco cálido (apenas crema): más descansado de noche */
     val texto = if (claro) 0xFF000000.toInt() else 0xFFF5F2EA.toInt()
     /** Fondo de la barra de sugerencias: un tono sobre el negro, para separarla sin línea */
-    val fondoBarra = if (claro) 0x00000000 else 0xFF0A0A0C.toInt()
+    val fondoBarra = if (claro) 0x00000000 else 0xFF000000.toInt()   // misma pieza que el teclado
     val textoSuave = if (claro) 0x993C3C43.toInt() else 0xB3EBEBF5.toInt()
     val pista = if (claro) 0x803C3C43.toInt() else 0x80EBEBF5.toInt()
     val separador = if (claro) 0x383C3C43 else 0x29FFFFFF

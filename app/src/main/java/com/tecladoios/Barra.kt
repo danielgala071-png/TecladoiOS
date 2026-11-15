@@ -223,7 +223,8 @@ class Barra(context: Context) : View(context) {
         val w = width.toFloat(); val h = height.toFloat()
         // Fondo de la barra: un tono sobre el negro del teclado, con el matiz de la app
         if (!tema.claro) {
-            pinturaFondo.color = if (tinte != 0) Tema.mezclar(tinte, tema.fondoBarra, 0.07f) else tema.fondoBarra
+            // Diseño C: el mismo negro del teclado, sin matiz de la app (una sola pieza)
+            pinturaFondo.color = tema.fondoBarra
             c.drawRect(0f, 0f, w, h, pinturaFondo)
         }
         // Línea finísima que separa la barra de las teclas (detalle premium, casi invisible)
@@ -390,9 +391,8 @@ class Barra(context: Context) : View(context) {
                 elegidaAqui -> tema.texto
                 esLiteral[i] -> if (tema.claro) 0xFF5B6B85.toInt() else 0xFF8C9BB5.toInt()
                 tema.claro -> tema.velo(0x99)
-                else -> 0xFFC7C7CC.toInt()
+                else -> 0xFF9A9A9E.toInt()
             }
-            if (elegidaAqui) p.setShadowLayer(dp(8f), 0f, 0f, if (tema.claro) 0x405AA0FF else 0xCC9FD3FF.toInt())
             if (i == celdaTocada || (i == elegidaCelda && brilloElegida > 0f)) {
                 relleno.style = Paint.Style.FILL
                 relleno.color = if (tema.claro) 0x24000000 else tema.velo(0x29)
@@ -403,8 +403,16 @@ class Barra(context: Context) : View(context) {
             val alfaBase = p.alpha
             p.alpha = (alfaBase * (0.2f + 0.8f * ec)).toInt()
             c.drawText(corto, x0 + ancho / 2, h / 2 + p.textSize * 0.36f, p)
+            if (elegidaAqui) {
+                // Diseño C: la palabra que se pondrá sola lleva una rayita debajo (sin halo)
+                val mitad = p.measureText(corto) / 2
+                val yL = h / 2 + p.textSize * 0.36f + dp(6f)
+                relleno.style = Paint.Style.FILL
+                relleno.color = 0xFF8A8A90.toInt(); relleno.alpha = p.alpha
+                c.drawRoundRect(x0 + ancho / 2 - mitad, yL, x0 + ancho / 2 + mitad, yL + dp(2f), dp(1f), dp(1f), relleno)
+                relleno.alpha = 255
+            }
             p.alpha = 255
-            if (elegidaAqui) p.clearShadowLayer()
             c.restore()
             val rr = RectF(desplazamiento + x0, 0f, desplazamiento + x0 + ancho, h)
             val lit = esLiteral[i]
@@ -421,7 +429,7 @@ class Barra(context: Context) : View(context) {
         }
         // Separadores: no se dibujan junto a una casilla vacía
         // Tres lugares fijos: las dos líneas siempre en su sitio, aunque falte alguna palabra
-        for (i in 1..2) c.drawLine(i * ancho, h * 0.3f, i * ancho, h * 0.7f, linea)
+        // Diseño C: sin líneas separadoras (más limpio)
         c.restore()
         if (seguir) postInvalidateOnAnimation()
     }
