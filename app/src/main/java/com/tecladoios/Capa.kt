@@ -91,7 +91,7 @@ class Capa(context: Context) : View(context) {
     // Como el iPhone: el globo aparece al instante y se va en un suspiro
     // El globo nace de la tecla como una gota: primero se estira hacia arriba, luego se
     // ensancha y sube flotando suave hasta su lugar
-    private val APARECE = 190f
+    private val APARECE = 230f
     private val POP = 230f
     private var popMs = 0L
     private val SE_VA = 150f   // lo que tarda la letra en bajar a su tecla
@@ -219,15 +219,17 @@ class Capa(context: Context) : View(context) {
             // El globo no se ensancha: crece solo hacia arriba desde la tecla. La letra viaja:
             // sale de la tecla y sube hasta el globo; al soltar, baja del globo a su tecla.
             val alfa: Float
-            var escY = 1f; var flota = 0f
+            var escY = 1f; var escX = 1f; var flota = 0f
             val viaje: Float   // 0 = la letra está en la tecla, 1 = arriba en el globo
             if (globo) {
                 val t = ((ahora - apareceMs) / APARECE).coerceIn(0f, 1f)
                 val u = 1f - t
-                // Sube estirándose con un leve rebote
-                val eY = 1f - kotlin.math.exp(-6f * t) * kotlin.math.cos(7.5f * t) * u
-                escY = 0.30f + 0.70f * eY
-                flota = u * u * 9f * d   // empieza 9 dp más abajo y sube flotando
+                // Estirón: nace alto y delgado, y se asienta ancho como goma (rebota un par
+                // de veces entre alto/delgado y bajo/ancho antes de quedarse quieto)
+                val goma = kotlin.math.exp(-5f * t) * kotlin.math.cos(9f * t) * u
+                escY = 1f + 0.35f * goma
+                escX = 1f - 0.30f * goma
+                flota = u * u * 6f * d   // sube apenas desde la tecla
                 alfa = (t / 0.18f).coerceIn(0f, 1f)
                 // La letra sube con el globo y se asienta con un pelo de rebote
                 viaje = (1f - kotlin.math.exp(-5.5f * t) * kotlin.math.cos(6f * t) * u).coerceAtMost(1.04f)
@@ -246,7 +248,7 @@ class Capa(context: Context) : View(context) {
             val img = imagenGlobo()
             c.save()
             c.translate(0f, flota)
-            c.scale(1f, escY, tecla.centerX(), tecla.bottom)
+            c.scale(escX, escY, tecla.centerX(), tecla.bottom)
             if (img != null) {
                 pintaGlobo.alpha = (alfa * 255).toInt().coerceIn(0, 255)
                 c.drawBitmap(img, limites.left - MARGEN * d, limites.top - MARGEN * d, pintaGlobo)
