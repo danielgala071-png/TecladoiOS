@@ -1203,7 +1203,13 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         relleno.color = tema.velo((0x1C * f).toInt())
         for (k in colocadas) if (k.fila == ultima) {
             val radio = radioDe(k.dibujo)
-            c.drawRoundRect(k.dibujo, radio, radio, relleno)
+            if (deContorno(k.tecla, false)) {
+                // Diseño C: en las teclas de contorno solo se ilumina el borde
+                borde.color = tema.velo((0x55 * f).toInt()); borde.strokeWidth = dp(1f)
+                val m = dp(0.5f)
+                c.drawRoundRect(k.dibujo.left + m, k.dibujo.top + m, k.dibujo.right - m, k.dibujo.bottom - m, radio, radio, borde)
+                borde.strokeWidth = dp(0.6f); borde.color = tema.bordeTecla
+            } else c.drawRoundRect(k.dibujo, radio, radio, relleno)
         }
         postInvalidateOnAnimation()
     }

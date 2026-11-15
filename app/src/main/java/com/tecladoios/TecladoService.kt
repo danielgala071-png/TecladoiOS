@@ -275,8 +275,10 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         }
         if (!restarting) {
             reiniciarPalabra()
-            ultimaCorreccion = null; espacioAuto = false
-            mostrarPanel(Panel.TECLADO)
+            ultimaCorreccion = null; espacioAuto = false; revision = null
+            // Al abrir el teclado en otro campo, las letras aparecen directo (sin que el panel
+            // de emojis que quedó abierto baje animado mientras el teclado sube)
+            mostrarPanel(Panel.TECLADO, conAnimacion = false)
             cerrarBusqueda()
         }
         selIni = info.initialSelStart; selFin = info.initialSelEnd
@@ -293,6 +295,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        revision = null
+        barra?.revision = null
         ocultarLlaves()
         Estadisticas.guardar(prefs)
         teclado?.cancelarTodo()
@@ -1464,10 +1468,10 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         else prefs.edit().putInt(Ajustes.UNA_MANO, if (cfg.unaMano == 1) 2 else 1).apply()
     }
 
-    private fun mostrarPanel(p: Panel) {
+    private fun mostrarPanel(p: Panel, conAnimacion: Boolean = true) {
         val antes = panel
         panel = p
-        val animar = antes != p && marco?.isShown == true
+        val animar = conAnimacion && antes != p && marco?.isShown == true
         // Primero se prepara el contenido y recién después se anima: así el primer cuadro de
         // la animación no carga nada (antes se armaba todo en medio y daba un tirón)
         when (p) {
@@ -1516,7 +1520,10 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                     .setInterpolator(android.view.animation.PathInterpolator(0.4f, 0f, 1f, 1f)).withLayer().withEndAction {
                     v.visibility = oculto; v.alpha = 1f; v.translationY = 0f; v.scaleX = 1f; v.scaleY = 1f
                 }.start()
-            } else { v.visibility = oculto; v.alpha = 1f; v.translationY = 0f; v.scaleX = 1f; v.scaleY = 1f }
+            } else {
+                v.visibility = oculto; v.alpha = 1f; v.translationY = 0f; v.scaleX = 1f; v.scaleY = 1f
+                if (v === panelEmoji) v.background = null   // quedaba el fondo de la animación
+            }
         }
     }
 
