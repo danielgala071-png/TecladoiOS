@@ -727,8 +727,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val LETRAS_TEL = mapOf("1" to "", "2" to "ABC", "3" to "DEF", "4" to "GHI", "5" to "JKL",
             "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ", "0" to "+")
         // Mayúscula activa más sutil, como el iPhone oscuro: grafito claro con flecha blanca
-        const val SHIFT_BLANCO = 0xFF56565B.toInt()
-        const val SHIFT_BLANCO_APRETADO = 0xFF6A6A70.toInt()
+        // Mayúscula activa en rojo intenso con flecha blanca
+        const val SHIFT_BLANCO = 0xFFE0112F.toInt()
+        const val SHIFT_BLANCO_APRETADO = 0xFFFF3A55.toInt()
         const val FLECHA_NEGRA = 0xFFFFFFFF.toInt()
     }
 
@@ -745,7 +746,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     // Efecto 6 «botón elástico»: la tecla se encoge al tocarla y al soltar rebota como goma
     // Reacción instantánea: ya en el primer cuadro del toque la tecla se ve hundida
     private val HUNDIR = 40f     // se hunde en un instante
-    private val VOLVER = 280f    // al soltar vuelve con un rebote elástico
+    // Antes volvía en 280 ms con rebote: escribiendo rápido la tecla se veía «pegada».
+    // Ahora vuelve en 140 ms con un rebote mínimo: se suelta al instante como en el iPhone.
+    private val VOLVER = 140f
     private val ENCOGE = 0.04f   // cuánto se achica al hundirse
     private val EXPANDE = 120f   // la almohadilla de color crece desde el centro
     private val APAGAR = 110f   // al soltar sube con un rebote cortito y el brillo se apaga
@@ -797,7 +800,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         if (p.suelta == 0L) return suave(((ahora - p.t0) / HUNDIR).coerceIn(0f, 1f))
         val r = ((ahora - p.suelta) / VOLVER).coerceIn(0f, 1f)
         // Resorte de goma más fluido: vuelve, se pasa una sola vez y se asienta suave
-        return p.nivel * kotlin.math.exp(-4f * r) * kotlin.math.cos(r * 8.2f) * (1f - r)
+        return p.nivel * kotlin.math.exp(-5f * r) * kotlin.math.cos(r * 5f) * (1f - r)
     }
 
     /** Cuánta luz tiene la tecla (0..1) */
@@ -874,15 +877,52 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     /** Cuerpo según el diseño: contorno fino para letras, relleno plano para las principales */
     private fun cuerpoTecla(c: Canvas, r: RectF, radio: Float, t: Tecla, blanca: Boolean) {
         if (deContorno(t, blanca)) {
-            borde.color = tema.lineaTecla; borde.strokeWidth = dp(1f)
+            // Filo de metal rojo: más claro arriba y oscuro abajo (se dibuja una vez y se guarda)
+            borde.color = 0xFFFFFFFF.toInt(); borde.strokeWidth = dp(1f)
+            borde.shader = degradadoFilo(r.top, r.bottom)
             val m = dp(0.5f)
             c.drawRoundRect(r.left + m, r.top + m, r.right - m, r.bottom - m, radio, radio, borde)
+            borde.shader = null
             borde.strokeWidth = dp(0.6f); borde.color = tema.bordeTecla
         } else if (tema.contorno) {
-            relleno.shader = null; relleno.color = colorTecla(t, false)
+            // Principales: rojo metálico con degradado y un reflejo finito arriba
+            val col = colorTecla(t, false)
+            relleno.shader = degradadoMetal(col, r.top, r.bottom)
             c.drawRoundRect(r, radio, radio, relleno)
+            relleno.shader = null
+            if (!blanca) {
+                reflejo.strokeWidth = dp(0.8f)
+                c.drawLine(r.left + radio, r.top + dp(0.7f), r.right - radio, r.top + dp(0.7f), reflejo)
+            }
         } else cuerpoConRelieve(c, r, radio, colorTecla(t, false), blanca)
     }
+
+    private val matrizFilo = android.graphics.Matrix()
+    private fun degradadoFilo(arriba: Float, abajo: Float): android.graphics.Shader {
+        val g = filoMetalOscuro()
+        matrizFilo.setScale(1f, (abajo - arriba).coerceAtLeast(1f)); matrizFilo.postTranslate(0f, arriba)
+        g.setLocalMatrix(matrizFilo)
+        return g
+    }
+    private var filoCache: android.graphics.LinearGradient? = null
+    private fun filoMetalOscuro(): android.graphics.LinearGradient = filoCache ?: android.graphics.LinearGradient(0f, 0f, 0f, 1f,
+        intArrayOf(tema.filoArriba, tema.lineaTecla, tema.filoAbajo), floatArrayOf(0f, 0.45f, 1f),
+        android.graphics.Shader.TileMode.CLAMP).also { filoCache = it }
+
+    /** Metal: un poco más claro y cálido arriba, el color pleno abajo (uno por color, reusado) */
+    private val degradadosMetal = HashMap<Int, android.graphics.LinearGradient>()
+    private fun degradadoMetal(color: Int, arriba: Float, abajo: Float): android.graphics.Shader {
+        val g = degradadosMetal.getOrPut(color) {
+            android.graphics.LinearGradient(0f, 0f, 0f, 1f,
+                intArrayOf(Tema.mezclar(color, 0xFFFF5A6E.toInt(), 0.78f), color, Tema.mezclar(color, 0xFF000000.toInt(), 0.8f)),
+                floatArrayOf(0f, 0.55f, 1f), android.graphics.Shader.TileMode.CLAMP)
+        }
+        matrizTecla.setScale(1f, (abajo - arriba).coerceAtLeast(1f))
+        matrizTecla.postTranslate(0f, arriba)
+        g.setLocalMatrix(matrizTecla)
+        return g
+    }
+    private val reflejo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x40FF8A96; strokeCap = Paint.Cap.ROUND }
 
     /** Esquinas como las teclas de iOS: poco curvas */
     private fun radioDe(r: RectF) = minOf(dp(5.5f), r.height() * 0.13f)

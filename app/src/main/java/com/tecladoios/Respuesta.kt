@@ -41,14 +41,25 @@ class Respuesta(c: Context) {
         sonidos = sp
     }
 
+    /**
+     * Vibración y sonido van en un hilo aparte: cada vibración es una llamada al sistema y,
+     * hecha en el hilo de las teclas, retrasaba un poquito cada letra (se sentía «pegado»).
+     */
+    private val hilo = android.os.HandlerThread("respuesta", android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY).also { it.start() }
+    private val manejador = android.os.Handler(hilo.looper)
+
     fun tocar(t: Tipo) {
         val cfg = config ?: return
-        if (cfg.vibracion) vibrar(t)
-        if (cfg.sonido) {
-            cargarSonidos()
-            val v = cfg.volumen / 100f
-            val id = when (t) { Tipo.ESPACIO -> ids[1]; Tipo.BORRAR -> ids[2]; Tipo.INTRO -> ids[3]; else -> ids[0] }
-            sonidos?.play(id, v, v, 1, 0, 1f)
+        val vib = cfg.vibracion; val son = cfg.sonido; val vol = cfg.volumen
+        if (!vib && !son) return
+        manejador.post {
+            if (vib) vibrar(t)
+            if (son) {
+                cargarSonidos()
+                val v = vol / 100f
+                val id = when (t) { Tipo.ESPACIO -> ids[1]; Tipo.BORRAR -> ids[2]; Tipo.INTRO -> ids[3]; else -> ids[0] }
+                sonidos?.play(id, v, v, 1, 0, 1f)
+            }
         }
     }
 
@@ -80,12 +91,16 @@ class Respuesta(c: Context) {
         if (efLetra != null) return
         try {
             val max = if (conAmplitud) 255 else VibrationEffect.DEFAULT_AMPLITUDE
-            efLetra = VibrationEffect.createOneShot(32L, max)
+            // Letras: golpe fuerte pero corto. Antes duraba 32 ms y, a dos pulgares, una
+            // vibración se encimaba con la siguiente (se sentía como si la tecla se pegara).
+            efLetra = if (conPrimitivas) VibrationEffect.startComposition()
+                .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1f).compose()
+                else VibrationEffect.createOneShot(18L, max)
             efFuerte = onda(longArrayOf(0, 18, 40), intArrayOf(0, 110, 255))
             efSuave = VibrationEffect.createOneShot(14L, max)
-            efEspacio = onda(longArrayOf(0, 26, 45, 26), intArrayOf(0, 255, 0, 230))
-            efBorrar = onda(longArrayOf(0, 26, 38, 18), intArrayOf(0, 255, 0, 120))
-            efIntro = onda(longArrayOf(0, 45, 45, 60), intArrayOf(0, 255, 0, 255))
+            efEspacio = onda(longArrayOf(0, 20, 34, 18), intArrayOf(0, 255, 0, 220))
+            efBorrar = onda(longArrayOf(0, 20, 28, 14), intArrayOf(0, 255, 0, 120))
+            efIntro = onda(longArrayOf(0, 34, 36, 40), intArrayOf(0, 255, 0, 255))
         } catch (_: Throwable) { }
     }
 
@@ -111,6 +126,7 @@ class Respuesta(c: Context) {
     }
 
     fun soltar() {
-        sonidos?.release(); sonidos = null
+        manejador.post { sonidos?.release(); sonidos = null }
+        hilo.quitSafely()
     }
 }

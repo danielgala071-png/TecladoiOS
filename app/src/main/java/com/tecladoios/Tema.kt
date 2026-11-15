@@ -14,21 +14,26 @@ class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
     /** Fondo del teclado */
     val fondo = if (claro) 0xFFD1D4DA.toInt() else 0xFF000000.toInt()   // AMOLED: negro puro
     /** Fondo con degradado muy suave: negro arriba → gris casi negro abajo (profundidad) */
-    val fondoAbajo = if (claro) fondo else 0xFF0E0E11.toInt()
+    val fondoAbajo = if (claro) fondo else 0xFF120307.toInt()   // brasa roja muy tenue abajo
     /** Teclas de letras */
-    val tecla = if (claro) 0xFFFFFFFF.toInt() else 0xFF2C2C2F.toInt()
+    val tecla = if (claro) 0xFFFFFFFF.toInt() else 0xFF26181B.toInt()   // globo: grafito con matiz rojo
     /** Mayúscula, borrar, 123, emoji, intro */
     /** Las principales (mayúscula, borrar, 123, emoji, espacio, intro): grafito más oscuro */
-    val teclaFuncion = if (claro) 0xFFABB0BA.toInt() else 0xFF2C2C2E.toInt()   // gris grafito (diseño C)
+    val teclaFuncion = if (claro) 0xFFABB0BA.toInt() else 0xFF3B0C14.toInt()   // rojo metálico profundo
     /** Al tocar, las de función toman el color de las letras (como en iOS) */
-    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFF3A3A3C.toInt()
-    val funcionPresionada = if (claro) 0xFFFFFFFF.toInt() else 0xFF48484A.toInt()
+    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFFC4122E.toInt()   // rojo intenso al tocar
+    val funcionPresionada = if (claro) 0xFFFFFFFF.toInt() else 0xFF7A1726.toInt()
     /**
      * Diseño C «Contorno nocturno»: las letras son solo un contorno fino sobre negro puro
      * (en AMOLED casi no gasta) y las teclas principales van rellenas.
      */
     val contorno = !claro
-    val lineaTecla = 0xFF38383A.toInt()
+    val lineaTecla = 0xFF4E1C23.toInt()
+    /** Filo metálico de las letras: rojo claro arriba → rojo oscuro abajo (como metal pulido) */
+    val filoArriba = 0xFF8E2A36.toInt()
+    val filoAbajo = 0xFF2A0A0F.toInt()
+    /** Rojo intenso del teclado (mayúscula activa, línea que separa la barra) */
+    val rojoIntenso = 0xFFE0112F.toInt()
     /** Línea de sombra bajo cada tecla */
     /** Borde de abajo de cada tecla (da la profundidad; en AMOLED es un gris muy oscuro) */
     val sombra = if (claro) 0xFF898A8D.toInt() else 0xFF0E0E10.toInt()

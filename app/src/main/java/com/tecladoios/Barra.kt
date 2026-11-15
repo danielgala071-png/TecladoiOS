@@ -265,6 +265,10 @@ class Barra(context: Context) : View(context) {
     }
     private val pinturaFondo = Paint()
     private val pinturaCapsula = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var bordePlata: android.graphics.Shader? = null
+    private var bordePlataAlto = -1f
+    private var lineaRoja: android.graphics.Shader? = null
+    private var lineaRojaAncho = -1f
 
     private fun dibujarTodo(c: Canvas) {
         zonas.clear(); zonasLargas.clear()
@@ -276,13 +280,31 @@ class Barra(context: Context) : View(context) {
             c.drawRect(0f, 0f, w, h, pinturaFondo)
             // Cápsula compacta pegada al teclado: fondo grafito oscuro con el mismo contorno
             // fino de las letras, para que barra y teclas se vean como un solo diseño
-            val l = dp(5f); val arr = dp(3f); val ab = dp(1f)
+            // La barra va en grafito y plata (neutra) para diferenciarse del teclado rojo
+            val l = dp(5f); val arr = dp(3f); val ab = dp(4f)
             val radio = (h - arr - ab) / 2f
-            pinturaCapsula.style = Paint.Style.FILL; pinturaCapsula.color = 0xFF0E0E10.toInt()
+            pinturaCapsula.style = Paint.Style.FILL; pinturaCapsula.color = 0xFF111113.toInt()
             c.drawRoundRect(l, arr, w - l, h - ab, radio, radio, pinturaCapsula)
-            pinturaCapsula.style = Paint.Style.STROKE; pinturaCapsula.strokeWidth = dp(1f); pinturaCapsula.color = 0xFF38383A.toInt()
+            if (bordePlata == null || bordePlataAlto != h) {
+                bordePlata = android.graphics.LinearGradient(0f, arr, 0f, h - ab,
+                    intArrayOf(0xFF6E6E74.toInt(), 0xFF2E2E32.toInt(), 0xFF1A1A1D.toInt()), floatArrayOf(0f, 0.5f, 1f),
+                    android.graphics.Shader.TileMode.CLAMP)
+                bordePlataAlto = h
+            }
+            pinturaCapsula.style = Paint.Style.STROKE; pinturaCapsula.strokeWidth = dp(1f); pinturaCapsula.shader = bordePlata
             val m = dp(0.5f)
             c.drawRoundRect(l + m, arr + m, w - l - m, h - ab - m, radio, radio, pinturaCapsula)
+            pinturaCapsula.shader = null
+            // Línea de metal rojo que separa la barra del teclado (brilla al centro)
+            if (lineaRoja == null || lineaRojaAncho != w) {
+                lineaRoja = android.graphics.LinearGradient(0f, 0f, w, 0f,
+                    intArrayOf(0x00E0112F, 0xFF7A0A1A.toInt(), 0xFFFF2E4A.toInt(), 0xFF7A0A1A.toInt(), 0x00E0112F),
+                    floatArrayOf(0f, 0.2f, 0.5f, 0.8f, 1f), android.graphics.Shader.TileMode.CLAMP)
+                lineaRojaAncho = w
+            }
+            pinturaCapsula.style = Paint.Style.FILL; pinturaCapsula.shader = lineaRoja
+            c.drawRect(0f, h - dp(1.2f), w, h, pinturaCapsula)
+            pinturaCapsula.shader = null
         }
         // Línea finísima que separa la barra de las teclas (detalle premium, casi invisible)
         // Sin línea de borde: la barra y las teclas son una sola pieza de vidrio
@@ -321,7 +343,7 @@ class Barra(context: Context) : View(context) {
         pinturaLineaC.shader = degradadoLineaC
         pinturaLineaC.alpha = (255 * f * (if (tema.claro) 0.5f else 0.75f)).toInt().coerceIn(0, 255)
         // Dentro de la cápsula, en su borde de abajo
-        c.drawRect(dp(5f) + h / 2f, h - dp(2.6f), w - dp(5f) - h / 2f, h - dp(1.8f), pinturaLineaC)
+        c.drawRect(dp(5f) + h / 2f, h - dp(5.6f), w - dp(5f) - h / 2f, h - dp(4.8f), pinturaLineaC)
         postInvalidateOnAnimation()
     }
 
@@ -492,7 +514,7 @@ class Barra(context: Context) : View(context) {
                 val mitad = p.measureText(corto) / 2
                 val yL = h / 2 + p.textSize * 0.36f + dp(6f)
                 relleno.style = Paint.Style.FILL
-                relleno.color = 0xFF8A8A90.toInt(); relleno.alpha = p.alpha
+                relleno.color = 0xFFE0112F.toInt(); relleno.alpha = p.alpha
                 c.drawRoundRect(x0 + ancho / 2 - mitad, yL, x0 + ancho / 2 + mitad, yL + dp(2f), dp(1f), dp(1f), relleno)
                 relleno.alpha = 255
             }
@@ -599,7 +621,7 @@ class Barra(context: Context) : View(context) {
             val corto = TextUtils.ellipsize(chip.replace('\n', ' '), texto, maxChip - sangria - dp(8f), TextUtils.TruncateAt.END).toString()
             val anchoChip = texto.measureText(corto) + sangria + dp(14f)
             r.set(izq, dp(7f), izq + anchoChip, h - dp(7f))
-            relleno.color = tema.teclaFuncion
+            relleno.color = 0xFF2C2C2E.toInt()
             c.drawRoundRect(r, r.height() / 2, r.height() / 2, relleno)
             if (etq != null) {
                 pequeno.color = tema.textoSuave; pequeno.textAlign = Paint.Align.LEFT

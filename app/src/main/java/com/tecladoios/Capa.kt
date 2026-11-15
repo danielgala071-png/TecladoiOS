@@ -91,10 +91,11 @@ class Capa(context: Context) : View(context) {
     // Como el iPhone: el globo aparece al instante y se va en un suspiro
     // El globo nace de la tecla como una gota: primero se estira hacia arriba, luego se
     // ensancha y sube flotando suave hasta su lugar
-    private val APARECE = 230f
-    private val POP = 230f
+    // Más corto que antes (230 ms): escribiendo rápido el globo ya no se queda atrás
+    private val APARECE = 110f
+    private val POP = 120f
     private var popMs = 0L
-    private val SE_VA = 150f   // lo que tarda la letra en bajar a su tecla
+    private val SE_VA = 90f   // lo que tarda la letra en bajar a su tecla
 
     fun mostrarGlobo(r: RectF, texto: String) {
         val ahora = android.os.SystemClock.uptimeMillis()
@@ -227,10 +228,10 @@ class Capa(context: Context) : View(context) {
                 // Estirón: nace alto y delgado, y se asienta ancho como goma (rebota un par
                 // de veces entre alto/delgado y bajo/ancho antes de quedarse quieto)
                 val goma = kotlin.math.exp(-5f * t) * kotlin.math.cos(9f * t) * u
-                escY = 1f + 0.35f * goma
-                escX = 1f - 0.30f * goma
+                escY = 1f + 0.16f * goma
+                escX = 1f - 0.12f * goma
                 flota = u * u * 6f * d   // sube apenas desde la tecla
-                alfa = (t / 0.18f).coerceIn(0f, 1f)
+                alfa = (t / 0.08f).coerceIn(0f, 1f)
                 // La letra sube con el globo y se asienta con un pelo de rebote
                 viaje = (1f - kotlin.math.exp(-5.5f * t) * kotlin.math.cos(6f * t) * u).coerceAtMost(1.04f)
                 if (t < 1f) postInvalidateOnAnimation()
@@ -256,7 +257,7 @@ class Capa(context: Context) : View(context) {
             c.restore()
             // La letra (fuera de la escala del globo, para que no se deforme)
             val tl = ((ahora - popMs) / POP).coerceIn(0f, 1f)
-            val pop = if (globo) 1f + 0.2f * kotlin.math.exp(-4.5f * tl) * kotlin.math.sin(Math.PI.toFloat() * 2.2f * tl) else 1f
+            val pop = if (globo) 1f + 0.08f * kotlin.math.exp(-4.5f * tl) * kotlin.math.sin(Math.PI.toFloat() * 2.2f * tl) else 1f
             if (globo && tl < 1f) postInvalidateOnAnimation()
             val cyArriba = limites.top + (tecla.top - limites.top) * 0.5f + flota
             val cyTecla = tecla.centerY()

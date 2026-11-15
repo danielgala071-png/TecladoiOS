@@ -577,6 +577,30 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private fun marcarEdicion() { ultimaEdicionMs = SystemClock.uptimeMillis() }
 
     private fun antes(n: Int): String = ic()?.getTextBeforeCursor(n, 0)?.toString() ?: ""
+
+    /**
+     * Texto antes y después del cursor junto con la posición REAL del cursor en el campo, leído
+     * de una sola vez. Antes se mezclaba el texto actual con la posición del último aviso de la
+     * app (que puede venir atrasado): la palabra se marcaba corrida y, al tocarla o elegir una
+     * corrección, se borraba en vez de cambiarse. Devuelve null si hay texto seleccionado.
+     */
+    private class Alrededor(val antes: String, val despues: String, val cursor: Int)
+    private fun alrededor(nAntes: Int, nDespues: Int): Alrededor? {
+        val ic = ic() ?: return null
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            val st = try { ic.getSurroundingText(nAntes, nDespues, 0) } catch (e: Throwable) { null }
+            if (st != null) {
+                if (st.selectionStart != st.selectionEnd) return null
+                val t = st.text?.toString() ?: return null
+                val cur = st.selectionStart
+                if (cur < 0 || cur > t.length) return null
+                if (st.offset >= 0) return Alrededor(t.substring(0, cur), t.substring(cur), st.offset + cur)
+                return Alrededor(t.substring(0, cur), t.substring(cur), selIni)
+            }
+        }
+        if (selIni != selFin) return null
+        return Alrededor(antes(nAntes), despues(nDespues), selIni)
+    }
     private fun despues(n: Int): String = ic()?.getTextAfterCursor(n, 0)?.toString() ?: ""
 
     /** Contexto de la palabra actual: se lee una vez al empezarla (menos consultas a la app = menos batería) */
@@ -1034,17 +1058,19 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         if (!sugerir || palabra.isNotEmpty() || modo != Distribuciones.LETRAS || buscandoEmoji) return
         if (selIni != selFin) return
         val ic = ic() ?: return
-        val t = antes(40)
+        val al = alrededor(40, 1) ?: return
+        val t = al.antes
         if (t.isEmpty() || !t.last().isLetter()) return
-        val sig = despues(1)
+        val sig = al.despues
         if (sig.isNotEmpty() && Texto.esLetraPalabra(sig[0])) return
         var i = t.length
         while (i > 0 && (t[i - 1].isLetter() || t[i - 1] == '\'')) i--
         val w = t.substring(i)
         if (w.isEmpty() || w.length > 30 || (i > 0 && t[i - 1].isDigit())) return
-        if (selFin < w.length) return
+        val fin = al.cursor
+        if (fin < w.length) return
         marcarEdicion()
-        if (!ic.setComposingRegion(selFin - w.length, selFin)) return
+        if (!ic.setComposingRegion(fin - w.length, fin)) return
         palabra.append(w)
         reabierta = true
         for (k in w.indices) ponerToque(k, Float.NaN, Float.NaN)
@@ -1183,12 +1209,26 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 // La dejas como está: el cerebro la aprende y no vuelve a marcarla
                 if (aprender) Cerebro.motor?.aprendido?.agregar(texto)
             } else {
-                ic.beginBatchEdit()
-                ic.finishComposingText()
-                if (ic.setComposingRegion(rv.ini, rv.fin)) ic.commitText(texto, 1)
-                ic.endBatchEdit()
-                aprenderPalabra(texto)
-                if (aprender) Cerebro.motor?.aprendido?.confundir(rv.original, texto)
+                // Se vuelve a leer la palabra donde está el cursor AHORA y solo se cambia si
+                // sigue siendo la misma: así nunca se borra una palabra por una posición vieja
+                val al = alrededor(40, 40)
+                var izq = 0; var der = 0
+                if (al != null) {
+                    var i = al.antes.length
+                    while (i > 0 && (al.antes[i - 1].isLetter() || al.antes[i - 1] == '\'')) i--
+                    var j = 0
+                    while (j < al.despues.length && (al.despues[j].isLetter() || al.despues[j] == '\'')) j++
+                    if (al.antes.substring(i) + al.despues.substring(0, j) == rv.original) { izq = al.antes.length - i; der = j }
+                }
+                if (izq + der > 0) {
+                    ic.beginBatchEdit()
+                    ic.finishComposingText()
+                    ic.deleteSurroundingText(izq, der)
+                    ic.commitText(texto, 1)
+                    ic.endBatchEdit()
+                    aprenderPalabra(texto)
+                    if (aprender) Cerebro.motor?.aprendido?.confundir(rv.original, texto)
+                }
             }
             refrescar()
             return
@@ -1199,6 +1239,14 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             if (antes(1) == " ") ic.deleteSurroundingText(1, 0)
             ic.commitText("$texto ", 1)
             ic.endBatchEdit()
+            refrescar()
+            return
+        }
+        // Palabra reabierta al tocarla: si la app soltó la marca de la palabra (pasa en algunas
+        // apps), elegir una sugerencia la borraba o la duplicaba. Se comprueba antes de cambiar.
+        if (reabierta && palabra.isNotEmpty() && antes(palabra.length) != palabra.toString()) {
+            ic.finishComposingText()
+            reiniciarPalabra()
             refrescar()
             return
         }
@@ -1418,7 +1466,9 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private fun revisarEnCursor() {
         if (!sugerir || modo != Distribuciones.LETRAS || buscandoEmoji || selIni != selFin) return
         val m = Cerebro.motor ?: return
-        val a = antes(32); val d = despues(32)
+        val al = alrededor(32, 32) ?: return
+        val a = al.antes; val d = al.despues
+        val cursor = al.cursor
         var i = a.length
         while (i > 0 && (a[i - 1].isLetter() || a[i - 1] == '\'')) i--
         var j = 0
@@ -1427,7 +1477,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         val izq = a.substring(i); val der = d.substring(0, j)
         val w = izq + der
         if (w.length < 2 || w.length > 30 || (i > 0 && a[i - 1].isDigit())) return
-        val ini = selIni - izq.length; val fin = selIni + der.length
+        val ini = cursor - izq.length; val fin = cursor + der.length
         if (ini < 0) return
         val ctx = contexto(a.substring(0, i))
         val t = turno.incrementAndGet()
