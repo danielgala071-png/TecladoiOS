@@ -279,28 +279,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     /**
      * Letras que probablemente vienen (0..1), según lo que llevas escrito. Atraen un poco el
-     * toque y su contorno brilla muy levemente. Vacío al no estar escribiendo una palabra.
+     * toque, sin verse (como la zona invisible del iPhone). Vacío fuera de una palabra.
      */
     var probables: Map<Char, Float> = emptyMap()
-        set(v) { if (field != v) { field = v; invalidate() } }
-
-    private val pinturaZona by lazy { Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1.2f) } }
-
-    /** Brillo leve en el contorno de las letras que el cerebro espera */
-    private fun dibujarZona(c: Canvas) {
-        val p = probables
-        if (p.isEmpty() || modoTrackpad) return
-        val m = dp(0.6f)
-        for (k in colocadas) {
-            if (!k.tecla.esLetra || pulsos.containsKey(k)) continue   // la hundida no lleva brillo
-            val v = p[k.tecla.texto[0].lowercaseChar()] ?: continue
-            if (v < 0.15f) continue
-            val r = k.dibujo; val radio = radioDe(r)
-            pinturaZona.color = 0xFFFFFFFF.toInt()
-            pinturaZona.alpha = (95 * v).toInt().coerceIn(0, 255)
-            c.drawRoundRect(r.left + m, r.top + m, r.right - m, r.bottom - m, radio, radio, pinturaZona)
-        }
-    }
 
     // ---------- Dedos ----------
 
@@ -1531,7 +1512,6 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
 
         dibujarLuces(c, ahora)
-        dibujarZona(c)
         dibujarFundidoShift(c, ahora)
         dibujarRespiro(c, ahora)
         dibujarComida(c, ahora)

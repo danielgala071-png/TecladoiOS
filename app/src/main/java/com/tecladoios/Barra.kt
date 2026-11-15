@@ -327,7 +327,7 @@ class Barra(context: Context) : View(context) {
 
     private fun dibujarContenido(c: Canvas, w: Float, h: Float) {
         // En el navegador la barra es más compacta (letra algo menor)
-        val tam = if (estilo == 2) dp(15f) else dp(16.5f)   // cápsula compacta
+        val tam = if (estilo == 2) dp(15.5f) else dp(17.5f)
         texto.textSize = tam; fuerte.textSize = tam
         linea.color = tema.separador; linea.strokeWidth = dp(0.8f); linea.strokeCap = Paint.Cap.ROUND
         if (buscando) { dibujarBusqueda(c, w, h); return }
