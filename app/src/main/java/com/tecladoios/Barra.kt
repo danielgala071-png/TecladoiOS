@@ -368,6 +368,8 @@ class Barra(context: Context) : View(context) {
     // Destello de la palabra que elegiste
     private var elegidaMs = 0L
     private var elegidaCelda = -1
+    private var chipDesliza = -1
+    private var chipMs = 0L
     private val DESTELLO = 150f
 
     private fun dibujarSugerencias(c: Canvas, w: Float, h: Float) {
@@ -427,6 +429,16 @@ class Barra(context: Context) : View(context) {
                 celdaSaliente[i] = if (desdeVacio) null else celdaPrevia[i]
                 celdaPrevia[i] = celdas[i]
             }
+        }
+        // Mini tecla que viaja del centro a la palabra tocada a un costado (180 ms)
+        if (chipDesliza >= 0 && !tema.claro) {
+            val tch = ((ahora - chipMs) / 180f).coerceIn(0f, 1f)
+            if (tch < 1f) {
+                val e = 1f - (1f - tch) * (1f - tch) * (1f - tch)
+                val cx = (1f + (chipDesliza - 1) * e) * ancho + ancho / 2
+                dibujarTeclaElegida(c, cx, h, ancho * 0.45f, ancho, 1f - tch * tch)
+                seguir = true
+            } else chipDesliza = -1
         }
         // Dos puntitos muy tenues separan las sugerencias (ordenan sin líneas)
         if (!tema.claro) {
@@ -499,6 +511,8 @@ class Barra(context: Context) : View(context) {
             val xCentro = desplazamiento + x0 + ancho / 2
             zonas.add(rr to {
                 elegidaCelda = celda; elegidaMs = android.os.SystemClock.uptimeMillis()
+                // La mini tecla carmesí se desliza hasta la palabra tocada (no retrasa nada)
+                if (celda != 1 && destacada >= 0) { chipDesliza = celda; chipMs = elegidaMs }
                 // La palabra elegida "salta" al texto: se encoge y sube mientras se desvanece
                 saltoTexto = corto; saltoX = xCentro; saltoMs = elegidaMs
                 oyente?.elegir(s, lit)

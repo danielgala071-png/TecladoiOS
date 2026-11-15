@@ -730,6 +730,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         // Mayúscula activa en rojo intenso con flecha blanca
         const val SHIFT_BLANCO = 0xFFE0112F.toInt()
         const val SHIFT_BLANCO_APRETADO = 0xFFFF3A55.toInt()
+        const val SHIFT_UNA = 0xFF8E1424.toInt()
+        const val SHIFT_UNA_APRETADO = 0xFFA81A2C.toInt()
         const val FLECHA_NEGRA = 0xFFFFFFFF.toInt()
     }
 
@@ -831,7 +833,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         // Diseño C: el intro va en grafito como las demás principales (sin azul)
         t.tipo == K.INTRO && introDestacado -> if (apretada) tema.funcionPresionada else tema.teclaFuncion
         // Como el iPhone: el enter es una tecla gris más y la mayúscula activa se pone blanca
-        t.tipo == K.SHIFT && shift > 0 -> if (apretada) SHIFT_BLANCO_APRETADO else SHIFT_BLANCO
+        // Mayúscula de una letra en carmesí suave; bloqueada (doble toque) en rojo intenso
+        t.tipo == K.SHIFT && shift == 2 -> if (apretada) SHIFT_BLANCO_APRETADO else SHIFT_BLANCO
+        t.tipo == K.SHIFT && shift > 0 -> if (apretada) SHIFT_UNA_APRETADO else SHIFT_UNA
         t.funcion -> if (apretada) tema.funcionPresionada else tema.teclaFuncion
         apretada -> tema.teclaPresionada
         else -> tema.tecla
@@ -1271,7 +1275,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val radio = radioDe(r)
         val a = ((1f - suave(t)) * 255).toInt().coerceIn(0, 255)
         relleno.shader = null
-        relleno.color = if (shiftAntes > 0) SHIFT_BLANCO else tema.teclaFuncion
+        relleno.color = when { shiftAntes == 2 -> SHIFT_BLANCO; shiftAntes > 0 -> SHIFT_UNA; else -> tema.teclaFuncion }
         relleno.alpha = a
         c.drawRoundRect(r, radio, radio, relleno)
         relleno.alpha = 255

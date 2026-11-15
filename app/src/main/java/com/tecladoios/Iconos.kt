@@ -59,7 +59,8 @@ object Iconos {
         if (bloqueo) {
             p.style = Paint.Style.FILL
             val y = base + s * 0.07f
-            r.set(cx - tallo / 2 - s * 0.01f, y, cx + tallo / 2 + s * 0.01f, y + s * 0.055f)
+            // Bloqueo como el iPhone: rayita bajo la flecha, del ancho de la punta para que se note
+            r.set(cx - ancho * 0.38f, y, cx + ancho * 0.38f, y + s * 0.055f)
             c.drawRoundRect(r, s * 0.015f, s * 0.015f, p)
             p.style = Paint.Style.STROKE
         }
