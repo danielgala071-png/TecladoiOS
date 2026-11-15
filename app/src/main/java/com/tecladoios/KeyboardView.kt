@@ -819,12 +819,28 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         if (!tema.claro && !blanca) {
             relleno.color = Tema.mezclar(color, 0xFFFFFFFF.toInt(), 0.82f)
             c.drawRoundRect(r, radio, radio, relleno)
-            relleno.color = color
+            // Cuerpo con degradado vertical: un poco más clara arriba, como luz desde arriba
+            relleno.shader = degradadoTecla(color, r.top + dp(0.9f), r.bottom)
             c.drawRoundRect(r.left, r.top + dp(0.9f), r.right, r.bottom, radio, radio, relleno)
+            relleno.shader = null
         } else {
             relleno.color = color
             c.drawRoundRect(r, radio, radio, relleno)
         }
+    }
+
+    // Un degradado por color (se estira a cada tecla con una matriz: nada nuevo por cuadro)
+    private val degradadosTecla = HashMap<Int, android.graphics.LinearGradient>()
+    private val matrizTecla = android.graphics.Matrix()
+    private fun degradadoTecla(color: Int, arriba: Float, abajo: Float): android.graphics.Shader {
+        val g = degradadosTecla.getOrPut(color) {
+            android.graphics.LinearGradient(0f, 0f, 0f, 1f, Tema.mezclar(color, 0xFFFFFFFF.toInt(), 0.9f), color,
+                android.graphics.Shader.TileMode.CLAMP)
+        }
+        matrizTecla.setScale(1f, (abajo - arriba).coerceAtLeast(1f))
+        matrizTecla.postTranslate(0f, arriba)
+        g.setLocalMatrix(matrizTecla)
+        return g
     }
 
     /** Esquinas como las teclas de iOS: poco curvas */
@@ -850,7 +866,13 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private fun introBlanco(c: Canvas, k: Colocada) {
         if (modoTrackpad) return
         val r = k.dibujo
-        val txt = textoIntro ?: return
+        val txt = textoIntro
+        if (txt == null) {
+            // Sin texto: la flecha ↵ en blanco sobre el azul
+            iconoVivo.color = 0xFFFFFFFF.toInt(); iconoVivo.alpha = 255
+            Iconos.intro(c, r.centerX(), r.centerY(), minOf(r.height(), r.width()), iconoVivo)
+            return
+        }
         val previo = chica.color
         chica.color = 0xFFFFFFFF.toInt()
         c.drawText(txt, r.centerX(), r.centerY() + chica.textSize * 0.36f, chica)
@@ -911,7 +933,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             K.SHIFT -> if (shift == 0) Iconos.fino { Iconos.shift(c, cx, cy, s, icono, false, false) }
             K.BORRAR -> Iconos.fino { Iconos.borrar(c, cx, cy, s, icono, false) }
             K.EMOJI -> Iconos.fino { Iconos.cara(c, cx, cy, s, icono) }
-            K.INTRO -> if (!introDestacado || textoIntro == null) {
+            K.INTRO -> if (!introDestacado) {
                 val txt = textoIntro
                 if (txt != null) { chica.color = tema.texto; c.drawText(txt, cx, cy + chica.textSize * 0.36f, chica) }
                 else Iconos.intro(c, cx, cy, s, icono)
@@ -1021,7 +1043,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             else Iconos.caraLlena(c, r.centerX(), r.centerY(), sz, iconoVivo, colorTecla(t, false))
             iconoVivo.style = Paint.Style.STROKE
         }
-        else if (t.tipo == K.INTRO && introDestacado && textoIntro != null) introBlanco(c, k)
+        else if (t.tipo == K.INTRO && introDestacado) introBlanco(c, k)
         else {
             src.set(r.left.toInt().coerceAtLeast(0), r.top.toInt().coerceAtLeast(0),
                 (r.right + 1).toInt().coerceAtMost(letras.width), (r.bottom + 1).toInt().coerceAtMost(letras.height))

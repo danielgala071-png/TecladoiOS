@@ -256,6 +256,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         leerCampo(info)
         // Al abrirse, las filas entran en cascada (una décima y media de segundo)
         if (!restarting) { teclado?.animarEntrada(); barra?.aparecer() }
+        barra?.tinte = tinteDe(info.packageName)
         // Algunas apps reinician el campo al enviar: si la palabra ya no está, se suelta
         if (restarting && palabra.isNotEmpty() &&
             (info.initialSelStart <= 0 || antes(palabra.length) != palabra.toString())) {
@@ -337,6 +338,21 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     }
 
     /** La barra cambia según la app: chats más cálidos, navegadores más compactos */
+    /** Matiz de la barra según la app (se mezcla al 7 %: apenas perceptible) */
+    private fun tinteDe(paquete: String?): Int {
+        val p = paquete ?: return 0
+        return when {
+            p.startsWith("com.whatsapp") -> 0xFF25D366.toInt()
+            p == "com.facebook.orca" || p == "com.facebook.katana" -> 0xFF0A84FF.toInt()
+            p.startsWith("org.telegram") -> 0xFF2AABEE.toInt()
+            p == "com.instagram.android" -> 0xFFE1306C.toInt()
+            p == "com.google.android.gm" -> 0xFFEA4335.toInt()
+            p == "com.google.android.apps.messaging" || p == "com.samsung.android.messaging" -> 0xFF34C759.toInt()
+            p == "com.zhiliaoapp.musically" || p == "com.ss.android.ugc.trill" -> 0xFFFE2C55.toInt()
+            else -> 0
+        }
+    }
+
     private fun estiloDe(paquete: String?): Int {
         val p = paquete ?: return 0
         return when {
@@ -375,7 +391,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             else -> null to false
         }
         teclado?.textoIntro = txt
-        teclado?.introDestacado = destacado
+        // La tecla intro va siempre en azul (punto de color fijo del teclado)
+        teclado?.introDestacado = true
     }
 
     private fun aplicarTema(acento: Int) {

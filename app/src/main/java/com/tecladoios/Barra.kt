@@ -214,9 +214,18 @@ class Barra(context: Context) : View(context) {
         postInvalidateOnAnimation()
     }
 
+    /** Matiz muy sutil según la app (verde en WhatsApp, azul en Messenger…); 0 = ninguno */
+    var tinte = 0; set(v) { if (field != v) { field = v; invalidate() } }
+    private val pinturaFondo = Paint()
+
     private fun dibujarTodo(c: Canvas) {
         zonas.clear(); zonasLargas.clear()
         val w = width.toFloat(); val h = height.toFloat()
+        // Fondo de la barra: un tono sobre el negro del teclado, con el matiz de la app
+        if (!tema.claro) {
+            pinturaFondo.color = if (tinte != 0) Tema.mezclar(tinte, tema.fondoBarra, 0.07f) else tema.fondoBarra
+            c.drawRect(0f, 0f, w, h, pinturaFondo)
+        }
         // Línea finísima que separa la barra de las teclas (detalle premium, casi invisible)
         // Sin línea de borde: la barra y las teclas son una sola pieza de vidrio
         val t = if (animDura > 0f) ((android.os.SystemClock.uptimeMillis() - animInicio) / animDura).coerceIn(0f, 1f) else 1f
@@ -375,13 +384,15 @@ class Barra(context: Context) : View(context) {
             // (entre comillas) va aún más apagado, para que se distinga de las sugerencias
             val esCorregida = false
             val elegidaAqui = i == 1 && destacada >= 0
+            // Tres tonos: lo que escribes en gris azulado, las sugerencias en gris claro y la
+            // que se pondrá sola en blanco con un halo azul hielo
             p.color = when {
                 elegidaAqui -> tema.texto
-                esLiteral[i] -> tema.velo(0x6B)
-                i == 1 -> tema.velo(0xD0)
-                else -> tema.velo(0x8F)
+                esLiteral[i] -> if (tema.claro) 0xFF5B6B85.toInt() else 0xFF8C9BB5.toInt()
+                tema.claro -> tema.velo(0x99)
+                else -> 0xFFC7C7CC.toInt()
             }
-            if (elegidaAqui) p.setShadowLayer(dp(7f), 0f, 0f, if (tema.claro) 0x40000000 else 0xB3FFFFFF.toInt())
+            if (elegidaAqui) p.setShadowLayer(dp(8f), 0f, 0f, if (tema.claro) 0x405AA0FF else 0xCC9FD3FF.toInt())
             if (i == celdaTocada || (i == elegidaCelda && brilloElegida > 0f)) {
                 relleno.style = Paint.Style.FILL
                 relleno.color = if (tema.claro) 0x24000000 else tema.velo(0x29)
