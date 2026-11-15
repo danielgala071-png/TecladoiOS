@@ -105,7 +105,10 @@ class Barra(context: Context) : View(context) {
         if (nuevas == sugerencias && literalEntreComillas == literal && (autocorrige && lista.isNotEmpty()) == (destacada >= 0)) return
         val cambiaModo = sugerencias.isEmpty() && literal == null
         sugerencias = nuevas; literal = literalEntreComillas
+        val antes = destacada
         destacada = if (autocorrige && lista.isNotEmpty()) 0 else -1
+        // Aparece una corrección: la línea entre la barra y las teclas se ilumina un instante
+        if (antes < 0 && destacada >= 0) lineaMs = android.os.SystemClock.uptimeMillis()
         // Al pasar de herramientas a sugerencias se cruza toda la barra; mientras escribes,
         // cada palabra entra por su cuenta (ver dibujarSugerencias)
         if (cambiaModo) animar(200f, true) else invalidate()
@@ -226,6 +229,32 @@ class Barra(context: Context) : View(context) {
             postInvalidateOnAnimation()
         } else dibujarContenido(c, w, h)
         dibujarSalto(c, h)
+        dibujarLineaCorreccion(c, w, h)
+    }
+
+    // ---------- Línea de luz al aparecer una corrección ----------
+    private var lineaMs = 0L
+    private val LINEA_DURA = 420f
+    private val pinturaLineaC = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var degradadoLineaC: android.graphics.Shader? = null
+    private var degradadoAncho = -1f
+
+    private fun dibujarLineaCorreccion(c: Canvas, w: Float, h: Float) {
+        if (lineaMs == 0L) return
+        val t = (android.os.SystemClock.uptimeMillis() - lineaMs) / LINEA_DURA
+        if (t >= 1f) { lineaMs = 0L; return }
+        if (degradadoAncho != w) {
+            // Más brillante al centro (debajo de la palabra que se pondrá) y se pierde a los lados
+            degradadoLineaC = android.graphics.LinearGradient(0f, 0f, w, 0f,
+                intArrayOf(0x00FFFFFF, 0xCCFFFFFF.toInt(), 0x00FFFFFF), floatArrayOf(0.15f, 0.5f, 0.85f),
+                android.graphics.Shader.TileMode.CLAMP)
+            degradadoAncho = w
+        }
+        val f = kotlin.math.sin(Math.PI.toFloat() * t)
+        pinturaLineaC.shader = degradadoLineaC
+        pinturaLineaC.alpha = (255 * f * (if (tema.claro) 0.5f else 0.75f)).toInt().coerceIn(0, 255)
+        c.drawRect(0f, h - dp(0.8f), w, h, pinturaLineaC)
+        postInvalidateOnAnimation()
     }
 
     private fun dibujarContenido(c: Canvas, w: Float, h: Float) {

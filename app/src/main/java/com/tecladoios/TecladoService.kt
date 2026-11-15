@@ -872,6 +872,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         }
         val ic = ic() ?: return
         principal.removeCallbacks(reabrirTrasBorrar)
+        // Animación: la letra que se va "entra" en la tecla borrar
+        if (selIni == selFin) teclado?.comerLetra(if (palabra.isNotEmpty()) palabra.last().toString() else antes(1))
         marcarEdicion()
         espacioAuto = false
         if (selIni != selFin && selIni >= 0) {

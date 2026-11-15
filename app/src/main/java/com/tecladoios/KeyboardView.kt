@@ -690,6 +690,12 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     // ---------- Pulsación: la tecla se hunde, se enciende desde el dedo y vuelve con resorte ----------
 
+    private fun tamanoPorUso(ch: Char): Float = when (ch.lowercaseChar()) {
+        'e', 'a', 'o', 's', 'r', 'n', 'i' -> 1.035f
+        'k', 'w', 'x', 'q' -> 0.97f
+        else -> 1f
+    }
+
     private companion object {
         val MENU_TECLADO = listOf("Ajustes", "Teclados", "◀ Mano", "Completo", "Mano ▶")
         val LETRAS_TEL = mapOf("1" to "", "2" to "ABC", "3" to "DEF", "4" to "GHI", "5" to "JKL",
@@ -883,6 +889,12 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                         pista.letterSpacing = 0f
                         pista.textSize = tp
                     }
+                } else if (t.esLetra) {
+                    // Las letras más usadas en español, apenas más grandes; las raras, apenas menores
+                    val tam = p.textSize
+                    p.textSize = tam * tamanoPorUso(t.texto[0])
+                    c.drawText(txt, cx, cy + p.textSize * 0.36f + ajuste, p)
+                    p.textSize = tam
                 } else c.drawText(txt, cx, cy + p.textSize * 0.36f + ajuste, p)
                 if (config?.pistas != false && distribucion.nombre == "abc" && t.pista != null)
                     c.drawText(t.pista, r.right - r.width() * 0.2f, r.top + pista.textSize * 1.05f, pista)
@@ -994,6 +1006,14 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         // 4. La letra o el ícono encima, también hundidos (no mientras mueves el cursor)
         if (modoTrackpad) { }
         else if (blanca) flechaNegra(c, k)
+        else if ((t.tipo == K.BORRAR || t.tipo == K.EMOJI) && p.suelta == 0L) {
+            // Mientras la mantienes, el ícono se ve relleno (como los íconos del iPhone al elegirlos)
+            val sz = minOf(r.height(), r.width())
+            iconoVivo.color = tema.texto; iconoVivo.alpha = 255
+            if (t.tipo == K.BORRAR) Iconos.borrar(c, r.centerX(), r.centerY(), sz, iconoVivo, true)
+            else Iconos.caraLlena(c, r.centerX(), r.centerY(), sz, iconoVivo, colorTecla(t, false))
+            iconoVivo.style = Paint.Style.STROKE
+        }
         else if (t.tipo == K.INTRO && introDestacado && textoIntro != null) introBlanco(c, k)
         else {
             src.set(r.left.toInt().coerceAtLeast(0), r.top.toInt().coerceAtLeast(0),
@@ -1062,6 +1082,35 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     /** La barra espaciadora hace un pulso violeta suave (punto automático o mayúscula sola) */
+    // ---------- La tecla borrar "se come" la letra ----------
+    private var comida: String? = null
+    private var comidaMs = 0L
+    private val COMER = 200f
+    private val pinturaComida = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+
+    /** La letra borrada aparece arriba de la tecla borrar y se encoge hacia ella */
+    fun comerLetra(ch: String) {
+        if (ch.isBlank() || modoTrackpad) return
+        comida = ch; comidaMs = SystemClock.uptimeMillis(); invalidate()
+    }
+
+    private fun dibujarComida(c: Canvas, ahora: Long) {
+        val ch = comida ?: return
+        val t = (ahora - comidaMs) / COMER
+        if (t >= 1f) { comida = null; return }
+        val k = teclaDe(K.BORRAR) ?: return
+        val r = k.dibujo
+        val e = suave(t)
+        // Sale de arriba a la izquierda de la tecla y entra en ella encogiéndose
+        val x0 = r.centerX() - r.width() * 0.35f; val y0 = r.top - r.height() * 0.55f
+        val x = x0 + (r.centerX() - x0) * e; val y = y0 + (r.centerY() - y0) * e
+        pinturaComida.textSize = letra.textSize * (1f - 0.75f * e)
+        pinturaComida.color = tema.texto
+        pinturaComida.alpha = (255 * (1f - e * e)).toInt().coerceIn(0, 255)
+        c.drawText(ch, x, y + pinturaComida.textSize * 0.36f, pinturaComida)
+        postInvalidateOnAnimation()
+    }
+
     /** Al terminar una frase, la fila de abajo hace un pulso de luz muy tenue */
     fun respirarEspacio() { respiroMs = SystemClock.uptimeMillis(); invalidate() }
     private var respiroMs = 0L
@@ -1372,6 +1421,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         dibujarLuces(c, ahora)
         dibujarFundidoShift(c, ahora)
         dibujarRespiro(c, ahora)
+        dibujarComida(c, ahora)
 
         // Cursor de vidrio: al mover el cursor con el espacio, el teclado queda como un panel
         // de vidrio vacío y un punto de luz sigue tu dedo

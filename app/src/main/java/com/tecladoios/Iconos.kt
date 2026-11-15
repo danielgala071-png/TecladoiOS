@@ -108,6 +108,25 @@ object Iconos {
         c.drawPath(path, p)
     }
 
+    /** Carita rellena (tecla emoji mantenida): círculo lleno con ojos y sonrisa del color de la tecla */
+    fun caraLlena(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint, fondo: Int) {
+        val previo = p.color
+        p.style = Paint.Style.FILL
+        val rad = s * 0.25f + s * 0.02f
+        c.drawCircle(cx, cy, rad, p)
+        p.color = fondo
+        val ojoW = s * 0.022f; val ojoH = s * 0.036f
+        val r0 = s * 0.25f
+        r.set(cx - r0 * 0.36f - ojoW, cy - r0 * 0.26f - ojoH, cx - r0 * 0.36f + ojoW, cy - r0 * 0.26f + ojoH)
+        c.drawOval(r, p)
+        r.set(cx + r0 * 0.36f - ojoW, cy - r0 * 0.26f - ojoH, cx + r0 * 0.36f + ojoW, cy - r0 * 0.26f + ojoH)
+        c.drawOval(r, p)
+        trazo(p, s * 0.8f)
+        r.set(cx - r0 * 0.52f, cy - r0 * 0.3f, cx + r0 * 0.52f, cy + r0 * 0.56f)
+        c.drawArc(r, 22f, 136f, false, p)
+        p.color = previo
+    }
+
     /** Carita (emojis), como la de iOS: círculo, ojos ovalados y sonrisa */
     fun cara(c: Canvas, cx: Float, cy: Float, s: Float, p: Paint) {
         trazo(p, s * 0.8f)
