@@ -18,6 +18,8 @@ object Siglas {
         // Gestión pública
         "tupa", "rof", "mof", "pim", "siaf", "seace", "tdr", "poi", "pei",
         "mype", "mypes", "ong", "onu", "oea", "ocde", "fmi", "bid", "eeuu",
+        // Bancos, apps y servicios que se escriben como sigla
+        "bcp", "bbva", "hbo", "pubg", "vlc", "apk",
     ).toSet()
 
     /** Formas especiales que no son todo mayúsculas */
@@ -28,6 +30,8 @@ object Siglas {
         if (escrito.length < 2 || escrito.length > 12 || !escrito.all { it.isLetter() }) return null
         val k = Texto.normal(escrito)
         ESPECIALES[k]?.let { return it }
+        // Nombres de apps con sus mayúsculas (WhatsApp, TikTok, YouTube…)
+        NombresApps.MAPA[k]?.let { return it }
         if (k in FIJAS) return k.uppercase()
         // Tuyas: palabras nuevas que escribiste en mayúsculas (2 a 6 letras)
         val propia = aprendido?.conocida(k)?.texto ?: return null

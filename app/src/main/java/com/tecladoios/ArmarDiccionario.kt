@@ -32,11 +32,16 @@ object ArmarDiccionario {
         principal.addAll(frecuentes)
         var conFijas = false
         var conMedio = false
+        var conApps = false
         for (w in lineas("diccionario.txt")) {
             if (w == "@fijas") { principal.addAll(fijas); conFijas = true; continue }
             principal.add(w)
+            // Nombres de apps: entre las palabras de uso medio (se corrigen bien sin ganarle
+            // a las palabras comunes)
+            if (!conApps && principal.size >= 12_000) { principal.addAll(NombresApps.LISTA); conApps = true }
             if (!conMedio && principal.size >= 30_000) { principal.addAll(medio); conMedio = true }
         }
+        if (!conApps) principal.addAll(NombresApps.LISTA)
         if (!conFijas) principal.addAll(fijas)
         if (!conMedio) principal.addAll(medio)
         // Toda palabra que el teclado puede predecir es válida (nunca se toma como error). Van
