@@ -142,7 +142,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 addAction(android.content.Intent.ACTION_USER_PRESENT)
                 addAction(android.content.Intent.ACTION_SCREEN_ON)
             }
-            if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(alDesbloquear, filtro, RECEIVER_NOT_EXPORTED)
+            if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(alDesbloquear, filtro, android.content.Context.RECEIVER_NOT_EXPORTED)
             else registerReceiver(alDesbloquear, filtro)
         } catch (e: Throwable) { Registro.anotar("al desbloquear", e) }
         // Sube y baja con la curva del iPhone (en algunos Android la animación la pone el sistema)

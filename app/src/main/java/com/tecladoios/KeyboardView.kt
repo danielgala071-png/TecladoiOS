@@ -292,7 +292,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         if (p.isEmpty() || modoTrackpad) return
         val m = dp(0.6f)
         for (k in colocadas) {
-            if (!k.tecla.esLetra) continue
+            if (!k.tecla.esLetra || pulsos.containsKey(k)) continue   // la hundida no lleva brillo
             val v = p[k.tecla.texto[0].lowercaseChar()] ?: continue
             if (v < 0.15f) continue
             val r = k.dibujo; val radio = radioDe(r)
