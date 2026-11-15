@@ -726,9 +726,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val MENU_TECLADO = listOf("Ajustes", "Teclados", "◀ Mano", "Completo", "Mano ▶")
         val LETRAS_TEL = mapOf("1" to "", "2" to "ABC", "3" to "DEF", "4" to "GHI", "5" to "JKL",
             "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ", "0" to "+")
-        const val SHIFT_BLANCO = 0xFFD1D1D6.toInt()          // gris claro, no blanco puro
-        const val SHIFT_BLANCO_APRETADO = 0xFFAEAEB2.toInt()
-        const val FLECHA_NEGRA = 0xFF1C1C1E.toInt()
+        // Mayúscula activa más sutil, como el iPhone oscuro: grafito claro con flecha blanca
+        const val SHIFT_BLANCO = 0xFF56565B.toInt()
+        const val SHIFT_BLANCO_APRETADO = 0xFF6A6A70.toInt()
+        const val FLECHA_NEGRA = 0xFFFFFFFF.toInt()
     }
 
     private class Pulso(var t0: Long, var x: Float, var y: Float) {

@@ -428,6 +428,11 @@ class Barra(context: Context) : View(context) {
                 celdaPrevia[i] = celdas[i]
             }
         }
+        // Dos puntitos muy tenues separan las sugerencias (ordenan sin líneas)
+        if (!tema.claro) {
+            relleno.style = Paint.Style.FILL; relleno.color = 0xFF3A3A3C.toInt()
+            for (j in 1..2) if (celdas[j - 1] != null && celdas[j] != null) c.drawCircle(j * ancho, h / 2f + dp(1f), dp(1.4f), relleno)
+        }
         for (i in 0 until 3) {
             val s = celdas[i] ?: continue
             val x0 = i * ancho
@@ -543,8 +548,7 @@ class Barra(context: Context) : View(context) {
             // Volver a las palabras
             val cx = dp(22f); val cy = h / 2
             val apretado = tocando && toqueX in 0f..dp(42f)
-            relleno.color = if (apretado) tema.velo(0x42) else tema.velo(0x17)
-            c.drawCircle(cx, cy, dp(15f), relleno)
+            if (apretado) { relleno.color = tema.velo(0x30); c.drawCircle(cx, cy, dp(15f), relleno) }
             icono.color = tema.textoSuave
             Iconos.flecha(c, cx, cy, dp(30f), icono, 0f)
             zonas.add(RectF(0f, 0f, dp(44f), h) to { verHerramientas = false; animar(200f, true) })
@@ -604,14 +608,9 @@ class Barra(context: Context) : View(context) {
         for (hId in herrs) {
             val cx = x + anchoHerr / 2; val cy = h / 2
             // Cada herramienta en un botón redondo oscuro
+            // Solo el ícono dentro de la cápsula (más limpio); el círculo aparece al tocarlo
             val apretado = toqueX in x..(x + anchoHerr) && tocando
-            relleno.color = if (apretado) tema.velo(0x42) else tema.velo(0x17)
-            c.drawCircle(cx, cy, dp(17f), relleno)
-            // Aro de luz finísimo: el botón se ve con relieve
-            linea.color = 0x1AFFFFFF; linea.strokeWidth = d * 0.7f
-            linea.style = Paint.Style.STROKE
-            c.drawCircle(cx, cy, dp(17f), linea)
-            linea.style = Paint.Style.FILL_AND_STROKE
+            if (apretado) { relleno.color = tema.velo(0x30); c.drawCircle(cx, cy, dp(16f), relleno) }
             when (hId) {
                 H_EMOJI -> Iconos.cara(c, cx, cy, s, icono)
                 H_PORTAPAPELES -> Iconos.portapapeles(c, cx, cy, s, icono)
