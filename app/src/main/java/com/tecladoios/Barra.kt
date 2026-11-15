@@ -216,6 +216,53 @@ class Barra(context: Context) : View(context) {
 
     /** Matiz muy sutil según la app (verde en WhatsApp, azul en Messenger…); 0 = ninguno */
     var tinte = 0; set(v) { if (field != v) { field = v; invalidate() } }
+
+    /**
+     * Palabra mal escrita que se está revisando: va a la izquierda en rojo suave y en las
+     * correcciones se resalta solo la parte que cambia (así ves si era una sola letra).
+     */
+    var revision: String? = null; set(v) { if (field != v) { field = v; invalidate() } }
+
+    /** Cuántas letras iguales hay al inicio y al final entre [a] y [b] (sin mayúsculas) */
+    private fun iguales(a: String, b: String): Pair<Int, Int> {
+        val x = a.lowercase(); val y = b.lowercase()
+        var ini = 0
+        while (ini < x.length && ini < y.length && x[ini] == y[ini]) ini++
+        var fin = 0
+        while (fin < x.length - ini && fin < y.length - ini && x[x.length - 1 - fin] == y[y.length - 1 - fin]) fin++
+        return ini to fin
+    }
+
+    /** Dibuja [s] centrada con la parte distinta a [original] en blanco y subrayada */
+    private fun textoConCambio(c: Canvas, s: String, original: String, cx: Float, y: Float, p: Paint) {
+        val (ini, fin) = iguales(original, s)
+        val corte = s.length - fin
+        if (ini >= corte) {
+            // Solo había una letra de más (la corrección la quita): se ve tal cual
+            c.drawText(s, cx, y, p)
+            return
+        }
+        val alin = p.textAlign; val color = p.color; val alfa = p.alpha
+        p.textAlign = Paint.Align.LEFT
+        val a = s.substring(0, ini); val m = s.substring(ini, corte); val z = s.substring(corte)
+        val wa = p.measureText(a); val wm = p.measureText(m)
+        var x = cx - p.measureText(s) / 2
+        // Lo que no cambia va en gris; lo que cambia, en blanco y subrayado
+        val gris = 0xFF9A9A9E.toInt()
+        p.color = gris; p.alpha = alfa
+        c.drawText(a, x, y, p); x += wa
+        p.color = 0xFFFFFFFF.toInt(); p.alpha = alfa
+        c.drawText(m, x, y, p)
+        relleno.style = Paint.Style.FILL
+        relleno.color = 0xFFFFFFFF.toInt(); relleno.alpha = alfa
+        c.drawRoundRect(x, y + dp(4f), x + wm, y + dp(5.6f), dp(0.8f), dp(0.8f), relleno)
+        relleno.alpha = 255
+        x += wm
+        p.color = gris; p.alpha = alfa
+        c.drawText(z, x, y, p)
+        p.color = color; p.alpha = alfa
+        p.textAlign = alin
+    }
     private val pinturaFondo = Paint()
 
     private fun dibujarTodo(c: Canvas) {
@@ -389,6 +436,7 @@ class Barra(context: Context) : View(context) {
             // que se pondrá sola en blanco con un halo azul hielo
             p.color = when {
                 elegidaAqui -> tema.texto
+                esLiteral[i] && revision != null -> 0xFFFF7A70.toInt()   // la mal escrita, en rojo suave
                 esLiteral[i] -> if (tema.claro) 0xFF5B6B85.toInt() else 0xFF8C9BB5.toInt()
                 tema.claro -> tema.velo(0x99)
                 else -> 0xFF9A9A9E.toInt()
@@ -402,8 +450,10 @@ class Barra(context: Context) : View(context) {
             val corto = recortar(mostrado, p, ancho - dp(22f))
             val alfaBase = p.alpha
             p.alpha = (alfaBase * (0.2f + 0.8f * ec)).toInt()
-            c.drawText(corto, x0 + ancho / 2, h / 2 + p.textSize * 0.36f, p)
-            if (elegidaAqui) {
+            val rev = revision
+            if (rev != null && !esLiteral[i] && corto == mostrado) textoConCambio(c, corto, rev, x0 + ancho / 2, h / 2 + p.textSize * 0.36f, p)
+            else c.drawText(corto, x0 + ancho / 2, h / 2 + p.textSize * 0.36f, p)
+            if (elegidaAqui && rev == null) {
                 // Diseño C: la palabra que se pondrá sola lleva una rayita debajo (sin halo)
                 val mitad = p.measureText(corto) / 2
                 val yL = h / 2 + p.textSize * 0.36f + dp(6f)

@@ -110,6 +110,14 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     /** La palabra en composición vino de reabrir una ya escrita: no se autocorrige sola */
     private var reabierta = false
 
+    /**
+     * Palabra mal escrita que tocaste (con el cursor en medio de ella): la barra la muestra a la
+     * izquierda y al lado sus correcciones, con la letra que cambia resaltada. Al elegir una,
+     * se reemplaza la palabra entera sin tener que borrarla.
+     */
+    private class Revision(val ini: Int, val fin: Int, val original: String, val opciones: List<String>)
+    private var revision: Revision? = null
+
     private enum class Panel { TECLADO, EMOJI, EDICION, PORTAPAPELES }
     private var panel = Panel.TECLADO
 
@@ -1055,6 +1063,16 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private fun actualizarBarra(leido: String? = null) {
         val b = barra ?: return
         if (buscandoEmoji) return
+        // Palabra mal escrita tocada: [tal cual] [corrección] [otra opción]
+        revision?.let { rv ->
+            if (palabra.isEmpty()) {
+                b.revision = rv.original
+                b.mostrarSugerencias(rv.opciones, rv.original, true)
+                return
+            }
+        }
+        // Palabra reabierta que no existe: también se resalta la letra que cambia
+        b.revision = if (palabra.isNotEmpty() && reabierta && propuesta?.takeIf { propuestaDe == palabra.toString() }?.valida == false) palabra.toString() else null
         // Autocompletar como en iPhone: código de SMS o tus datos (con el campo vacío)
         val oferta = if (palabra.isEmpty()) ofertaAutocompletar(leido) else null
         ofertaEscribir = oferta?.second
@@ -1119,6 +1137,22 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private fun elegirReal(texto: String, esLiteral: Boolean) {
         val ic = ic() ?: return
         marcarEdicion()
+        // Corrección de una palabra tocada: se cambia la palabra entera, en su lugar
+        revision?.let { rv ->
+            revision = null
+            if (esLiteral) {
+                // La dejas como está: el cerebro la aprende y no vuelve a marcarla
+                if (aprender) Cerebro.motor?.aprendido?.agregar(texto)
+            } else {
+                ic.beginBatchEdit()
+                ic.finishComposingText()
+                if (ic.setComposingRegion(rv.ini, rv.fin)) ic.commitText(texto, 1)
+                ic.endBatchEdit()
+                aprenderPalabra(texto)
+            }
+            refrescar()
+            return
+        }
         // Cierre elegido en la barra: va pegado a la última palabra ("(hola)" y no "(hola )")
         if (palabra.isEmpty() && texto.length == 1 && texto[0] in CIERRES.values) {
             ic.beginBatchEdit()
@@ -1308,6 +1342,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         selIni = newSelStart; selFin = newSelEnd
         if (borrarFin >= 0) return
         val nuestra = SystemClock.uptimeMillis() - ultimaEdicionMs < 250
+        // Escribiste o moviste el cursor: la revisión anterior ya no vale
+        revision?.let { rv -> if (nuestra || newSelStart != newSelEnd || newSelStart < rv.ini || newSelStart > rv.fin) revision = null }
         if (palabra.isNotEmpty()) {
             if (candidatesStart < 0 || newSelStart != newSelEnd || newSelEnd != candidatesEnd) {
                 // ¿Aviso atrasado de nuestra propia edición, o la app cambió el texto (por
@@ -1328,6 +1364,46 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             ultimaCorreccion = null; espacioAuto = false
             if (newSelStart == newSelEnd && candidatesStart < 0) recapturar(false)
             refrescar()
+            if (palabra.isEmpty() && newSelStart == newSelEnd) revisarEnCursor()
+        }
+    }
+
+    /**
+     * Tocaste dentro de una palabra: si está mal escrita, la barra muestra la palabra tal cual
+     * y al lado cómo debería ir. (Si el cursor queda al final de la palabra, eso ya lo hace
+     * [recapturar] reabriéndola.)
+     */
+    private fun revisarEnCursor() {
+        if (!sugerir || modo != Distribuciones.LETRAS || buscandoEmoji || selIni != selFin) return
+        val m = Cerebro.motor ?: return
+        val a = antes(32); val d = despues(32)
+        var i = a.length
+        while (i > 0 && (a[i - 1].isLetter() || a[i - 1] == '\'')) i--
+        var j = 0
+        while (j < d.length && (d[j].isLetter() || d[j] == '\'')) j++
+        if (j == 0) return                       // al final de la palabra: lo hace recapturar
+        val izq = a.substring(i); val der = d.substring(0, j)
+        val w = izq + der
+        if (w.length < 2 || w.length > 30 || (i > 0 && a[i - 1].isDigit())) return
+        val ini = selIni - izq.length; val fin = selIni + der.length
+        if (ini < 0) return
+        val ctx = contexto(a.substring(0, i))
+        val t = turno.incrementAndGet()
+        ejecutar.execute {
+            if (turno.get() != t) return@execute
+            val p = try { m.proponer(w, null, null, ctx, true) } catch (e: Throwable) { Registro.anotar("revisar", e); null }
+            if (p == null || p.valida) return@execute
+            val mayus = w[0].isUpperCase()
+            val ops = (listOfNotNull(p.autocorregir) + p.opciones.map { it.texto })
+                .map { if (mayus) it.replaceFirstChar { c -> c.uppercaseChar() } else it }
+                .filter { !it.equals(w, ignoreCase = true) }.distinct().take(2)
+            if (ops.isEmpty()) return@execute
+            principal.post {
+                if (turno.get() == t && palabra.isEmpty() && selIni == selFin && selIni in ini..fin) {
+                    revision = Revision(ini, fin, w, ops)
+                    actualizarBarra()
+                }
+            }
         }
     }
 

@@ -722,8 +722,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     /** Teclas apretadas y las que están volviendo a su lugar */
     private val pulsos = HashMap<Colocada, Pulso>()
     // Como el iPhone: la tecla cambia de color al instante al tocarla y vuelve en un suspiro
-    private val HUNDIR = 60f     // se hunde en un instante
-    private val VOLVER = 170f    // al soltar sube con un resorte suave
+    // Efecto 6 «botón elástico»: la tecla se encoge al tocarla y al soltar rebota como goma
+    private val HUNDIR = 70f     // se encoge en un instante
+    private val VOLVER = 280f    // al soltar vuelve con un rebote elástico
+    private val ENCOGE = 0.12f   // cuánto se achica (12 %)
     private val EXPANDE = 120f   // la almohadilla de color crece desde el centro
     private val APAGAR = 110f   // al soltar sube con un rebote cortito y el brillo se apaga
     private val BAJAR = 55f     // se hunde en un instante (se siente, pero no retrasa nada)
@@ -763,7 +765,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         if (p.suelta == 0L) {
             val ahora = SystemClock.uptimeMillis()
             // Desde lo que alcanzó a hundirse (un toque rapidísimo no salta)
-            p.nivel = suave(((ahora - p.t0) / HUNDIR).coerceIn(0f, 1f)).coerceAtLeast(0.7f)
+            p.nivel = suave(((ahora - p.t0) / HUNDIR).coerceIn(0f, 1f)).coerceAtLeast(0.85f)
             p.suelta = ahora
         }
         invalidate()
@@ -773,8 +775,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private fun hundimiento(p: Pulso, ahora: Long): Float {
         if (p.suelta == 0L) return suave(((ahora - p.t0) / HUNDIR).coerceIn(0f, 1f))
         val r = ((ahora - p.suelta) / VOLVER).coerceIn(0f, 1f)
-        // Resorte amortiguado: vuelve, se pasa apenas y se asienta
-        return p.nivel * kotlin.math.exp(-4.2f * r) * kotlin.math.cos(r * 6.6f) * (1f - r)
+        // Resorte de goma: vuelve, se pasa (crece un poquito), rebota otra vez y se asienta
+        return p.nivel * kotlin.math.exp(-3.4f * r) * kotlin.math.cos(r * 10.5f) * (1f - r)
     }
 
     /** Cuánta luz tiene la tecla (0..1) */
@@ -1026,7 +1028,6 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val radio = radioDe(r)
         val blanca = t.tipo == K.SHIFT && shift > 0
         val prof = dp(1.5f)
-        val dy = prof * h
 
         // 1. Se borra la tecla en su lugar (con su borde) con el mismo degradado del fondo
         //    y se deja el borde fijo abajo
@@ -1040,18 +1041,16 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         }
 
         c.save()
-        c.translate(0f, dy)
-        // 2. La tecla, hundida
+        // 2. La tecla se encoge desde su centro (y en el rebote crece apenas por encima)
+        val esc = 1f - ENCOGE * h
+        c.scale(esc, esc, r.centerX(), r.centerY())
         cuerpoTecla(c, r, radio, t, blanca)
-        // 3. La almohadilla de color: crece desde el centro y se apaga al soltar
+        // 3. La almohadilla: la tecla se llena al instante y el relleno se apaga al soltar
         if (l > 0.01f) {
-            val e = suave(((ahora - p.t0) / EXPANDE).coerceIn(0f, 1f))
-            val inX = r.width() * 0.32f * (1f - e)
-            val inY = r.height() * 0.32f * (1f - e)
+            relleno.shader = null
             relleno.color = colorTecla(t, true)
             relleno.alpha = (255 * l).toInt().coerceIn(0, 255)
-            val rad = radio + minOf(inX, inY) * 0.6f
-            c.drawRoundRect(r.left + inX, r.top + inY, r.right - inX, r.bottom - inY, rad, rad, relleno)
+            c.drawRoundRect(r, radio, radio, relleno)
             relleno.alpha = 255
         }
         // 4. La letra o el ícono encima, también hundidos (no mientras mueves el cursor)
