@@ -498,7 +498,7 @@ class Barra(context: Context) : View(context) {
                 val mitad = p.measureText(corto) / 2
                 val yL = h / 2 + p.textSize * 0.36f + dp(6f)
                 relleno.style = Paint.Style.FILL
-                relleno.color = 0xFFE0112F.toInt(); relleno.alpha = p.alpha
+                relleno.color = 0xFF8A8A90.toInt(); relleno.alpha = p.alpha
                 c.drawRoundRect(x0 + ancho / 2 - mitad, yL, x0 + ancho / 2 + mitad, yL + dp(2f), dp(1f), dp(1f), relleno)
                 relleno.alpha = 255
             }
@@ -531,7 +531,7 @@ class Barra(context: Context) : View(context) {
 
     private val lineaLuz = Paint(Paint.ANTI_ALIAS_FLAG)
     private val degradadoLinea = android.graphics.LinearGradient(0f, 0f, 1f, 0f,
-        intArrayOf(0x00E0112F, 0xFFFF3A55.toInt(), 0xFFC4122E.toInt(), 0x00C4122E), floatArrayOf(0f, 0.3f, 0.7f, 1f),
+        intArrayOf(0x00FFFFFF, 0xFFFFFFFF.toInt(), 0xFFB0B0B5.toInt(), 0x00B0B0B5), floatArrayOf(0f, 0.3f, 0.7f, 1f),
         android.graphics.Shader.TileMode.CLAMP)
     /** En chats (WhatsApp, Telegram…) la línea es más cálida: ámbar → coral → violeta */
     private val degradadoCalido = android.graphics.LinearGradient(0f, 0f, 1f, 0f,
@@ -550,7 +550,7 @@ class Barra(context: Context) : View(context) {
         c.drawLine(cx + dp(4f), cy - dp(4.5f), cx + dp(4f), cy - dp(2f), trazo)
         relleno.color = 0xFFFFC2C8.toInt()
         c.drawRoundRect(cx - dp(6f), cy - dp(2f), cx + dp(6f), cy + dp(7f), dp(2f), dp(2f), relleno)
-        relleno.color = 0xFFC4122E.toInt()
+        relleno.color = 0xFF8E8E93.toInt()
         c.drawCircle(cx, cy + dp(2.5f), dp(1.4f), relleno)
     }
 
@@ -572,12 +572,12 @@ class Barra(context: Context) : View(context) {
         val alfa = (255 * (0.2f + 0.8f * entrada)).toInt().coerceIn(0, 255)
         rectTecla.set(cx - anchoT / 2, arriba, cx + anchoT / 2, arriba + alto)
         // Base carmesí 2 dp más abajo
-        pinturaTecla.shader = null; pinturaTecla.color = 0xFF5A0F1A.toInt(); pinturaTecla.alpha = alfa
+        pinturaTecla.shader = null; pinturaTecla.color = 0xFF0E0E10.toInt(); pinturaTecla.alpha = alfa
         c.drawRoundRect(rectTecla.left, rectTecla.top + dp(2f), rectTecla.right, rectTecla.bottom + dp(2f), radio, radio, pinturaTecla)
         // Cara en rojo metálico
         if (caraTecla == null || caraAlto != alto) {
             caraTecla = android.graphics.LinearGradient(0f, 0f, 0f, alto,
-                intArrayOf(0xFF52121D.toInt(), 0xFF3B0C14.toInt(), 0xFF2C0910.toInt()), floatArrayOf(0f, 0.55f, 1f),
+                intArrayOf(0xFF3E3E42.toInt(), 0xFF2C2C2E.toInt(), 0xFF232325.toInt()), floatArrayOf(0f, 0.55f, 1f),
                 android.graphics.Shader.TileMode.CLAMP)
             caraAlto = alto
         }
@@ -680,9 +680,9 @@ class Barra(context: Context) : View(context) {
                 val lado = minOf(anchoHerr - dp(8f), h - dp(10f)) / 2f
                 val hundir = if (apretado) dp(1.5f) else 0f
                 relleno.style = Paint.Style.FILL
-                relleno.color = 0xFF5A0F1A.toInt()
+                relleno.color = 0xFF0E0E10.toInt()
                 c.drawRoundRect(cx - lado, cy - lado + dp(2f), cx + lado, cy + lado + dp(2f), dp(7f), dp(7f), relleno)
-                relleno.color = if (apretado) 0xFF5C1420.toInt() else 0xFF3B0C14.toInt()
+                relleno.color = if (apretado) 0xFF48484A.toInt() else 0xFF2C2C2E.toInt()
                 c.drawRoundRect(cx - lado, cy - lado + hundir, cx + lado, cy + lado + hundir, dp(7f), dp(7f), relleno)
                 relleno.color = 0x40FF8A96
                 c.drawRect(cx - lado + dp(7f), cy - lado + hundir + dp(0.4f), cx + lado - dp(7f), cy - lado + hundir + dp(1.2f), relleno)

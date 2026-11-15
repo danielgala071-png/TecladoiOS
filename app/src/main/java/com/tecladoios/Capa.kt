@@ -53,7 +53,7 @@ class Capa(context: Context) : View(context) {
             pintura.shader = null
             if (!tema.claro) {
                 // Obsidiana carmesí: el globo lleva la misma base roja que asoma bajo las teclas
-                pintura.color = 0xFF5A0F1A.toInt()
+                pintura.color = tema.sombra
                 c.save(); c.translate(0f, 2f * d); c.drawPath(forma, pintura); c.restore()
             }
             pintura.color = tema.tecla

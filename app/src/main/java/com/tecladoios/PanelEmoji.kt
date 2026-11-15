@@ -553,9 +553,9 @@ class PanelEmoji(context: Context) : View(context) {
                 // Obsidiana carmesí: la categoría actual va sobre la misma mini tecla de la barra
                 // (base roja abajo, cara en rojo metálico) y se desliza al cambiar
                 val mx = rad * 1.05f; val my = rad * 0.92f; val rr = dp(8f)
-                relleno.color = 0xFF5A0F1A.toInt()
+                relleno.color = 0xFF0E0E10.toInt()
                 c.drawRoundRect(indicadorX - mx, cy - my + dp(2f), indicadorX + mx, cy + my + dp(2f), rr, rr, relleno)
-                relleno.color = if (deslizandoCat) 0xFF4A1019.toInt() else 0xFF3B0C14.toInt()
+                relleno.color = if (deslizandoCat) 0xFF48484A.toInt() else 0xFF2C2C2E.toInt()
                 c.drawRoundRect(indicadorX - mx, cy - my, indicadorX + mx, cy + my, rr, rr, relleno)
                 relleno.color = 0x40FF8A96
                 c.drawRect(indicadorX - mx + rr, cy - my + dp(0.4f), indicadorX + mx - rr, cy - my + dp(1.2f), relleno)

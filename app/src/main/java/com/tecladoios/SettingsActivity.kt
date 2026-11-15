@@ -35,7 +35,7 @@ import android.widget.TextView
 class SettingsActivity : Activity() {
 
     private val prefs by lazy { Ajustes.prefs(this) }
-    private val acento = Tema.CARMESI
+    private val acento = Tema.AZUL
     private lateinit var lista: LinearLayout
     private var estado: TextView? = null
 
@@ -49,7 +49,7 @@ class SettingsActivity : Activity() {
     private val cTexto get() = if (oscuro) Color.WHITE else Color.BLACK
     private val cGris = 0xFF8E8E93.toInt()
     private val cLinea get() = if (oscuro) 0xFF2E1C1F.toInt() else 0xFFC6C6C8.toInt()
-    private val cToque get() = if (oscuro) 0xFF3B0C14.toInt() else 0xFFD1D1D6.toInt()
+    private val cToque get() = if (oscuro) 0xFF2C2C2E.toInt() else 0xFFD1D1D6.toInt()
 
     /** Fila que se oscurece al tocarla, como en iOS */
     private fun alTocar(v: View) {
@@ -97,8 +97,8 @@ class SettingsActivity : Activity() {
 
     // ---------- Íconos de colores como en Ajustes del iPhone ----------
     // Obsidiana carmesí: los íconos de cada sección en tonos de rojo metálico (antes, colores iOS)
-    private val COLORES_IOS = intArrayOf(0xFFC4122E.toInt(), 0xFF8E1424.toInt(), 0xFFA81A2C.toInt(), 0xFF6E1020.toInt(),
-        0xFFE0112F.toInt(), 0xFF7A1726.toInt(), 0xFFB3122A.toInt(), 0xFF5A0F1A.toInt(), 0xFF9C1530.toInt())
+    private val COLORES_IOS = intArrayOf(0xFF0A84FF.toInt(), 0xFF30D158.toInt(), 0xFFFF9F0A.toInt(), 0xFF5E5CE6.toInt(),
+        0xFFFF453A.toInt(), 0xFF64D2FF.toInt(), 0xFFBF5AF2.toInt(), 0xFF8E8E93.toInt(), 0xFFFF375F.toInt())
     private var colorSeccion = COLORES_IOS[0]
     private var nSeccion = 0
 
@@ -178,7 +178,7 @@ class SettingsActivity : Activity() {
             isChecked = prefs.getBoolean(clave, porDefecto)
             thumbTintList = ColorStateList.valueOf(Color.WHITE)
             trackTintList = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
-                intArrayOf(if (oscuro) 0xFFC4122E.toInt() else 0xFF34C759.toInt(), if (oscuro) 0xFF2E1C1F.toInt() else 0xFFE9E9EA.toInt()))
+                intArrayOf(0xFF34C759.toInt(), if (oscuro) 0xFF39393D.toInt() else 0xFFE9E9EA.toInt()))
             setOnCheckedChangeListener { b, si ->
                 val ok = alCambiar?.invoke(si) ?: true
                 if (ok) prefs.edit().putBoolean(clave, si).apply() else b.isChecked = !si

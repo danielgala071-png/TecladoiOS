@@ -96,14 +96,14 @@ class Respuesta(c: Context) {
             val max = if (conAmplitud) 255 else VibrationEffect.DEFAULT_AMPLITUDE
             // Letras: golpe fuerte pero corto. Antes duraba 32 ms y, a dos pulgares, una
             // vibración se encimaba con la siguiente (se sentía como si la tecla se pegara).
-            efLetra = if (conPrimitivas) VibrationEffect.startComposition()
-                .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1f).compose()
-                else VibrationEffect.createOneShot(18L, max)
+            // La vibración de la 7.174: letras un golpe fuerte de 32 ms; mayúscula/123/emoji
+            // crecen de suave a fuerte; espacio tac-tac; borrar con eco; intro doble y pesado
+            efLetra = VibrationEffect.createOneShot(32L, max)
             efFuerte = onda(longArrayOf(0, 18, 40), intArrayOf(0, 110, 255))
             efSuave = VibrationEffect.createOneShot(14L, max)
-            efEspacio = onda(longArrayOf(0, 20, 34, 18), intArrayOf(0, 255, 0, 220))
-            efBorrar = onda(longArrayOf(0, 20, 28, 14), intArrayOf(0, 255, 0, 120))
-            efIntro = onda(longArrayOf(0, 34, 36, 40), intArrayOf(0, 255, 0, 255))
+            efEspacio = onda(longArrayOf(0, 26, 45, 26), intArrayOf(0, 255, 0, 230))
+            efBorrar = onda(longArrayOf(0, 26, 38, 18), intArrayOf(0, 255, 0, 120))
+            efIntro = onda(longArrayOf(0, 45, 45, 60), intArrayOf(0, 255, 0, 255))
         } catch (_: Throwable) { }
     }
 

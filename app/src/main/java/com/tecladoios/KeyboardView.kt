@@ -732,11 +732,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val LETRAS_TEL = mapOf("1" to "", "2" to "ABC", "3" to "DEF", "4" to "GHI", "5" to "JKL",
             "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ", "0" to "+")
         // Mayúscula activa más sutil, como el iPhone oscuro: grafito claro con flecha blanca
-        // Mayúscula activa en rojo intenso con flecha blanca
-        const val SHIFT_BLANCO = 0xFFE0112F.toInt()
-        const val SHIFT_BLANCO_APRETADO = 0xFFFF3A55.toInt()
-        const val SHIFT_UNA = 0xFF8E1424.toInt()
-        const val SHIFT_UNA_APRETADO = 0xFFA81A2C.toInt()
+        const val SHIFT_BLANCO = 0xFF56565B.toInt()
+        const val SHIFT_BLANCO_APRETADO = 0xFF6A6A70.toInt()
+        const val SHIFT_UNA = 0xFF48484A.toInt()
+        const val SHIFT_UNA_APRETADO = 0xFF5A5A5E.toInt()
         const val FLECHA_NEGRA = 0xFFFFFFFF.toInt()
     }
 
@@ -1298,7 +1297,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     /** Pulso al enviar: dos ondas carmesí salen de la tecla intro y se apagan (300 ms) */
     private val ondaIntro = RectF()
     private var ondaMs = 0L
-    private val pinturaIntro = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0xFFE0112F.toInt() }
+    private val pinturaIntro = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0xFF8E8E93.toInt() }
     private fun dibujarOndaIntro(c: Canvas, ahora: Long) {
         if (ondaMs == 0L) return
         val t = (ahora - ondaMs) / 300f
