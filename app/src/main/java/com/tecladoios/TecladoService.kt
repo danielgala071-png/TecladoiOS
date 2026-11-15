@@ -1519,6 +1519,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             // Emojis como en iOS: el panel sube desde abajo tapando las letras, y al volver baja
             deslizarEmojis(p == Panel.EMOJI)
         } else {
+            revelado?.cancel()
             transicion(teclado, p == Panel.TECLADO, View.INVISIBLE, animar)
             transicion(panelEmoji, p == Panel.EMOJI, View.INVISIBLE, animar)
             if (p == Panel.EMOJI) panelEmoji?.soltar()
@@ -1563,42 +1564,78 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     }
 
     /**
-     * Abrir y cerrar los emojis sin tirones:
-     * - el panel ya viene dibujado y quieto (congelado), y se mueve como una sola imagen
-     *   en la GPU (withLayer), sin redibujar nada en cada cuadro;
-     * - las letras no se esconden (eso obligaba a redibujarlas de golpe al volver): se
-     *   desvanecen y se hunden un poquito, con profundidad, y al volver salen igual de suave;
-     * - curvas tipo iOS: arranque firme y llegada muy suave.
+     * Emojis «desde el botón»: un círculo nace en la tecla emoji y crece hasta cubrir el
+     * teclado, revelando el panel; al cerrar se encoge de vuelta hacia la tecla.
+     * Es un revelado circular de Android: lo recorta la GPU sobre el panel ya dibujado y
+     * quieto (congelado), así no se redibuja nada en cada cuadro y va fluido.
      */
     private fun deslizarEmojis(subir: Boolean) {
         val pe = panelEmoji ?: return
         val kb = teclado ?: return
-        pe.animate().cancel(); kb.animate().cancel()
-        pe.background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(tema.fondo, tema.fondoAbajo))
-        val alto = (pe.height.takeIf { it > 0 } ?: kb.height).toFloat()
-        kb.visibility = View.VISIBLE
-        kb.pivotX = kb.width / 2f; kb.pivotY = 0f
-        if (subir) {
-            if (pe.visibility != View.VISIBLE) { pe.visibility = View.VISIBLE; pe.translationY = alto }
-            pe.alpha = 1f
-            pe.animate().translationY(0f).setDuration(SUBE_EMOJIS).setInterpolator(curvaSube).withLayer()
-                .withEndAction { if (panel == Panel.EMOJI) { pe.background = null; pe.soltar() } }.start()
-            // Las letras se van hacia atrás mientras el panel las cubre (siguen «vivas» con alfa 0)
-            kb.animate().alpha(0f).scaleX(0.94f).scaleY(0.94f).setDuration(SUBE_EMOJIS).setInterpolator(curvaSube).withLayer().start()
-        } else {
-            pe.congelar()
-            if (kb.alpha >= 1f) { kb.alpha = 0f; kb.scaleX = 0.94f; kb.scaleY = 0.94f }
-            kb.translationY = 0f
-            pe.animate().translationY(alto).setDuration(BAJA_EMOJIS).setInterpolator(curvaBaja).withLayer()
-                .withEndAction { if (panel != Panel.EMOJI) { pe.visibility = View.INVISIBLE; pe.translationY = 0f; pe.background = null } }.start()
-            kb.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(BAJA_EMOJIS).setInterpolator(curvaBaja).withLayer().start()
+        revelado?.cancel()
+        kb.animate().cancel(); pe.animate().cancel()
+        val w = pe.width.takeIf { it > 0 } ?: kb.width
+        val h = pe.height.takeIf { it > 0 } ?: kb.height
+        if (w <= 0 || h <= 0 || !pe.isAttachedToWindow) {
+            // Sin medidas todavía: cambio directo, sin animación
+            pe.visibility = if (subir) View.VISIBLE else View.INVISIBLE
+            kb.alpha = if (subir) 0f else 1f; kb.scaleX = 1f; kb.scaleY = 1f
+            if (subir) pe.soltar()
+            return
         }
+        val centro = kb.centroDe(K.EMOJI) ?: android.graphics.PointF(w * 0.15f, h * 0.9f)
+        val cx = centro.x.toInt(); val cy = centro.y.toInt()
+        // Radio que cubre todo el panel desde ese punto (hasta la esquina más lejana)
+        val max = kotlin.math.hypot(maxOf(cx, w - cx).toDouble(), maxOf(cy, h - cy).toDouble()).toFloat()
+        // Si se invierte a la mitad, sigue desde el tamaño en que iba
+        val ahora = SystemClock.uptimeMillis()
+        val previo = if (ahora - reveladoMs < reveladoDura) {
+            val f = curvaRevelado.getInterpolation(((ahora - reveladoMs).toFloat() / reveladoDura).coerceIn(0f, 1f))
+            if (reveladoAbre) f else 1f - f
+        } else if (subir) 0f else 1f
+        pe.translationY = 0f; pe.alpha = 1f
+        pe.background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(tema.fondo, tema.fondoAbajo))
+        pe.visibility = View.VISIBLE
+        kb.visibility = View.VISIBLE; kb.scaleX = 1f; kb.scaleY = 1f; kb.translationY = 0f
+        if (subir) kb.alpha = 1f else { pe.congelar(); kb.alpha = 1f }
+        val dura = if (subir) ABRE_EMOJIS else CIERRA_EMOJIS
+        val anim = try {
+            android.view.ViewAnimationUtils.createCircularReveal(pe, cx, cy, max * previo, if (subir) max else 0f)
+        } catch (e: Throwable) { Registro.anotar("revelar emojis", e); null }
+        if (anim == null) {
+            pe.visibility = if (subir) View.VISIBLE else View.INVISIBLE
+            kb.alpha = if (subir) 0f else 1f
+            return
+        }
+        pe.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        anim.duration = dura
+        anim.interpolator = curvaRevelado
+        anim.addListener(object : android.animation.AnimatorListenerAdapter() {
+            private var cancelada = false
+            override fun onAnimationCancel(a: android.animation.Animator) { cancelada = true }
+            override fun onAnimationEnd(a: android.animation.Animator) {
+                pe.setLayerType(View.LAYER_TYPE_NONE, null)
+                if (cancelada) return
+                if (subir && panel == Panel.EMOJI) {
+                    pe.background = null
+                    kb.alpha = 0f        // las letras quedan tapadas: no se dibujan
+                    pe.soltar()
+                } else if (!subir && panel != Panel.EMOJI) {
+                    pe.visibility = View.INVISIBLE; pe.background = null
+                }
+            }
+        })
+        revelado = anim; reveladoMs = ahora; reveladoDura = dura; reveladoAbre = subir
+        anim.start()
     }
 
-    private val curvaSube = android.view.animation.PathInterpolator(0.32f, 0.72f, 0f, 1f)
-    private val curvaBaja = android.view.animation.PathInterpolator(0.3f, 0f, 0.1f, 1f)
-    private val SUBE_EMOJIS = 340L
-    private val BAJA_EMOJIS = 280L
+    private var revelado: android.animation.Animator? = null
+    private var reveladoMs = 0L
+    private var reveladoDura = 1L
+    private var reveladoAbre = true
+    private val curvaRevelado = android.view.animation.PathInterpolator(0.32f, 0.72f, 0f, 1f)
+    private val ABRE_EMOJIS = 360L
+    private val CIERRA_EMOJIS = 300L
 
     /**
      * Pantallas de 90/120 Hz: mientras el teclado está a la vista le pide a Android la

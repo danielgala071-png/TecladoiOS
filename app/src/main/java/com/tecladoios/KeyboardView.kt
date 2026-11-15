@@ -1257,6 +1257,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     private fun teclaDe(tipo: Int): Colocada? { for (k in colocadas) if (k.tecla.tipo == tipo) return k; return null }
 
+    /** Centro de la tecla de ese tipo (para que el panel de emojis nazca desde su botón) */
+    fun centroDe(tipo: Int): android.graphics.PointF? = teclaDe(tipo)?.dibujo?.let { android.graphics.PointF(it.centerX(), it.centerY()) }
+
     private fun luzVioleta(c: Canvas, r: RectF, fuerza: Float, ancho: Float, alto: Float) {
         if (fuerza <= 0.01f) return
         matrizVioleta.setScale(ancho, alto)
