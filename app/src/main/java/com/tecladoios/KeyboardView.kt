@@ -795,6 +795,23 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         else -> tema.tecla
     }
 
+    /**
+     * Cuerpo de la tecla con un filo de luz finísimo arriba (como un reflejo): en negro AMOLED
+     * le da relieve sin recargar. En el tema claro y en la mayúscula blanca va lisa.
+     */
+    private fun cuerpoConRelieve(c: Canvas, r: RectF, radio: Float, color: Int, blanca: Boolean) {
+        relleno.shader = null
+        if (!tema.claro && !blanca) {
+            relleno.color = Tema.mezclar(color, 0xFFFFFFFF.toInt(), 0.82f)
+            c.drawRoundRect(r, radio, radio, relleno)
+            relleno.color = color
+            c.drawRoundRect(r.left, r.top + dp(0.9f), r.right, r.bottom, radio, radio, relleno)
+        } else {
+            relleno.color = color
+            c.drawRoundRect(r, radio, radio, relleno)
+        }
+    }
+
     /** Esquinas como las teclas de iOS: poco curvas */
     private fun radioDe(r: RectF) = minOf(dp(5.5f), r.height() * 0.13f)
 
@@ -809,8 +826,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         relleno.shader = null
         relleno.color = tema.sombra
         c.drawRoundRect(r.left, r.top + dp(1.5f), r.right, r.bottom + dp(1.5f), radio, radio, relleno)
-        relleno.color = colorTecla(k.tecla, false)
-        c.drawRoundRect(r, radio, radio, relleno)
+        cuerpoConRelieve(c, r, radio, colorTecla(k.tecla, false), blanca)
         if (blanca) flechaNegra(c, k)
         if (k.tecla.tipo == K.INTRO && introDestacado) introBlanco(c, k)
     }
@@ -961,8 +977,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         c.save()
         c.translate(0f, dy)
         // 2. La tecla, hundida
-        relleno.color = colorTecla(t, false)
-        c.drawRoundRect(r, radio, radio, relleno)
+        cuerpoConRelieve(c, r, radio, colorTecla(t, false), blanca)
         // 3. La almohadilla de color: crece desde el centro y se apaga al soltar
         if (l > 0.01f) {
             val e = suave(((ahora - p.t0) / EXPANDE).coerceIn(0f, 1f))
@@ -1206,7 +1221,6 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 if (t.tipo != K.TEXTO || t.texto.length > 2) continue
                 val r = rectEnCapa(k.dibujo)
                 lista.add(r to t.texto)
-                if (t.esLetra) lista.add(RectF(r) to t.texto.uppercase())
             }
             capa.precalentarGlobos(lista)
         }

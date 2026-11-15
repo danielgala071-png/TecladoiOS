@@ -108,6 +108,9 @@ class PanelEmoji(context: Context) : View(context) {
         // Como el iPhone: tus usados recientemente y luego cada categoría con su título, todo
         // seguido al deslizar (sin cortes dentro de cada categoría)
         val base = cargar(context)
+        // Para animar: cómo estaban los recientes la vez anterior y cuándo se abrió el panel
+        recientesAntes = categorias.firstOrNull()?.emojis ?: emptyList()
+        abiertoMs = android.os.SystemClock.uptimeMillis()
         atajos = base.map { it.emojis.firstOrNull() ?: "•" }
         inicioCat = IntArray(0)
         categorias = listOf(Categoria("Usados recientemente", recientes())) +
@@ -118,6 +121,23 @@ class PanelEmoji(context: Context) : View(context) {
         scroller.forceFinished(true)
         invalidate()
     }
+
+    // ---------- Animaciones del panel ----------
+    private var recientesAntes: List<String> = emptyList()
+    private var abiertoMs = 0L
+    /** Emojis en cascada al abrir: cada fila aparece un poquito después de la de arriba */
+    private val CASCADA_FILA = 28f
+    private val CASCADA_DURA = 170f
+    /** Recientes: el que usaste entra primero y empuja a los demás */
+    private val EMPUJE_DURA = 320f
+    // Emoji tocado que salta hacia arriba
+    private var saltoEmoji: String? = null
+    private var saltoX = 0f
+    private var saltoY = 0f
+    private var saltoMs = 0L
+    private val SALTO_DURA = 230f
+
+    private fun suaveP(t: Float): Float { val u = 1f - t; return 1f - u * u * u }
 
     /** Dónde empieza cada grupo dentro de la lista de todos (para los atajos de abajo) */
     private var inicioCat = IntArray(0)
@@ -417,20 +437,64 @@ class PanelEmoji(context: Context) : View(context) {
                 }
                 val primera = ((-gx) / colW).toInt().coerceAtLeast(0)
                 val ultima = minOf(cols - 1, ((w - gx) / colW).toInt())
+                val ahoraP = android.os.SystemClock.uptimeMillis()
+                val tAbierto = (ahoraP - abiertoMs).toFloat()
                 for (col in primera..ultima) for (fila in 0 until FILAS) {
                     val e = emojiBloque(k, g, col, fila) ?: continue
-                    val cx = gx + col * colW + colW / 2
-                    val cy = arribaGrilla() + fila * cel + cel / 2
+                    var cx = gx + col * colW + colW / 2
+                    var cy = arribaGrilla() + fila * cel + cel / 2
+                    var alfa = 255
+                    var escalaE = 1f
+                    // Cascada al abrir: fila por fila, de arriba abajo (sube apenas y aparece)
+                    val tf = ((tAbierto - fila * CASCADA_FILA) / CASCADA_DURA).coerceIn(0f, 1f)
+                    if (tf < 1f) {
+                        val ef = suaveP(tf)
+                        alfa = (255 * ef).toInt(); cy += dp(10f) * (1f - ef)
+                        postInvalidateOnAnimation()
+                    }
+                    // Recientes: cada uno viaja de su lugar anterior al nuevo; el nuevo crece
+                    if (k == 0 && recientesAntes.isNotEmpty()) {
+                        val te = ((tAbierto - 60f) / EMPUJE_DURA).coerceIn(0f, 1f)
+                        if (te < 1f) {
+                            val ee = suaveP(te)
+                            val j = recientesAntes.indexOf(e)
+                            val i = col * FILAS + fila
+                            if (j < 0) { escalaE = 0.4f + 0.6f * ee; alfa = (alfa * ee).toInt() }
+                            else if (j != i) {
+                                val cxA = gx + (j / FILAS) * colW + colW / 2
+                                val cyA = arribaGrilla() + (j % FILAS) * cel + cel / 2
+                                cx = cxA + (cx - cxA) * ee; cy = cyA + (cy - cyA) * ee
+                            }
+                            postInvalidateOnAnimation()
+                        }
+                    }
                     if (e == presionado) {
                         // Gris suave bajo el emoji que tocas (como en iOS)
                         relleno.color = tema.velo(0x29)
                         c.drawRoundRect(cx - cel * 0.46f, cy - cel * 0.46f, cx + cel * 0.46f, cy + cel * 0.46f, dp(10f), dp(10f), relleno)
                     }
-                    dibujarEmoji(c, e, cx, cy, emojiP.textSize)
+                    if (escalaE != 1f) { c.save(); c.scale(escalaE, escalaE, cx, cy) }
+                    dibujarEmoji(c, e, cx, cy, emojiP.textSize, alfa.coerceIn(0, 255))
+                    if (escalaE != 1f) c.restore()
                 }
             }
         }
         c.restore()
+
+        // Emoji tocado: crece un instante y vuela hacia arriba mientras se desvanece
+        saltoEmoji?.let { se ->
+            val t = ((android.os.SystemClock.uptimeMillis() - saltoMs) / SALTO_DURA).coerceIn(0f, 1f)
+            if (t >= 1f) saltoEmoji = null
+            else {
+                val e = suaveP(t)
+                val esc = 1f + 0.45f * kotlin.math.sin(Math.PI.toFloat() * minOf(1f, t * 1.6f)) * (1f - t * 0.5f)
+                val y = saltoY - dp(46f) * e
+                c.save(); c.scale(esc, esc, saltoX, y)
+                dibujarEmoji(c, se, saltoX, y, emojiP.textSize, (255 * (1f - e * e)).toInt().coerceIn(0, 255))
+                c.restore()
+                postInvalidateOnAnimation()
+            }
+        }
 
         relleno.color = tema.velo(0x1F)
         c.drawRect(0f, yAbajo, w, yAbajo + d * 0.6f, relleno)
@@ -640,17 +704,27 @@ class PanelEmoji(context: Context) : View(context) {
                 x < width - dp(60f) -> {
                     val izq = dp(100f); val der = width - dp(60f)
                     val k = categoriaEnBarra(x)
+                    // Se preparan primero los emojis de ese grupo, así el deslizamiento va fluido
+                    if (tamPrecalentado > 0) precalentar(tamPrecalentado, k)
                     // Desliza suave hasta ese grupo
                     val destino = (paradasX.getOrElse(k) { 0f } - dp(10f)).coerceIn(0f, maxCorrimiento())
                     scroller.forceFinished(true)
-                    scroller.startScroll(corrimiento.toInt(), 0, (destino - corrimiento).toInt(), 0, 320)
+                    scroller.startScroll(corrimiento.toInt(), 0, (destino - corrimiento).toInt(), 0, 380)
                     oyente?.respuesta(Respuesta.Tipo.SUAVE)
                     postInvalidateOnAnimation()
                 }
             }
             return
         }
-        emojiEn(x, y)?.let { elegir(it) }
+        emojiEn(x, y)?.let { e ->
+            // Centro de la celda tocada, para que el salto nazca justo ahí
+            val cel = celda()
+            val fila = ((y - arribaGrilla()) / cel).toInt().coerceIn(0, FILAS - 1)
+            saltoEmoji = e; saltoX = x; saltoY = arribaGrilla() + fila * cel + cel / 2
+            saltoMs = android.os.SystemClock.uptimeMillis()
+            invalidate()
+            elegir(e)
+        }
     }
 
     private fun elegir(e: String) {

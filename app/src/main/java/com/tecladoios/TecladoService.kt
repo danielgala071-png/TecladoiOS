@@ -255,7 +255,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         barra?.herramientasActivas = cfg.barraHerramientas
         leerCampo(info)
         // Al abrirse, las filas entran en cascada (una décima y media de segundo)
-        if (!restarting) teclado?.animarEntrada()
+        if (!restarting) { teclado?.animarEntrada(); barra?.aparecer() }
         // Algunas apps reinician el campo al enviar: si la palabra ya no está, se suelta
         if (restarting && palabra.isNotEmpty() &&
             (info.initialSelStart <= 0 || antes(palabra.length) != palabra.toString())) {

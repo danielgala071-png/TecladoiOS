@@ -36,7 +36,7 @@ class Capa(context: Context) : View(context) {
     }
 
     private fun imagenGlobo(): android.graphics.Bitmap? {
-        val clave = "${tema.claro},${limites.left.toInt()},${limites.top.toInt()},${limites.right.toInt()},${tecla.bottom.toInt()},$globoTexto"
+        val clave = "${tema.claro},${limites.left.toInt()},${limites.top.toInt()},${limites.right.toInt()},${tecla.bottom.toInt()}"
         globos[clave]?.let { return it }
         return try {
             val m = MARGEN * d
@@ -53,10 +53,7 @@ class Capa(context: Context) : View(context) {
             pintura.shader = null
             pintura.color = tema.tecla
             c.drawPath(forma, pintura)
-            letraP.color = tema.texto; letraP.alpha = 255
-            letraP.textSize = tecla.height() * 0.8f
-            val cy = limites.top + (tecla.top - limites.top) * 0.5f
-            c.drawText(globoTexto, limites.centerX(), cy + letraP.textSize * 0.35f, letraP)
+            // La letra no va en la imagen: se dibuja aparte para que haga su "pop"
             globos[clave] = b
             b
         } catch (e: Throwable) { Registro.anotar("globo", e); null }
@@ -93,12 +90,15 @@ class Capa(context: Context) : View(context) {
     private var seVaMs = 0L
     // Como el iPhone: el globo aparece al instante y se va en un suspiro
     private val APARECE = 85f
+    private val POP = 150f
+    private var popMs = 0L
     private val SE_VA = 45f
 
     fun mostrarGlobo(r: RectF, texto: String) {
         val ahora = android.os.SystemClock.uptimeMillis()
         // Escribiendo rápido el globo salta de tecla en tecla sin volver a crecer
         if (!globo && ahora - seVaMs > SE_VA) apareceMs = ahora
+        popMs = ahora   // cada tecla nueva hace su "pop", aunque escribas rápido
         tecla.set(r); globoTexto = texto; globo = true
         armarForma()
         invalidate()
@@ -239,6 +239,17 @@ class Capa(context: Context) : View(context) {
                 pintaGlobo.alpha = (alfa * 255).toInt().coerceIn(0, 255)
                 c.drawBitmap(img, limites.left - MARGEN * d, limites.top - MARGEN * d + subeLetra * 0.3f, pintaGlobo)
             }
+            // La letra hace un "pop": crece un poquito más que el globo y se asienta
+            val tl = ((ahora - popMs) / POP).coerceIn(0f, 1f)
+            val pop = if (globo) 1f + 0.16f * kotlin.math.sin(Math.PI.toFloat() * tl) else 1f
+            if (globo && tl < 1f) postInvalidateOnAnimation()
+            letraP.color = tema.texto; letraP.alpha = (alfa * 255).toInt().coerceIn(0, 255)
+            letraP.textSize = tecla.height() * 0.8f
+            val cyL = limites.top + (tecla.top - limites.top) * 0.5f
+            c.save(); c.scale(pop, pop, limites.centerX(), cyL)
+            c.drawText(globoTexto, limites.centerX(), cyL + letraP.textSize * 0.35f, letraP)
+            c.restore()
+            letraP.alpha = 255
             c.restore()
         }
         if (opciones.isNotEmpty()) {

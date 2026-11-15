@@ -124,6 +124,12 @@ class Barra(context: Context) : View(context) {
     private var animDura = 0f
     private var animSube = false
 
+    /** Al abrir el teclado la barra aparece con un fundido corto (y sube apenas) */
+    fun aparecer() {
+        animInicio = android.os.SystemClock.uptimeMillis(); animDura = 220f; animSube = true
+        invalidate()
+    }
+
     private fun animar(duracion: Float, subir: Boolean) {
         // Fundido cortito sin movimiento (en la GPU, casi no gasta)
         animInicio = android.os.SystemClock.uptimeMillis(); animDura = minOf(duracion, 140f); animSube = false
