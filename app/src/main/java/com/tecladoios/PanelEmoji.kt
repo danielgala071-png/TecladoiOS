@@ -124,6 +124,7 @@ class PanelEmoji(context: Context) : View(context) {
 
     // ---------- Animaciones del panel ----------
     private var recientesAntes: List<String> = emptyList()
+    private var animandoGrilla = false
     private var abiertoMs = 0L
     /** Emojis en cascada al abrir: cada fila aparece un poquito después de la de arriba */
     private val CASCADA_FILA = 28f
@@ -397,7 +398,8 @@ class PanelEmoji(context: Context) : View(context) {
             c.drawText(nombre, tx, dp(21f), titulo)
         }
 
-        // Emojis (solo las columnas visibles)
+        // Emojis (solo las columnas visibles). Si alguno está animándose se pide UN solo cuadro nuevo
+        animandoGrilla = false
         emojiP.textSize = cel * 0.68f
         val colW = anchoCol(cel)
         precalentar(emojiP.textSize.toInt(), prioridad)
@@ -450,7 +452,7 @@ class PanelEmoji(context: Context) : View(context) {
                     if (tf < 1f) {
                         val ef = suaveP(tf)
                         alfa = (255 * ef).toInt(); cy += dp(10f) * (1f - ef)
-                        postInvalidateOnAnimation()
+                        animandoGrilla = true
                     }
                     // Recientes: cada uno viaja de su lugar anterior al nuevo; el nuevo crece
                     if (k == 0 && recientesAntes.isNotEmpty()) {
@@ -465,7 +467,7 @@ class PanelEmoji(context: Context) : View(context) {
                                 val cyA = arribaGrilla() + (j % FILAS) * cel + cel / 2
                                 cx = cxA + (cx - cxA) * ee; cy = cyA + (cy - cyA) * ee
                             }
-                            postInvalidateOnAnimation()
+                            animandoGrilla = true
                         }
                     }
                     if (e == presionado) {
@@ -480,6 +482,8 @@ class PanelEmoji(context: Context) : View(context) {
             }
         }
         c.restore()
+
+        if (animandoGrilla) postInvalidateOnAnimation()
 
         // Emoji tocado: crece un instante y vuela hacia arriba mientras se desvanece
         saltoEmoji?.let { se ->
