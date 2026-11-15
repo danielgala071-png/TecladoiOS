@@ -148,12 +148,23 @@ class Aprendizaje(private val archivo: File) {
     @Synchronized
     fun veces(clave: String): Int = uso[clave] ?: propias[clave]?.veces ?: 0
 
+    /**
+     * App donde estás escribiendo: el cerebro aprende cómo escribes en cada una (formal en
+     * Gmail u Outlook, informal en WhatsApp) y en esa app sube lo que ahí sueles poner.
+     */
+    @Volatile var app: String = ""
+
+    private fun claveApp(a: String): String? = app.takeIf { it.isNotEmpty() }?.let { "@" + it.substringAfterLast('.') + " " + a }
+
     @Synchronized
     fun siguiente(contexto: List<String>, palabra: String) {
         if (contexto.isEmpty()) return
         val a = Texto.normal(contexto.last())
         sumarSig(a, palabra)
+        claveApp(a)?.let { sumarSig(it, palabra) }
         if (contexto.size >= 2) sumarSig(Texto.normal(contexto[contexto.size - 2]) + " " + a, palabra)
+        // Tres palabras: «me voy a» → lo que TÚ pones después
+        if (contexto.size >= 3) sumarSig(contexto.takeLast(3).joinToString(" ") { Texto.normal(it) }, palabra)
         cambios++
     }
 
@@ -169,11 +180,20 @@ class Aprendizaje(private val archivo: File) {
     @Synchronized
     fun predecir(contexto: List<String>): List<Pair<String, Int>> {
         val res = HashMap<String, Int>()
+        if (contexto.size >= 3) {
+            val k3 = contexto.takeLast(3).joinToString(" ") { Texto.normal(it) }
+            siguientes[k3]?.forEach { (w, v) -> res[w] = (res[w] ?: 0) + v * 5 }
+        }
         if (contexto.size >= 2) {
             val k = Texto.normal(contexto[contexto.size - 2]) + " " + Texto.normal(contexto.last())
             siguientes[k]?.forEach { (w, v) -> res[w] = (res[w] ?: 0) + v * 3 }
         }
-        if (contexto.isNotEmpty()) siguientes[Texto.normal(contexto.last())]?.forEach { (w, v) -> res[w] = (res[w] ?: 0) + v }
+        if (contexto.isNotEmpty()) {
+            val a = Texto.normal(contexto.last())
+            siguientes[a]?.forEach { (w, v) -> res[w] = (res[w] ?: 0) + v }
+            // Lo que pones después de esa palabra EN ESTA APP pesa más (tu tono en cada app)
+            claveApp(a)?.let { k -> siguientes[k]?.forEach { (w, v) -> res[w] = (res[w] ?: 0) + v * 4 } }
+        }
         return res.entries.sortedByDescending { it.value }.take(8).map { it.key to it.value }
     }
 

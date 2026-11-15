@@ -1362,3 +1362,127 @@ a la: casa, oficina, una, mañana, noche
 de la: mañana, tarde, noche, oficina, casa
 qué haces: hoy, ahora, mañana, tú
 dónde estás: ahora, tú, amor
+# ---- Contexto de tres palabras: lo que suele venir después ----
+me voy a: dormir, casa, trabajar, bañar, almorzar, cambiar, demorar, quedar, ir, comer, acostar
+ya me voy: a, al, de, para, ya, temprano
+te voy a: llamar, escribir, mandar, extrañar, pasar, avisar, esperar, contar, decir, enviar, yapear
+le voy a: decir, avisar, escribir, mandar, preguntar, llamar
+voy a ir: a, al, con, mañana, ahorita, más, temprano
+voy a llegar: tarde, temprano, a, en, como, un
+ya voy a: llegar, salir, ir, estar, terminar
+no te preocupes: por, que, ya, amor, yo
+no hay problema: con, si, igual, amigo
+muchas gracias por: tu, su, todo, la, el, el apoyo, la información, su atención, tu ayuda
+gracias por tu: ayuda, apoyo, tiempo, respuesta, comprensión, paciencia, mensaje
+gracias por su: atención, apoyo, tiempo, respuesta, comprensión, gentileza, colaboración
+quedo atento a: sus, su, tus, cualquier
+quedo atenta a: sus, su, tus, cualquier
+quedo a la: espera, espera de, orden
+a la espera: de, del
+a la espera de: su, sus, tu, la, respuesta
+cualquier consulta adicional: quedo, no, estoy
+saludos cordiales y: éxitos, buen
+buenos días estimado: señor, colega, ingeniero, licenciado, doctor, profesor
+buenas tardes estimado: señor, colega, ingeniero, licenciado, doctor
+buenas noches amor: cómo, que, descansa, te
+cómo te fue: en, hoy, con, ayer, amor
+cómo estás amor: te, ya, qué
+qué estás haciendo: ahorita, amor, ahora
+en qué estás: ahorita, haciendo
+dónde estás ahorita: amor, te, ya
+a qué hora: llegas, sales, vienes, es, nos, te, salimos, entras
+a qué hora sales: del, de, hoy, mañana
+a qué hora llegas: a, al, hoy, mañana
+a qué hora es: la, el, tu
+nos vemos en: el, la, un, la noche, casa, la oficina
+nos vemos a: las, la
+nos vemos mañana: a, en, temprano, amor
+te espero en: el, la, casa, la puerta, la esquina
+te mando la: ubicación, foto, información, lista, dirección
+te paso la: ubicación, voz, información, foto, dirección
+te paso el: número, link, dato, archivo, contacto
+mándame la: ubicación, foto, información, lista
+mándame el: link, número, archivo, documento
+no me olvides: de, que, avisar
+avísame cuando: llegues, salgas, estés, puedas, termines
+avísame si: necesitas, puedes, vas, llegas
+llámame cuando: puedas, llegues, salgas, termines
+cuando llegues a: casa, la
+cuando puedas me: avisas, llamas, escribes, mandas
+me avisas cuando: llegues, salgas, puedas, termines
+estoy saliendo de: casa, la, trabajar, la oficina, chamba
+estoy llegando a: casa, la, tu, la oficina
+estoy en el: trabajo, carro, bus, tráfico, centro, banco, mercado
+estoy en camino: ya, amor, llego
+llego en cinco: minutos
+llego en diez: minutos
+en cinco minutos: llego, estoy, salgo, bajo
+hay mucho tráfico: en, amor, por
+qué vas a: hacer, comer, llevar, querer, pedir
+qué quieres que: te, compre, haga, lleve
+quieres que te: lleve, compre, llame, recoja, ayude, espere
+me puedes pasar: la, el, tu, los
+me puedes ayudar: con, a, por favor
+me puedes mandar: la, el, los, las
+por favor me: ayudas, confirmas, avisas, mandas, envías, pasas, apoyas
+por favor confirmar: la, el, su, recepción, asistencia
+se le comunica: que, a
+se les comunica: que, a
+se les recuerda: que, a
+tengo el agrado: de
+tengo el agrado de: dirigirme, saludarlo, saludarla, informarle
+es grato dirigirme: a, ante
+me dirijo a: usted, ustedes, su despacho
+en atención al: documento, oficio, memorando, informe, requerimiento
+en atención a: su, lo, la
+de acuerdo a: lo, la, los, las, su
+de acuerdo con: lo, la, el, los
+de conformidad con: lo, la, el, los
+en el marco: de, del
+en el marco de: la, las, lo, los
+según lo establecido: en, por
+remito el presente: documento, informe, expediente
+se remite el: informe, expediente, documento, oficio
+para su conocimiento: y, fines
+para su conocimiento y: fines, trámite
+para los fines: pertinentes, del, que
+para los fines pertinentes: atentamente, saludos
+sin otro particular: me, quedo, es
+sin otro particular me: despido, suscribo
+hago propicia la: ocasión, oportunidad
+hago propicia la ocasión: para
+la próxima semana: se, vamos, nos, voy, te
+el día de: hoy, mañana, ayer
+el día de hoy: se, a, en, no, me
+hasta el día: de, lunes, martes, miércoles, jueves, viernes
+lo antes posible: por, para, gracias
+ya te había: dicho, avisado, mandado, contado
+te lo dije: amor, que, ayer
+no sé si: puedo, vas, voy, es, me, te
+no sé qué: hacer, pasó, decir, hora, quieres
+no me digas: que, nada
+me da pena: que, porque, pero
+qué buena onda: que, causa, hermano
+qué buena noticia: me, felicidades, amor
+habla causa cómo: estás, va, andas
+oe causa qué: tal, fue, haces
+qué fue causa: cómo, todo, ya
+todo bien por: allá, acá, ahí, tu
+todo bien gracias: y, a, amor
+y tú cómo: estás, vas, te
+más tarde te: llamo, escribo, aviso, mando, paso
+luego te llamo: amor, para, cuando
+luego te aviso: amor, para, cuando
+ahorita te llamo: amor, para
+ahorita te mando: la, el, los, las
+ahorita te paso: la, el, los
+te quiero mucho: amor, mi, también
+te extraño mucho: amor, mi
+feliz cumpleaños te: deseo, deseamos, quiero, mando
+que tengas un: buen, lindo, excelente, bonito
+que tengas un buen: día, viaje, fin
+buen fin de: semana
+feliz fin de: semana
+que te vaya: bien, bonito, súper
+con mucho cariño: para, de
+un fuerte abrazo: y, a, para

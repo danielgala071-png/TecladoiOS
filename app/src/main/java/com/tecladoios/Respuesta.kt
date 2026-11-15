@@ -64,28 +64,45 @@ class Respuesta(c: Context) {
     private var efFuerte: VibrationEffect? = null
     private var efSuave: VibrationEffect? = null
 
+    private var efEspacio: VibrationEffect? = null
+    private var efBorrar: VibrationEffect? = null
+    private var efIntro: VibrationEffect? = null
+
     /**
-     * Vibración al máximo del motor del celular y larga en cada tecla:
-     * - Letras y demás teclas: fuerza máxima, 50 ms (parecido al largo de Gboard).
-     * - Espacio, mayúscula y borrar: fuerza máxima, 55 ms (apenas más largas).
-     * Siempre es un pulso propio con largo exacto (los efectos del fabricante son muy cortos).
+     * Vibración con textura (siempre al máximo del motor, pero cada tecla se siente distinta):
+     * - Letras: un golpe seco y fuerte de 38 ms (rápido a dos pulgares).
+     * - Espacio: doble golpe (tac-tac).
+     * - Borrar: golpe fuerte que se apaga en una cola suave (se siente como «quitar»).
+     * - Intro: doble golpe largo y pesado.
+     * - Mayúscula y demás: un golpe firme de 50 ms.
      */
     private fun armar() {
         if (efLetra != null) return
         try {
             val max = if (conAmplitud) 255 else VibrationEffect.DEFAULT_AMPLITUDE
-            efLetra = VibrationEffect.createOneShot(50L, max)
-            efFuerte = VibrationEffect.createOneShot(55L, max)
+            efLetra = VibrationEffect.createOneShot(38L, max)
+            efFuerte = VibrationEffect.createOneShot(50L, max)
             efSuave = VibrationEffect.createOneShot(14L, max)
+            efEspacio = onda(longArrayOf(0, 28, 42, 28), intArrayOf(0, 255, 0, 230))
+            efBorrar = onda(longArrayOf(0, 26, 34), intArrayOf(0, 255, 110))
+            efIntro = onda(longArrayOf(0, 40, 50, 46), intArrayOf(0, 255, 0, 255))
         } catch (_: Throwable) { }
     }
+
+    /** Patrón con fuerzas; si el motor no regula la fuerza, solo los tiempos (prendido/apagado) */
+    private fun onda(tiempos: LongArray, fuerzas: IntArray): VibrationEffect =
+        if (conAmplitud) VibrationEffect.createWaveform(tiempos, fuerzas, -1)
+        else VibrationEffect.createWaveform(tiempos, -1)
 
     private fun vibrar(t: Tipo) {
         val v = vibrador ?: return
         try {
             armar()
             val ef = when (t) {
-                Tipo.ESPACIO, Tipo.BORRAR, Tipo.MAYUS -> efFuerte
+                Tipo.ESPACIO -> efEspacio
+                Tipo.BORRAR -> efBorrar
+                Tipo.INTRO -> efIntro
+                Tipo.MAYUS, Tipo.FUNCION -> efFuerte
                 Tipo.SUAVE -> efSuave
                 else -> efLetra
             } ?: return

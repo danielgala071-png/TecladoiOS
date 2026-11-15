@@ -16,6 +16,7 @@ object Ajustes {
     const val PUNTO_DOBLE_ESPACIO = "punto_doble_espacio"
     const val SUGERENCIAS = "sugerencias"
     const val PREDICCION = "prediccion"
+    const val ZONA_CALIENTE = "zona_caliente"
     const val APRENDER = "aprender"
     const val CONTACTOS = "contactos"
     const val SEPARAR_PEGADAS = "separar_pegadas"
@@ -76,6 +77,7 @@ class Config(p: SharedPreferences) {
     val puntoDobleEspacio = p.getBoolean(Ajustes.PUNTO_DOBLE_ESPACIO, true)
     val sugerencias = p.getBoolean(Ajustes.SUGERENCIAS, true)
     val prediccion = p.getBoolean(Ajustes.PREDICCION, true)
+    val zonaCaliente = p.getBoolean(Ajustes.ZONA_CALIENTE, true)
     val aprender = p.getBoolean(Ajustes.APRENDER, true)
     val contactos = p.getBoolean(Ajustes.CONTACTOS, false)
     val separarPegadas = p.getBoolean(Ajustes.SEPARAR_PEGADAS, true)

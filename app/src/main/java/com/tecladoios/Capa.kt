@@ -89,8 +89,9 @@ class Capa(context: Context) : View(context) {
     private var apareceMs = 0L
     private var seVaMs = 0L
     // Como el iPhone: el globo aparece al instante y se va en un suspiro
-    // A juego con el efecto 6: el globo sale con un rebote de goma
-    private val APARECE = 210f
+    // El globo nace de la tecla como una gota: primero se estira hacia arriba, luego se
+    // ensancha y sube flotando suave hasta su lugar
+    private val APARECE = 190f
     private val POP = 230f
     private var popMs = 0L
     private val SE_VA = 45f
@@ -217,13 +218,21 @@ class Capa(context: Context) : View(context) {
             val alfa: Float
             val escala: Float
             val subeLetra: Float
+            var escX = 1f; var escY = 1f; var flota = 0f; var alfaLetra = 1f
             if (globo) {
-                // Almohadilla que se expande: brota desde la tecla y crece hasta su tamaño
-                // en un instante (sin rebote), suave y sin retrasar la escritura
-                // Rebote elástico: crece, se pasa un poquito, vuelve y se asienta (como goma)
                 val t = ((ahora - apareceMs) / APARECE).coerceIn(0f, 1f)
-                val e = 1f - kotlin.math.exp(-5.5f * t) * kotlin.math.cos(9f * t) * (1f - t)
-                alfa = (t / 0.3f).coerceIn(0f, 1f) * 0.5f + 0.5f; escala = 0.62f + 0.38f * e; subeLetra = 0f
+                // Gota: el alto va adelante (se estira hacia arriba con un leve rebote) y el
+                // ancho llega después (se hincha); a la vez sube flotando desde la tecla
+                val u = 1f - t
+                val eY = 1f - kotlin.math.exp(-6f * t) * kotlin.math.cos(7.5f * t) * u
+                val tX = ((t - 0.12f) / 0.88f).coerceIn(0f, 1f)
+                val eX = 1f - (1f - tX) * (1f - tX) * (1f - tX)
+                escY = 0.30f + 0.70f * eY
+                escX = 0.42f + 0.58f * eX
+                flota = u * u * 9f * d   // empieza 9 dp más abajo y sube flotando
+                alfa = (t / 0.18f).coerceIn(0f, 1f)
+                alfaLetra = ((t - 0.25f) / 0.35f).coerceIn(0f, 1f)
+                escala = 1f; subeLetra = 0f
                 if (t < 1f) postInvalidateOnAnimation()
             } else {
                 // Y se va desvaneciendo en un suspiro
@@ -236,7 +245,8 @@ class Capa(context: Context) : View(context) {
             // más caro de dibujar y se repetía en cada cuadro mientras la tecla estaba apretada.
             val img = imagenGlobo()
             c.save()
-            c.scale(escala, escala, tecla.centerX(), tecla.bottom)
+            c.translate(0f, flota)
+            c.scale(escala * escX, escala * escY, tecla.centerX(), tecla.bottom)
             if (img != null) {
                 pintaGlobo.alpha = (alfa * 255).toInt().coerceIn(0, 255)
                 c.drawBitmap(img, limites.left - MARGEN * d, limites.top - MARGEN * d + subeLetra * 0.3f, pintaGlobo)
@@ -246,7 +256,7 @@ class Capa(context: Context) : View(context) {
             // La letra rebota como goma: crece, se encoge apenas y se asienta
             val pop = if (globo) 1f + 0.2f * kotlin.math.exp(-4.5f * tl) * kotlin.math.sin(Math.PI.toFloat() * 2.2f * tl) else 1f
             if (globo && tl < 1f) postInvalidateOnAnimation()
-            letraP.color = tema.texto; letraP.alpha = (alfa * 255).toInt().coerceIn(0, 255)
+            letraP.color = tema.texto; letraP.alpha = (alfa * alfaLetra * 255).toInt().coerceIn(0, 255)
             letraP.textSize = tecla.height() * 0.8f
             val cyL = limites.top + (tecla.top - limites.top) * 0.5f
             c.save(); c.scale(pop, pop, limites.centerX(), cyL)

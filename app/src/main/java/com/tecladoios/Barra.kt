@@ -412,7 +412,7 @@ class Barra(context: Context) : View(context) {
                 // Barra sin saltos: mientras escribes, las palabras cambian con un fundido
                 // rapidísimo en su lugar (nada se mueve). Solo al aparecer desde vacío entran
                 // con un deslizamiento cortito.
-                celdaDura[i] = if (desdeVacio) 140f else 70f
+                celdaDura[i] = if (desdeVacio) 240f else 90f
                 celdaSube[i] = if (desdeVacio) dp(8f) else 0f
                 celdaPrevia[i] = celdas[i]
             }
@@ -426,8 +426,10 @@ class Barra(context: Context) : View(context) {
             if (tc < 1f) seguir = true
             val uc = 1f - tc
             val ec = 1f - uc * uc * uc
+            // Entrada con resorte: llega, se pasa un pelo y se asienta (suave a 90/120 Hz)
+            val res = 1f - kotlin.math.exp(-5.5f * tc) * kotlin.math.cos(8f * tc) * uc
             c.save()
-            c.translate(celdaSube[i] * (1f - ec), 0f)
+            c.translate(celdaSube[i] * (1f - res), 0f)
             // La que se pondrá sola brilla fuerte; las demás quedan tenues y lo que escribiste
             // (entre comillas) va aún más apagado, para que se distinga de las sugerencias
             val esCorregida = false

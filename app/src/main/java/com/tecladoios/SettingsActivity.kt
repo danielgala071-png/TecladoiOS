@@ -270,6 +270,7 @@ class SettingsActivity : Activity() {
         interruptor(corr, "Espacio después de signos", Ajustes.ESPACIO_AUTO, true, "Después de , . ? ! al usar una sugerencia")
         interruptor(corr, "Barra de sugerencias", Ajustes.SUGERENCIAS, true)
         interruptor(corr, "Predecir la siguiente palabra", Ajustes.PREDICCION, true)
+        interruptor(corr, "Resaltar la siguiente letra probable", Ajustes.ZONA_CALIENTE, true)
         interruptor(corr, "Separar palabras pegadas", Ajustes.SEPARAR_PEGADAS, true, "«Yanpodemos» → «Ya podemos»")
         interruptor(corr, "Aprender mis palabras", Ajustes.APRENDER, true)
         interruptor(corr, "Sugerir nombres de contactos", Ajustes.CONTACTOS, false, "Los nombres nunca salen del celular") { si ->

@@ -261,10 +261,37 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             val cx = c.dibujo.centerX() + (dv?.get(0) ?: 0f)
             val cy = c.dibujo.centerY() + (dv?.get(1) ?: 0f)
             val ex = x - cx; val ey = (y - cy) * 0.6f
-            val dd = ex * ex + ey * ey
+            // Zona caliente: la letra que el cerebro espera atrae el toque un poco más
+            // (hasta 30 % de ventaja), como hace el iPhone con su zona invisible
+            val dd = (ex * ex + ey * ey) * (1f - 0.3f * (probables[c.tecla.texto[0].lowercaseChar()] ?: 0f))
             if (dd < md) { md = dd; mejor = c }
         }
         return mejor
+    }
+
+    /**
+     * Letras que probablemente vienen (0..1), según lo que llevas escrito. Atraen un poco el
+     * toque y su contorno brilla muy levemente. Vacío al no estar escribiendo una palabra.
+     */
+    var probables: Map<Char, Float> = emptyMap()
+        set(v) { if (field != v) { field = v; invalidate() } }
+
+    private val pinturaZona by lazy { Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1.2f) } }
+
+    /** Brillo leve en el contorno de las letras que el cerebro espera */
+    private fun dibujarZona(c: Canvas) {
+        val p = probables
+        if (p.isEmpty() || modoTrackpad) return
+        val m = dp(0.6f)
+        for (k in colocadas) {
+            if (!k.tecla.esLetra) continue
+            val v = p[k.tecla.texto[0].lowercaseChar()] ?: continue
+            if (v < 0.15f) continue
+            val r = k.dibujo; val radio = radioDe(r)
+            pinturaZona.color = 0xFFFFFFFF.toInt()
+            pinturaZona.alpha = (95 * v).toInt().coerceIn(0, 255)
+            c.drawRoundRect(r.left + m, r.top + m, r.right - m, r.bottom - m, radio, radio, pinturaZona)
+        }
     }
 
     // ---------- Dedos ----------
@@ -690,7 +717,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         colorFilter = android.graphics.PorterDuffColorFilter(Tema.ROJO, android.graphics.PorterDuff.Mode.SRC_IN)
     }
     /** Cada fila tarda esto en cambiar... */
-    private val DURACION_FILA = 120f
+    private val DURACION_FILA = 200f
     private var cambioHaciaIzq = true
     /** ...y arranca este tanto después de la de abajo: una ola que nace en la tecla 123 */
     private val ESCALON = 12f   // de abajo hacia arriba, casi a la vez
@@ -723,9 +750,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private val pulsos = HashMap<Colocada, Pulso>()
     // Como el iPhone: la tecla cambia de color al instante al tocarla y vuelve en un suspiro
     // Efecto 6 «botón elástico»: la tecla se encoge al tocarla y al soltar rebota como goma
-    private val HUNDIR = 70f     // se encoge en un instante
+    // Reacción instantánea: ya en el primer cuadro del toque la tecla se ve hundida
+    private val HUNDIR = 40f     // se hunde en un instante
     private val VOLVER = 280f    // al soltar vuelve con un rebote elástico
-    private val ENCOGE = 0.12f   // cuánto se achica (12 %)
+    private val ENCOGE = 0.05f   // cuánto se achica (la profundidad la da la inclinación)
     private val EXPANDE = 120f   // la almohadilla de color crece desde el centro
     private val APAGAR = 110f   // al soltar sube con un rebote cortito y el brillo se apaga
     private val BAJAR = 55f     // se hunde en un instante (se siente, pero no retrasa nada)
@@ -1041,9 +1069,17 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         }
 
         c.save()
-        // 2. La tecla se encoge desde su centro (y en el rebote crece apenas por encima)
+        // 2. Profundidad 3D: la tecla se inclina hacia adentro (el borde de arriba se va al
+        //    fondo, girando sobre su base) y se encoge apenas; al soltar rebota como goma
+        camara.save()
+        camara.rotateX(INCLINA * h)
+        camara.getMatrix(matrizInclina)
+        camara.restore()
+        matrizInclina.preTranslate(-r.centerX(), -r.bottom)
+        matrizInclina.postTranslate(r.centerX(), r.bottom)
+        c.concat(matrizInclina)
         val esc = 1f - ENCOGE * h
-        c.scale(esc, esc, r.centerX(), r.centerY())
+        c.scale(esc, esc, r.centerX(), r.bottom)
         cuerpoTecla(c, r, radio, t, blanca)
         // 3. La almohadilla: la tecla se llena al instante y el relleno se apaga al soltar
         if (l > 0.01f) {
@@ -1052,6 +1088,16 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             relleno.alpha = (255 * l).toInt().coerceIn(0, 255)
             c.drawRoundRect(r, radio, radio, relleno)
             relleno.alpha = 255
+        }
+        // 3b. Sombra interior arriba (se ve hundida, como un hueco) y un filo de luz abajo
+        val hondo = maxOf(h, 0f).coerceAtMost(1f)
+        if (hondo > 0.02f && !blanca) {
+            matrizSombra.setScale(1f, r.height()); matrizSombra.postTranslate(0f, r.top)
+            sombraInterior.setLocalMatrix(matrizSombra)
+            pinturaSombraInt.alpha = (255 * hondo).toInt().coerceIn(0, 255)
+            c.drawRoundRect(r, radio, radio, pinturaSombraInt)
+            filoLuz.alpha = (70 * hondo).toInt().coerceIn(0, 255)
+            c.drawLine(r.left + radio, r.bottom - dp(0.8f), r.right - radio, r.bottom - dp(0.8f), filoLuz)
         }
         // 4. La letra o el ícono encima, también hundidos (no mientras mueves el cursor)
         if (modoTrackpad) { }
@@ -1074,6 +1120,16 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         }
         c.restore()
     }
+
+    // Profundidad 3D al presionar
+    private val camara = android.graphics.Camera().apply { setLocation(0f, 0f, -12f) }
+    private val matrizInclina = android.graphics.Matrix()
+    private val INCLINA = 24f    // grados que se inclina hacia adentro
+    private val sombraInterior = android.graphics.LinearGradient(0f, 0f, 0f, 1f,
+        intArrayOf(0xB0000000.toInt(), 0x40000000, 0x00000000), floatArrayOf(0f, 0.35f, 0.7f), android.graphics.Shader.TileMode.CLAMP)
+    private val matrizSombra = android.graphics.Matrix()
+    private val pinturaSombraInt = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = sombraInterior }
+    private val filoLuz by lazy { Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt(); strokeWidth = dp(1f); strokeCap = Paint.Cap.ROUND } }
 
     // Luz violeta por dentro, desde la base de la tecla hacia arriba
     private val luzInterior = android.graphics.LinearGradient(0f, 1f, 0f, 0f,
@@ -1168,7 +1224,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     private var shiftAntes = 0
     private var shiftCambioMs = 0L
-    private val FUNDIDO_SHIFT = 130f
+    private val FUNDIDO_SHIFT = 190f
     private val iconoVivo = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
 
     /** Dibuja encima la tecla mayúscula como estaba antes, desvaneciéndose */
@@ -1475,6 +1531,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
 
         dibujarLuces(c, ahora)
+        dibujarZona(c)
         dibujarFundidoShift(c, ahora)
         dibujarRespiro(c, ahora)
         dibujarComida(c, ahora)
@@ -1550,8 +1607,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 c.drawBitmap(viejoL, 0f, 0f, pinturaAnterior)
             }
             if (f > 0f) {
+                // Las nuevas llegan con un resorte: suben apenas, se pasan un pelo y se asientan
+                val res = 1f - kotlin.math.exp(-5f * f) * kotlin.math.cos(7f * f) * (1f - f)
                 pinturaNueva.alpha = (255 * e).toInt().coerceIn(0, 255)
-                c.drawBitmap(letras, 0f, 0f, pinturaNueva)
+                c.drawBitmap(letras, 0f, sube * (1f - res), pinturaNueva)
             }
             c.restore()
         }

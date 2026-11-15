@@ -268,6 +268,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         // Al abrirse, las filas entran en cascada (una décima y media de segundo)
         if (!restarting) { teclado?.animarEntrada(); barra?.aparecer() }
         barra?.tinte = tinteDe(info.packageName)
+        Cerebro.motor?.aprendido?.app = info.packageName ?: ""
         // Algunas apps reinician el campo al enviar: si la palabra ya no está, se suelta
         if (restarting && palabra.isNotEmpty() &&
             (info.initialSelStart <= 0 || antes(palabra.length) != palabra.toString())) {
@@ -565,6 +566,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private fun contextoPalabra(): List<String> = ctxPalabra ?: contexto().also { ctxPalabra = it }
 
     private fun reiniciarPalabra() {
+        teclado?.probables = emptyMap()
         ctxPalabra = null
         reabierta = false
         palabra.setLength(0)
@@ -582,9 +584,10 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private fun contexto(leido: String? = null): List<String> {
         val t = leido ?: antes(80)
         val sinActual = if (palabra.isNotEmpty() && t.endsWith(palabra)) t.dropLast(palabra.length) else t
-        val res = ArrayList<String>(2)
+        // Tres palabras de contexto: el cerebro adelanta mejor lo que vas a escribir
+        val res = ArrayList<String>(3)
         var i = sinActual.length - 1
-        while (res.size < 2 && i >= 0) {
+        while (res.size < 3 && i >= 0) {
             while (i >= 0 && sinActual[i] == ' ') i--
             if (i < 0) break
             val ch = sinActual[i]
@@ -1034,6 +1037,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private fun pedirSugerencias() {
         if (!sugerir) return
         val m = Cerebro.motor ?: run { actualizarBarra(); return }
+        // Zona caliente: las letras que probablemente siguen (también al borrar una)
+        teclado?.probables = if (cfg.zonaCaliente && modo == Distribuciones.LETRAS) m.letrasProbables(palabra) else emptyMap()
         val escrito = palabra.toString()
         val n = escrito.length
         val xs = tx.copyOf(n); val ys = ty.copyOf(n)
@@ -1129,7 +1134,13 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 b.mostrarSugerencias(if (pred.isEmpty()) listOf(cierre) else listOf(pred[0], cierre) + pred.drop(1).filter { it != cierre }, null, false)
                 return
             }
-            if (pred.isNotEmpty()) { b.mostrarSugerencias(pred, null, false); return }
+            if (pred.isNotEmpty()) {
+                // Frase adelantada: si el cerebro está seguro de las dos siguientes palabras,
+                // la tercera casilla las ofrece juntas («mañana temprano»)
+                val frase = Cerebro.motor?.frase(contexto(t), inicioDeFrase(t))
+                val lista = if (frase != null && pred.size >= 2) pred.take(2) + frase else pred
+                b.mostrarSugerencias(lista, null, false); return
+            }
         }
         b.limpiar()
     }
