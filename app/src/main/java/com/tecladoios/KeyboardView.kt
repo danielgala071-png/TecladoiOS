@@ -194,8 +194,11 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 val toque = RectF(x, y0, x + ancho, y0 + altoEsta)
                 // Mayúscula, borrar y la fila de abajo se ven más grandes: menos margen a los lados
                 val grande = t.tipo == K.SHIFT || t.tipo == K.BORRAR || fi == filas.size - 1
-                val sx = if (grande) sepX * 0.6f else sepX
-                val dib = RectF(x + sx / 2, y0 + sepY / 2, x + ancho - sx / 2, y0 + altoEsta - sepY / 2)
+                // Letras más compactas: un poco más de aire alrededor (el toque sigue siendo la
+                // celda completa, así no se pierde precisión)
+                val sx = if (grande) sepX * 0.6f else sepX * 1.45f
+                val sy = if (grande) sepY else sepY + dp(2.5f)
+                val dib = RectF(x + sx / 2, y0 + sy / 2, x + ancho - sx / 2, y0 + altoEsta - sy / 2)
                 if (t.tipo != K.VACIA) lista.add(Colocada(t, toque, dib, fi))
                 if (t.esLetra) geo.poner(t.texto[0], dib.centerX(), dib.centerY())
                 x += ancho
