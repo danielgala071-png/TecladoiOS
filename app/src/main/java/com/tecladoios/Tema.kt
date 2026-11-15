@@ -16,18 +16,20 @@ class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
     /** Fondo con degradado muy suave: negro arriba → gris casi negro abajo (profundidad) */
     val fondoAbajo = if (claro) fondo else 0xFF120307.toInt()   // brasa roja muy tenue abajo
     /** Teclas de letras */
-    val tecla = if (claro) 0xFFFFFFFF.toInt() else 0xFF26181B.toInt()   // globo: grafito con matiz rojo
+    /** Obsidiana carmesí: cara de la tecla en obsidiana con un matiz rojizo */
+    val tecla = if (claro) 0xFFFFFFFF.toInt() else 0xFF1E1517.toInt()
     /** Mayúscula, borrar, 123, emoji, intro */
     /** Las principales (mayúscula, borrar, 123, emoji, espacio, intro): grafito más oscuro */
     val teclaFuncion = if (claro) 0xFFABB0BA.toInt() else 0xFF3B0C14.toInt()   // rojo metálico profundo
     /** Al tocar, las de función toman el color de las letras (como en iOS) */
-    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFFC4122E.toInt()   // rojo intenso al tocar
+    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFF8E1424.toInt()   // carmesí al tocar
     val funcionPresionada = if (claro) 0xFFFFFFFF.toInt() else 0xFF7A1726.toInt()
     /**
      * Diseño C «Contorno nocturno»: las letras son solo un contorno fino sobre negro puro
      * (en AMOLED casi no gasta) y las teclas principales van rellenas.
      */
-    val contorno = !claro
+    // Obsidiana carmesí: teclas rellenas (ya no solo contorno) con base roja debajo
+    val contorno = false
     val lineaTecla = 0xFF4E1C23.toInt()
     /** Filo metálico de las letras: rojo claro arriba → rojo oscuro abajo (como metal pulido) */
     val filoArriba = 0xFF8E2A36.toInt()
@@ -36,7 +38,7 @@ class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
     val rojoIntenso = 0xFFE0112F.toInt()
     /** Línea de sombra bajo cada tecla */
     /** Borde de abajo de cada tecla (da la profundidad; en AMOLED es un gris muy oscuro) */
-    val sombra = if (claro) 0xFF898A8D.toInt() else 0xFF0E0E10.toInt()
+    val sombra = if (claro) 0xFF898A8D.toInt() else 0xFF5A0F1A.toInt()   // base carmesí bajo cada tecla
     val brillo = 0x00FFFFFF
     /** Letras en blanco cálido (apenas crema): más descansado de noche */
     val texto = if (claro) 0xFF000000.toInt() else 0xFFF5F2EA.toInt()
@@ -68,7 +70,9 @@ class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
          * Acento del teclado: violeta azulado (combina con el negro AMOLED y el vidrio). El
          * nombre quedó de antes; ya no es rojo.
          */
-        const val ROJO = 0xFF5E5CE6.toInt()
+        const val ROJO = 0xFFC4122E.toInt()
+        /** Acento del tema Obsidiana carmesí */
+        const val CARMESI = 0xFFC4122E.toInt()
         /** Segundo tono del acento (degradado azul → violeta) */
         const val AZUL_ACENTO = 0xFF0A84FF.toInt()
         /** Detalles en plata (sin el color de cada app) */

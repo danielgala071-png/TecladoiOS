@@ -542,7 +542,7 @@ class Barra(context: Context) : View(context) {
 
     private val lineaLuz = Paint(Paint.ANTI_ALIAS_FLAG)
     private val degradadoLinea = android.graphics.LinearGradient(0f, 0f, 1f, 0f,
-        intArrayOf(0x000A84FF, 0xFF7A8CFF.toInt(), 0xFF5E5CE6.toInt(), 0x005E5CE6), floatArrayOf(0f, 0.3f, 0.7f, 1f),
+        intArrayOf(0x00E0112F, 0xFFFF3A55.toInt(), 0xFFC4122E.toInt(), 0x00C4122E), floatArrayOf(0f, 0.3f, 0.7f, 1f),
         android.graphics.Shader.TileMode.CLAMP)
     /** En chats (WhatsApp, Telegram…) la línea es más cálida: ámbar → coral → violeta */
     private val degradadoCalido = android.graphics.LinearGradient(0f, 0f, 1f, 0f,
@@ -553,15 +553,15 @@ class Barra(context: Context) : View(context) {
     /** Candado pequeño con un punto de luz violeta (modo privado) */
     private val trazo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     private fun candado(c: Canvas, cx: Float, cy: Float) {
-        relleno.color = 0x335E5CE6
+        relleno.color = 0x33C4122E
         c.drawCircle(cx, cy, dp(14f), relleno)
-        trazo.color = 0xFFC9C8FF.toInt(); trazo.strokeWidth = dp(1.6f)
+        trazo.color = 0xFFFFC2C8.toInt(); trazo.strokeWidth = dp(1.6f)
         c.drawArc(cx - dp(4f), cy - dp(8.5f), cx + dp(4f), cy - dp(0.5f), 180f, 180f, false, trazo)
         c.drawLine(cx - dp(4f), cy - dp(4.5f), cx - dp(4f), cy - dp(2f), trazo)
         c.drawLine(cx + dp(4f), cy - dp(4.5f), cx + dp(4f), cy - dp(2f), trazo)
-        relleno.color = 0xFFC9C8FF.toInt()
+        relleno.color = 0xFFFFC2C8.toInt()
         c.drawRoundRect(cx - dp(6f), cy - dp(2f), cx + dp(6f), cy + dp(7f), dp(2f), dp(2f), relleno)
-        relleno.color = 0xFF5E5CE6.toInt()
+        relleno.color = 0xFFC4122E.toInt()
         c.drawCircle(cx, cy + dp(2.5f), dp(1.4f), relleno)
     }
 

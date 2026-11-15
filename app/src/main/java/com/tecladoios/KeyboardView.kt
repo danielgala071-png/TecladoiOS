@@ -894,6 +894,15 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 reflejo.strokeWidth = dp(0.8f)
                 c.drawLine(r.left + radio, r.top + dp(0.7f), r.right - radio, r.top + dp(0.7f), reflejo)
             }
+        } else if (!tema.claro && ((t.funcion && t.tipo != K.ESPACIO) || blanca)) {
+            // Obsidiana carmesí: las principales en rojo metálico con un reflejo finito arriba
+            relleno.shader = degradadoMetal(colorTecla(t, false), r.top, r.bottom)
+            c.drawRoundRect(r, radio, radio, relleno)
+            relleno.shader = null
+            if (!blanca) {
+                reflejo.strokeWidth = dp(0.8f)
+                c.drawLine(r.left + radio, r.top + dp(0.7f), r.right - radio, r.top + dp(0.7f), reflejo)
+            }
         } else cuerpoConRelieve(c, r, radio, colorTecla(t, false), blanca)
     }
 
@@ -1044,7 +1053,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private val pinturaHundida = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = sombraHundida }
     // Onda de luz que nace del dedo (azul → violeta, se abre y se apaga en un cuarto de segundo)
     private val ondaShader = android.graphics.RadialGradient(0f, 0f, 1f,
-        intArrayOf(0x8C7AA8FF.toInt(), 0x4D5E5CE6, 0x005E5CE6), floatArrayOf(0f, 0.55f, 1f), android.graphics.Shader.TileMode.CLAMP)
+        intArrayOf(0x8CFF5A6E.toInt(), 0x4DC4122E, 0x00C4122E), floatArrayOf(0f, 0.55f, 1f), android.graphics.Shader.TileMode.CLAMP)
     private val pinturaOnda = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = ondaShader }
     private val matrizOnda = android.graphics.Matrix()
     private val ONDA = 260f
@@ -1158,7 +1167,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     // Luz violeta por dentro, desde la base de la tecla hacia arriba
     private val luzInterior = android.graphics.LinearGradient(0f, 1f, 0f, 0f,
-        intArrayOf(0x995E5CE6.toInt(), 0x407A8CFF, 0x007A8CFF), floatArrayOf(0f, 0.5f, 1f), android.graphics.Shader.TileMode.CLAMP)
+        intArrayOf(0x99C4122E.toInt(), 0x40FF3A55, 0x00FF3A55), floatArrayOf(0f, 0.5f, 1f), android.graphics.Shader.TileMode.CLAMP)
     private val pinturaInterior = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = luzInterior }
     private val pinturaHalo = Paint(Paint.FILTER_BITMAP_FLAG)
     private var haloCache: Bitmap? = null
@@ -1173,7 +1182,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val cv = Canvas(b)
             val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = 0xD95E5CE6.toInt()
+                color = 0xD9C4122E.toInt()
                 maskFilter = android.graphics.BlurMaskFilter(dp(9f), android.graphics.BlurMaskFilter.Blur.NORMAL)
             }
             val rad = radioDe(tw)
@@ -1185,14 +1194,14 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     // Cursor de vidrio
     private val veloCursor = Paint().apply { color = 0x66000000 }
     private val puntoShader = android.graphics.RadialGradient(0f, 0f, 1f,
-        intArrayOf(0xFFFFFFFF.toInt(), 0xE69DB8FF.toInt(), 0x995E5CE6.toInt(), 0x005E5CE6), floatArrayOf(0f, 0.22f, 0.5f, 1f), android.graphics.Shader.TileMode.CLAMP)
+        intArrayOf(0xFFFFFFFF.toInt(), 0xE6FF8A96.toInt(), 0x99C4122E.toInt(), 0x00C4122E), floatArrayOf(0f, 0.22f, 0.5f, 1f), android.graphics.Shader.TileMode.CLAMP)
     private val puntoCursor = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = puntoShader }
 
     // ---------- Luces: borrado, espacio que respira y bloqueo de mayúsculas ----------
 
     // Un solo degradado radial de radio 1; se estira con una matriz (sin crear objetos al dibujar)
     private val violetaShader = android.graphics.RadialGradient(0f, 0f, 1f,
-        intArrayOf(0xE69A98FF.toInt(), 0x805E5CE6.toInt(), 0x005E5CE6), floatArrayOf(0f, 0.5f, 1f),
+        intArrayOf(0xE6FF7080.toInt(), 0x80C4122E.toInt(), 0x00C4122E), floatArrayOf(0f, 0.5f, 1f),
         android.graphics.Shader.TileMode.CLAMP)
     private val violetaPintura = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = violetaShader }
     private val matrizVioleta = android.graphics.Matrix()

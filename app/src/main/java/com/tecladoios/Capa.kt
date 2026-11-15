@@ -286,7 +286,7 @@ class Capa(context: Context) : View(context) {
                 val x0 = caja.left + 4 * d + anchoOpcion * i
                 if (i == seleccion) {
                     // Opción elegida: azul con letra blanca, como en iOS
-                    pintura.color = Tema.AZUL
+                    pintura.color = tema.acento
                     c.drawRoundRect(x0 + 1 * d, caja.top + 5 * d, x0 + anchoOpcion - 1 * d, caja.bottom - 5 * d, 6 * d, 6 * d, pintura)
                 }
                 letraP.color = if (i == seleccion) 0xFFFFFFFF.toInt() else tema.texto

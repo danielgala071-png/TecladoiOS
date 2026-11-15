@@ -436,7 +436,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         // AMOLED (negro puro) siempre, salvo que en Ajustes pidas seguir el modo del celular
         val claro = cfg.temaSistema && (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) !=
             android.content.res.Configuration.UI_MODE_NIGHT_YES
-        val t = Tema(Tema.AZUL, claro)
+        val t = Tema(Tema.CARMESI, claro)
         tema = t
         marco?.tema = t; teclado?.tema = t; barra?.tema = t; capa?.tema = t
         panelEmoji?.tema = t; panelEdicion?.tema = t; panelCopiado?.tema = t; ajusteTamano?.tema = t

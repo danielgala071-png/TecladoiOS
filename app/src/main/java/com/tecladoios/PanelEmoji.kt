@@ -599,7 +599,7 @@ class PanelEmoji(context: Context) : View(context) {
         val v = vidrioCache
         if (v != null && vidrioDe == y0 + y1 * 10000f) return v
         val nuevo = android.graphics.LinearGradient(0f, y0, 0f, y1,
-            intArrayOf(0x1AFFFFFF, 0x0DFFFFFF, 0x085E5CE6), floatArrayOf(0f, 0.5f, 1f), android.graphics.Shader.TileMode.CLAMP)
+            intArrayOf(0x1AFFFFFF, 0x0DFFFFFF, 0x08C4122E), floatArrayOf(0f, 0.5f, 1f), android.graphics.Shader.TileMode.CLAMP)
         vidrioCache = nuevo; vidrioDe = y0 + y1 * 10000f
         return nuevo
     }
