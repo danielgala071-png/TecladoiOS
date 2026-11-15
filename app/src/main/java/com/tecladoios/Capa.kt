@@ -220,7 +220,8 @@ class Capa(context: Context) : View(context) {
 
     private fun dibujarTodo(c: Canvas) {
         val ahora = android.os.SystemClock.uptimeMillis()
-        val visible = globo || ahora - seVaMs < SE_VA
+        // Ahorro: el globo desaparece al instante al soltar
+        val visible = globo || (!Ahorro.activo && ahora - seVaMs < SE_VA)
         if (visible && opciones.isEmpty() && !forma.isEmpty) {
             // El globo no se ensancha: crece solo hacia arriba desde la tecla. La letra viaja:
             // sale de la tecla y sube hasta el globo; al soltar, baja del globo a su tecla.
@@ -228,7 +229,8 @@ class Capa(context: Context) : View(context) {
             var escY = 1f; var escX = 1f; var flota = 0f
             val viaje: Float   // 0 = la letra está en la tecla, 1 = arriba en el globo
             if (globo) {
-                val t = ((ahora - apareceMs) / APARECE).coerceIn(0f, 1f)
+                // Ahorro: aparece ya formado, sin estirón ni viaje de la letra
+                val t = if (Ahorro.activo) 1f else ((ahora - apareceMs) / APARECE).coerceIn(0f, 1f)
                 val u = 1f - t
                 // Estirón: nace alto y delgado, y se asienta ancho como goma (rebota un par
                 // de veces entre alto/delgado y bajo/ancho antes de quedarse quieto)

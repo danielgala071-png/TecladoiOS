@@ -138,7 +138,8 @@ class PanelEmoji(context: Context) : View(context) {
     fun soltar() {
         if (!congelado) return
         congelado = false
-        abiertoMs = android.os.SystemClock.uptimeMillis() - 60L
+        // Ahorro: los recientes quedan en su lugar sin animarse
+        abiertoMs = android.os.SystemClock.uptimeMillis() - if (Ahorro.activo) 100_000L else 60L
         invalidate()
     }
 
