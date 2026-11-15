@@ -60,7 +60,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 guardarLibre(anteriorFondo); guardarLibre(anteriorLetras)
                 anteriorFondo = cacheFondo; anteriorLetras = cacheLetras
                 cacheFondo = null; cacheLetras = null
-                cambioMs = if (Ahorro.activo) 0L else SystemClock.uptimeMillis()
+                cambioMs = SystemClock.uptimeMillis()
                 // abc → 123: las letras salen a la izquierda; al volver, a la derecha
                 cambioHaciaIzq = v.nombre != "abc"
             }
@@ -72,7 +72,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     var shift = 0; set(v) {
         if (field != v) {
             // La tecla mayúscula pasa de gris a blanco (o al revés) con un fundido
-            shiftAntes = field; shiftCambioMs = if (Ahorro.activo) 0L else SystemClock.uptimeMillis()
+            shiftAntes = field; shiftCambioMs = SystemClock.uptimeMillis()
             // Minúsculas ↔ mayúsculas con un fundido cortito (se guarda cómo se veían)
             val l = cacheLetras
             if (l != null && !l.isRecycled && isShown && distribucion.nombre == "abc" && !modoTrackpad) {
@@ -613,7 +613,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                     K.TEXTO -> if (dd.emitida) capa.ocultarGlobo() else emitir(dd)
                     K.ESPACIO, K.INTRO, K.EMOJI -> {
                         if (c.tecla.tipo == K.INTRO && !tema.claro) {
-                            if (!Ahorro.activo) { ondaIntro.set(c.dibujo); ondaMs = SystemClock.uptimeMillis(); postInvalidateOnAnimation() }
+                            ondaIntro.set(c.dibujo); ondaMs = SystemClock.uptimeMillis(); postInvalidateOnAnimation()
                         }
                         oyente?.codigo(c.tecla.tipo)
                     }
@@ -804,8 +804,6 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     /** 0 = en reposo, 1 = hundida del todo (al volver puede pasar un pelito a negativo: resorte) */
     private fun hundimiento(p: Pulso, ahora: Long): Float {
-        // Ahorro: sin hundirse ni rebotar (cero cuadros de animación)
-        if (Ahorro.activo) return 0f
         if (p.suelta == 0L) return suave(((ahora - p.t0) / HUNDIR).coerceIn(0f, 1f))
         val r = ((ahora - p.suelta) / VOLVER).coerceIn(0f, 1f)
         // Resorte de goma más fluido: vuelve, se pasa una sola vez y se asienta suave
@@ -815,14 +813,13 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     /** Cuánta luz tiene la tecla (0..1) */
     private fun luzDe(p: Pulso, ahora: Long): Float {
         if (p.suelta == 0L) return 1f   // apretada: color de tecla apretada al instante
-        if (Ahorro.activo) return 0f    // al soltar vuelve al instante
         val r = ((ahora - p.suelta) / APAGAR).coerceIn(0f, 1f)
         val u = 1f - r
         return p.nivel.coerceIn(0f, 1f) * u * u
     }
 
     private fun terminado(p: Pulso, ahora: Long) =
-        p.suelta != 0L && (Ahorro.activo || ahora - p.suelta >= maxOf(VOLVER, APAGAR))
+        p.suelta != 0L && ahora - p.suelta >= maxOf(VOLVER, APAGAR)
 
     private fun ensuciar() { sucio = true; invalidate() }
 
@@ -1264,7 +1261,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     /** Al terminar una frase, la fila de abajo hace un pulso de luz muy tenue */
-    fun respirarEspacio() { if (Ahorro.activo) return; respiroMs = SystemClock.uptimeMillis(); invalidate() }
+    fun respirarEspacio() { respiroMs = SystemClock.uptimeMillis(); invalidate() }
     private var respiroMs = 0L
     private val RESPIRO = 460f
 

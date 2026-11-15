@@ -108,7 +108,7 @@ class Barra(context: Context) : View(context) {
         val antes = destacada
         destacada = if (autocorrige && lista.isNotEmpty()) 0 else -1
         // Aparece una corrección: la línea entre la barra y las teclas se ilumina un instante
-        if (antes < 0 && destacada >= 0 && !Ahorro.activo) lineaMs = android.os.SystemClock.uptimeMillis()
+        if (antes < 0 && destacada >= 0) lineaMs = android.os.SystemClock.uptimeMillis()
         // Al pasar de herramientas a sugerencias se cruza toda la barra; mientras escribes,
         // cada palabra entra por su cuenta (ver dibujarSugerencias)
         if (cambiaModo) animar(200f, true) else invalidate()
@@ -135,7 +135,7 @@ class Barra(context: Context) : View(context) {
 
     private fun animar(duracion: Float, subir: Boolean) {
         // Fundido cortito sin movimiento (en la GPU, casi no gasta)
-        animInicio = android.os.SystemClock.uptimeMillis(); animDura = if (Ahorro.activo) 0f else minOf(duracion, 140f); animSube = false
+        animInicio = android.os.SystemClock.uptimeMillis(); animDura = minOf(duracion, 140f); animSube = false
         invalidate()
         invalidate()
     }
@@ -423,10 +423,10 @@ class Barra(context: Context) : View(context) {
                 // con un deslizamiento cortito.
                 // Mientras escribes: efecto rodillo (la vieja sale hacia arriba, la nueva entra
                 // desde abajo con un resorte cortito). Desde vacío: entra deslizándose.
-                celdaDura[i] = if (Ahorro.activo) 0f else if (desdeVacio) 240f else 170f
+                celdaDura[i] = if (desdeVacio) 240f else 170f
                 celdaSube[i] = if (desdeVacio) dp(8f) else 0f
                 celdaSubeY[i] = if (desdeVacio) 0f else dp(6f)
-                celdaSaliente[i] = if (desdeVacio || Ahorro.activo) null else celdaPrevia[i]
+                celdaSaliente[i] = if (desdeVacio) null else celdaPrevia[i]
                 celdaPrevia[i] = celdas[i]
             }
         }
@@ -510,14 +510,11 @@ class Barra(context: Context) : View(context) {
             if (esCorregida) { zonas.add(rr to { corregida = null; oyente?.deshacerCorreccion() }); continue }
             val xCentro = desplazamiento + x0 + ancho / 2
             zonas.add(rr to {
-                // Ahorro: sin destello, sin mini tecla que se desliza y sin salto de la palabra
-                if (!Ahorro.activo) {
-                    elegidaCelda = celda; elegidaMs = android.os.SystemClock.uptimeMillis()
-                    // La mini tecla carmesí se desliza hasta la palabra tocada (no retrasa nada)
-                    if (celda != 1 && destacada >= 0) { chipDesliza = celda; chipMs = elegidaMs }
-                    // La palabra elegida "salta" al texto: se encoge y sube mientras se desvanece
-                    saltoTexto = corto; saltoX = xCentro; saltoMs = elegidaMs
-                }
+                elegidaCelda = celda; elegidaMs = android.os.SystemClock.uptimeMillis()
+                // La mini tecla carmesí se desliza hasta la palabra tocada (no retrasa nada)
+                if (celda != 1 && destacada >= 0) { chipDesliza = celda; chipMs = elegidaMs }
+                // La palabra elegida "salta" al texto: se encoge y sube mientras se desvanece
+                saltoTexto = corto; saltoX = xCentro; saltoMs = elegidaMs
                 oyente?.elegir(s, lit)
             })
             if (!lit) zonasLargas.add(rr to { porEliminar = s; invalidate() })

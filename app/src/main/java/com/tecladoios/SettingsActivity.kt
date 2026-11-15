@@ -348,7 +348,6 @@ class SettingsActivity : Activity() {
         boton(est, "Ver mis estadísticas") { verEstadisticas() }
 
         val otros = seccion("Otros")
-        interruptor(otros, "Ahorro de batería", Ajustes.AHORRO, true, "Sin animaciones, sin sonido y vibración corta. Apágalo para tener todos los efectos")
         interruptor(otros, "Ocultar el ícono de la app", Ajustes.ICONO_OCULTO, false, "Abre los ajustes desde el engranaje del teclado") { si ->
             packageManager.setComponentEnabledSetting(ComponentName(this, "com.tecladoios.Lanzador"),
                 if (si) PackageManager.COMPONENT_ENABLED_STATE_DISABLED else PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
