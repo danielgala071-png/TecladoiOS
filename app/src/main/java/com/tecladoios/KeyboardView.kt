@@ -913,6 +913,26 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
      * sube por dentro de ella; el vidrio se aclara. No se mueve: es rápida y elegante. La luz
      * es una imagen difuminada hecha una sola vez, así que casi no gasta.
      */
+    // El degradado del fondo (el mismo del marco) visto desde esta vista
+    private var degradado: android.graphics.Shader? = null
+    private var degradadoDe = ""
+    private fun degradadoFondo(): android.graphics.Shader? {
+        if (tema.fondo == tema.fondoAbajo) return null
+        var v: View = this
+        var y = 0f
+        while (v.tag != "marco") {
+            y += v.top + v.translationY
+            v = (v.parent as? View) ?: return null
+        }
+        val alto = v.height.toFloat()
+        val clave = "${y.toInt()}:${alto.toInt()}:${tema.fondo}:${tema.fondoAbajo}"
+        if (clave != degradadoDe) {
+            degradado = android.graphics.LinearGradient(0f, -y, 0f, alto - y, tema.fondo, tema.fondoAbajo, android.graphics.Shader.TileMode.CLAMP)
+            degradadoDe = clave
+        }
+        return degradado
+    }
+
     /**
      * Tecla presionada con profundidad: se hunde sobre su borde de abajo (como un botón real),
      * una almohadilla de color crece desde el centro hasta llenarla y, al soltar, sube con un
@@ -929,10 +949,12 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val prof = dp(1.5f)
         val dy = prof * h
 
-        // 1. Se borra la tecla en su lugar (con su borde) y se deja el borde fijo abajo
-        relleno.shader = null
+        // 1. Se borra la tecla en su lugar (con su borde) con el mismo degradado del fondo
+        //    y se deja el borde fijo abajo
+        relleno.shader = degradadoFondo()
         relleno.color = tema.fondo
         c.drawRect(r.left - 1f, r.top - 1f, r.right + 1f, r.bottom + prof + 1f, relleno)
+        relleno.shader = null
         relleno.color = tema.sombra
         c.drawRoundRect(r.left, r.top + prof, r.right, r.bottom + prof, radio, radio, relleno)
 

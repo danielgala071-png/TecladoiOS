@@ -13,7 +13,8 @@ import java.util.concurrent.Executors
 class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
     /** Fondo del teclado */
     val fondo = if (claro) 0xFFD1D4DA.toInt() else 0xFF000000.toInt()   // AMOLED: negro puro
-    val fondoAbajo = fondo
+    /** Fondo con degradado muy suave: negro arriba → gris casi negro abajo (profundidad) */
+    val fondoAbajo = if (claro) fondo else 0xFF0E0E11.toInt()
     /** Teclas de letras */
     val tecla = if (claro) 0xFFFFFFFF.toInt() else 0xFF2C2C2F.toInt()
     /** Mayúscula, borrar, 123, emoji, intro */

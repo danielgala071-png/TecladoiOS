@@ -185,6 +185,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             addView(cuerpo, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         val m = Marco(c).apply {
+            tag = "marco"
             addView(columna, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(cp, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             addView(aj, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -1419,14 +1420,14 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         val kb = teclado ?: return
         val curva = android.view.animation.PathInterpolator(0.2f, 0.9f, 0.25f, 1f)
         pe.animate().cancel()
-        pe.setBackgroundColor(tema.fondo)
+        pe.background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(tema.fondo, tema.fondoAbajo))
         val alto = (pe.height.takeIf { it > 0 } ?: kb.height).toFloat()
         if (subir) {
             pe.visibility = View.VISIBLE; pe.alpha = 1f
             pe.translationY = alto
             kb.visibility = View.VISIBLE
             pe.animate().translationY(0f).setDuration(260L).setInterpolator(curva)
-                .withEndAction { if (panel == Panel.EMOJI) kb.visibility = View.INVISIBLE }.start()
+                .withEndAction { if (panel == Panel.EMOJI) { kb.visibility = View.INVISIBLE; pe.background = null } }.start()
         } else {
             kb.visibility = View.VISIBLE; kb.alpha = 1f; kb.translationY = 0f
             pe.animate().translationY(alto).setDuration(220L).setInterpolator(curva)
@@ -1708,10 +1709,19 @@ class Marco(c: Context) : FrameLayout(c) {
      * de borde.
      */
     /** Como en iOS: un fondo liso y recto, sin esquinas ni líneas */
+    // Degradado vertical muy suave (se arma solo al cambiar de alto o de tema)
+    private var degradado: android.graphics.Shader? = null
+    private var degradadoDe = ""
+
     override fun onDraw(c: Canvas) {
-        fondo.shader = null
-        fondo.color = tema.tarjeta
-        c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fondo)
+        val h = height.toFloat()
+        val clave = "${h.toInt()}:${tema.fondo}:${tema.fondoAbajo}"
+        if (clave != degradadoDe) {
+            degradado = android.graphics.LinearGradient(0f, 0f, 0f, h, tema.fondo, tema.fondoAbajo, android.graphics.Shader.TileMode.CLAMP)
+            degradadoDe = clave
+        }
+        fondo.shader = degradado
+        c.drawRect(0f, 0f, width.toFloat(), h, fondo)
     }
 }
 
