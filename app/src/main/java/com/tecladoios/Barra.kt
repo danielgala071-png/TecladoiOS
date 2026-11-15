@@ -178,6 +178,33 @@ class Barra(context: Context) : View(context) {
         try { dibujarTodo(c) } catch (e: Throwable) { Registro.anotar("dibujo barra", e) } finally { c.restoreToCount(n) }
     }
 
+    // ---------- Palabra elegida que salta al texto ----------
+    private var saltoTexto: String? = null
+    private var saltoX = 0f
+    private var saltoMs = 0L
+    private val SALTO = 190f
+    private val pinturaSalto = TextPaint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
+        textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 600)
+    }
+
+    /** Se dibuja encima de todo: la palabra se encoge, sube un poquito y se apaga (confirmación) */
+    private fun dibujarSalto(c: Canvas, h: Float) {
+        val txt = saltoTexto ?: return
+        val t = ((android.os.SystemClock.uptimeMillis() - saltoMs) / SALTO).coerceIn(0f, 1f)
+        if (t >= 1f) { saltoTexto = null; return }
+        val e = 1f - (1f - t) * (1f - t)
+        val escala = 1f - 0.22f * e
+        pinturaSalto.textSize = texto.textSize
+        pinturaSalto.color = tema.texto
+        pinturaSalto.alpha = (255 * (1f - e)).toInt().coerceIn(0, 255)
+        val y = h / 2 - h * 0.32f * e
+        c.save()
+        c.scale(escala, escala, saltoX, y)
+        c.drawText(txt, saltoX, y + pinturaSalto.textSize * 0.36f, pinturaSalto)
+        c.restore()
+        postInvalidateOnAnimation()
+    }
+
     private fun dibujarTodo(c: Canvas) {
         zonas.clear(); zonasLargas.clear()
         val w = width.toFloat(); val h = height.toFloat()
@@ -192,6 +219,7 @@ class Barra(context: Context) : View(context) {
             c.restore()
             postInvalidateOnAnimation()
         } else dibujarContenido(c, w, h)
+        dibujarSalto(c, h)
     }
 
     private fun dibujarContenido(c: Canvas, w: Float, h: Float) {
@@ -336,7 +364,13 @@ class Barra(context: Context) : View(context) {
             val lit = esLiteral[i]
             val celda = i
             if (esCorregida) { zonas.add(rr to { corregida = null; oyente?.deshacerCorreccion() }); continue }
-            zonas.add(rr to { elegidaCelda = celda; elegidaMs = android.os.SystemClock.uptimeMillis(); oyente?.elegir(s, lit) })
+            val xCentro = desplazamiento + x0 + ancho / 2
+            zonas.add(rr to {
+                elegidaCelda = celda; elegidaMs = android.os.SystemClock.uptimeMillis()
+                // La palabra elegida "salta" al texto: se encoge y sube mientras se desvanece
+                saltoTexto = corto; saltoX = xCentro; saltoMs = elegidaMs
+                oyente?.elegir(s, lit)
+            })
             if (!lit) zonasLargas.add(rr to { porEliminar = s; invalidate() })
         }
         // Separadores: no se dibujan junto a una casilla vacía
