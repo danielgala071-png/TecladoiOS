@@ -1675,14 +1675,14 @@ class Marco(c: Context) : FrameLayout(c) {
     /** Espacio extra a cada lado cuando el teclado es más angosto (en px) */
     var margenLado = 0; set(v) { if (field != v) { field = v; aplicarRelleno(); requestLayout() } }
 
-    private val lado = (2 * resources.displayMetrics.density).toInt()
+    private val lado = (1 * resources.displayMetrics.density).toInt()
 
     init {
         setWillNotDraw(false)
         aplicarRelleno()
     }
 
-    private fun aplicarRelleno() = setPadding(lado + margenLado, (6 * d).toInt(), lado + margenLado, abajoSistema + margenAbajo + (4 * d).toInt())
+    private fun aplicarRelleno() = setPadding(lado + margenLado, (6 * d).toInt(), lado + margenLado, abajoSistema + margenAbajo + (1 * d).toInt())
 
     /**
      * El alto lo pone solo la barra con el teclado (el primer hijo). Las demás capas (globos,

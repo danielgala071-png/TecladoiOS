@@ -124,7 +124,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             val altoPantalla = resources.configuration.screenHeightDp.toFloat()
             base = (altoPantalla * (if (filas >= 5) 0.12f else 0.14f)).coerceIn(44f, base)
         }
-        val h = (dp(base) * filas * escala + dp(8f) + dp(6f)).toInt()
+        // (+3 dp que antes eran margen debajo del teclado: ahora son de la fila de abajo)
+        val h = (dp(base) * filas * escala + dp(8f) + dp(6f) + dp(3f)).toInt()
         setMeasuredDimension(w, h)
     }
 
@@ -137,8 +138,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         globosPedidos = false
         val w = width.toFloat(); val h = height.toFloat()
         if (w <= 0 || h <= 0) return
-        val arriba = dp(8f); val abajo = dp(6f)
-        val lado = dp(3f)
+        // Menos margen a los costados y abajo: ese espacio se lo lleva la fila de abajo
+        // (123, emoji, espacio e intro), que queda más alta
+        val arriba = dp(8f); val abajo = dp(2f)
+        val lado = dp(1.5f)
         var izq = lado; var der = w - lado
         panelMano.setEmpty()
         if (unaMano != 0 && distribucion.nombre != "num" && distribucion.nombre != "tel") {
@@ -150,7 +153,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             botonCambiar.set(cx - s / 2, panelMano.centerY() + s * 0.2f, cx + s / 2, panelMano.centerY() + s * 1.2f)
         }
         val filas = distribucion.filas
-        altoFila = (h - arriba - abajo) / filas.size
+        // Los 7 dp que eran margen (abajo y debajo del teclado) van enteros a la fila de abajo;
+        // las demás filas quedan del mismo alto que antes
+        val extraAbajo = if (filas.size >= 2 && filas.last().teclas.any { it.tipo == K.ESPACIO }) dp(7f) else 0f
+        altoFila = (h - arriba - abajo - extraAbajo) / filas.size
         // Teclado dividido (celular echado): las letras se separan a los lados para los pulgares,
         // como en el iPad. La fila de abajo (espacio) queda entera.
         val dividido = config?.dividido != false && unaMano == 0 &&
@@ -179,8 +185,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 if (partir && !saltado && enUnidades >= mitad) { x += hueco; saltado = true }
                 enUnidades += t.ancho
                 val ancho = t.ancho * u
-                val toque = RectF(x, y0, x + ancho, y0 + altoFila)
-                val dib = RectF(x + sepX / 2, y0 + sepY / 2, x + ancho - sepX / 2, y0 + altoFila - sepY / 2)
+                val altoEsta = if (fi == filas.size - 1) altoFila + extraAbajo else altoFila
+                val toque = RectF(x, y0, x + ancho, y0 + altoEsta)
+                val dib = RectF(x + sepX / 2, y0 + sepY / 2, x + ancho - sepX / 2, y0 + altoEsta - sepY / 2)
                 if (t.tipo != K.VACIA) lista.add(Colocada(t, toque, dib, fi))
                 if (t.esLetra) geo.poner(t.texto[0], dib.centerX(), dib.centerY())
                 x += ancho
