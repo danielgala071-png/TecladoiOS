@@ -104,8 +104,8 @@ class PanelEmoji(context: Context) : View(context) {
     private var celdaArmada = -1f
 
     /**
-     * Emojis proporcionales al tamaño del teclado: crecen si agrandas el teclado y se achican
-     * si lo haces más bajo o angosto (una mano, ancho reducido). Entre 4 y 7 filas.
+     * Emojis al revés del tamaño del teclado: si agrandas el teclado se hacen más chicos (más
+     * filas) y si lo achicas se hacen más grandes (menos filas). Entre 4 y 7 filas.
      */
     private var FILAS = 5
 
@@ -113,10 +113,11 @@ class PanelEmoji(context: Context) : View(context) {
         val grilla = alto - altoAbajo() - arribaGrilla() - dp(4f)
         val w = if (ancho > 0) ancho else resources.displayMetrics.widthPixels
         if (grilla <= 0f || w <= 0) return 5
-        // Celda ideal: 5 filas del alto, pero nunca más ancha que ~1 tecla (ancho / 9,5).
-        // Teclado más alto → emojis más grandes; más angosto → más filas y emojis más chicos
-        val objetivo = minOf(grilla / 5f, w / 9.5f)
-        return kotlin.math.round(grilla / objetivo).toInt().coerceIn(4, 7)
+        // Al revés del tamaño del teclado (se ve mejor así): teclado más grande → más filas y
+        // emojis más chicos; teclado más chico → menos filas y emojis más grandes.
+        // Con el tamaño de siempre (≈165 dp de grilla, ≈360 dp de ancho) quedan 5 filas.
+        val tam = kotlin.math.sqrt((grilla / dp(165f)) * (w / dp(360f)))
+        return kotlin.math.round(5f * Math.pow(tam.toDouble(), 2.2).toFloat()).toInt().coerceIn(4, 7)
     }
 
     /** Vuelve a leer los recientes y arma las secciones (cada categoría con su título) */
