@@ -353,7 +353,7 @@ class PanelEmoji(context: Context) : View(context) {
 
     /** Ancho de cada sección; la de recientes siempre deja lugar para al menos 6 columnas */
     private fun anchoSeccion(k: Int, cel: Float): Float {
-        if (k == 0) return (if (categorias[k].emojis.isEmpty()) 6 else columnas[k]) * anchoCol(cel)
+        if (k == 0) return maxOf(columnas[k], 6) * anchoCol(cel)
         val bx = bloqueX.getOrNull(k) ?: return columnas[k] * anchoCol(cel)
         if (bx.isEmpty()) return 0f
         val ult = bx.size - 1
