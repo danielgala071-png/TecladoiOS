@@ -37,8 +37,7 @@ class PanelEmoji(context: Context) : View(context) {
 
     companion object {
         private var cache: List<Categoria>? = null
-        // 5 filas, emojis medianos (70 % de la celda): cómodos de ver sin ocupar tanto
-        private const val FILAS = 5
+
         private val TONOS = listOf("\uD83C\uDFFB", "\uD83C\uDFFC", "\uD83C\uDFFD", "\uD83C\uDFFE", "\uD83C\uDFFF")
 
         fun cargar(c: Context): List<Categoria> {
@@ -104,6 +103,22 @@ class PanelEmoji(context: Context) : View(context) {
     private var anchoTotal = 0f
     private var celdaArmada = -1f
 
+    /**
+     * Emojis proporcionales al tamaño del teclado: crecen si agrandas el teclado y se achican
+     * si lo haces más bajo o angosto (una mano, ancho reducido). Entre 4 y 7 filas.
+     */
+    private var FILAS = 5
+
+    private fun filasPara(alto: Int, ancho: Int): Int {
+        val grilla = alto - altoAbajo() - arribaGrilla() - dp(4f)
+        val w = if (ancho > 0) ancho else resources.displayMetrics.widthPixels
+        if (grilla <= 0f || w <= 0) return 5
+        // Celda ideal: 5 filas del alto, pero nunca más ancha que ~1 tecla (ancho / 9,5).
+        // Teclado más alto → emojis más grandes; más angosto → más filas y emojis más chicos
+        val objetivo = minOf(grilla / 5f, w / 9.5f)
+        return kotlin.math.round(grilla / objetivo).toInt().coerceIn(4, 7)
+    }
+
     /** Vuelve a leer los recientes y arma las secciones (cada categoría con su título) */
     fun refrescar() {
         // Como el iPhone: tus usados recientemente y luego cada categoría con su título, todo
@@ -154,6 +169,7 @@ class PanelEmoji(context: Context) : View(context) {
     fun preparar(alto: Int) {
         if (alto <= 0) return
         if (categorias.isEmpty()) { refrescar(); congelado = false }
+        FILAS = filasPara(alto, width)
         val cel = (alto - altoAbajo() - arribaGrilla() - dp(4f)) / FILAS.toFloat()
         if (cel <= 0f) return
         precalentar((cel * 0.70f).toInt(), 0)
@@ -256,7 +272,10 @@ class PanelEmoji(context: Context) : View(context) {
     }
     private fun altoAbajo() = dp(46f)
     private fun arribaGrilla() = dp(30f)
-    private fun celda() = (height - altoAbajo() - arribaGrilla() - dp(4f)) / FILAS.toFloat()
+    private fun celda(): Float {
+        FILAS = filasPara(height, width)
+        return (height - altoAbajo() - arribaGrilla() - dp(4f)) / FILAS.toFloat()
+    }
 
     private var corrimiento = 0f
     private val scroller = OverScroller(context)
