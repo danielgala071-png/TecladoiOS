@@ -98,12 +98,15 @@ class Respuesta(c: Context) {
             // vibración se encimaba con la siguiente (se sentía como si la tecla se pegara).
             // La vibración de la 7.174: letras un golpe fuerte de 32 ms; mayúscula/123/emoji
             // crecen de suave a fuerte; espacio tac-tac; borrar con eco; intro doble y pesado
-            efLetra = VibrationEffect.createOneShot(32L, max)
-            efFuerte = onda(longArrayOf(0, 18, 40), intArrayOf(0, 110, 255))
+            // Más fuerte: letras +80 % (32 → 58 ms al máximo) y las demás teclas +100 %
+            // (el doble de golpe y a toda fuerza). El motor ya va a fuerza máxima, así que la
+            // fuerza extra se logra alargando el golpe.
+            efLetra = VibrationEffect.createOneShot(58L, max)
+            efFuerte = onda(longArrayOf(0, 36, 80), intArrayOf(0, 220, 255))
             efSuave = VibrationEffect.createOneShot(14L, max)
-            efEspacio = onda(longArrayOf(0, 26, 45, 26), intArrayOf(0, 255, 0, 230))
-            efBorrar = onda(longArrayOf(0, 26, 38, 18), intArrayOf(0, 255, 0, 120))
-            efIntro = onda(longArrayOf(0, 45, 45, 60), intArrayOf(0, 255, 0, 255))
+            efEspacio = onda(longArrayOf(0, 52, 45, 52), intArrayOf(0, 255, 0, 255))
+            efBorrar = onda(longArrayOf(0, 52, 38, 36), intArrayOf(0, 255, 0, 240))
+            efIntro = onda(longArrayOf(0, 90, 45, 120), intArrayOf(0, 255, 0, 255))
         } catch (_: Throwable) { }
     }
 

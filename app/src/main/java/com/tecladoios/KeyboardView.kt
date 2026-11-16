@@ -196,7 +196,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 val grande = t.tipo == K.SHIFT || t.tipo == K.BORRAR || fi == filas.size - 1
                 // Letras más compactas: un poco más de aire alrededor (el toque sigue siendo la
                 // celda completa, así no se pierde precisión)
-                val sx = if (grande) sepX * 0.6f else sepX * 1.45f
+                // Letras más anchas: menos aire a los lados (4 dp en vez de 9)
+                val sx = if (grande) sepX * 0.6f else sepX * 0.7f
                 val sy = if (grande) sepY else sepY + dp(2.5f)
                 val dib = RectF(x + sx / 2, y0 + sy / 2, x + ancho - sx / 2, y0 + altoEsta - sy / 2)
                 if (t.tipo != K.VACIA) lista.add(Colocada(t, toque, dib, fi))
@@ -884,7 +885,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     /** ¿Esta tecla va solo con contorno? (las letras y símbolos en el diseño C) */
     private fun deContorno(t: Tecla, blanca: Boolean) =
-        tema.contorno && (!t.funcion || t.tipo == K.ESPACIO) && !blanca
+        tema.contorno && !t.funcion && !blanca   // el espacio va relleno, del color del intro
 
     /** Cuerpo según el diseño: contorno fino para letras, relleno plano para las principales */
     private fun cuerpoTecla(c: Canvas, r: RectF, radio: Float, t: Tecla, blanca: Boolean) {
