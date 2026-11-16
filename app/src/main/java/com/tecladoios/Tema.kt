@@ -12,26 +12,26 @@ import java.util.concurrent.Executors
  */
 class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
     /** Fondo del teclado */
-    val fondo = if (claro) 0xFFD1D4DA.toInt() else 0xFF000000.toInt()   // AMOLED: negro puro
+    val fondo = if (claro) 0xFFD1D4DA.toInt() else 0xFF262628.toInt()   // gris oscuro del teclado del iPhone
     /** Fondo con degradado muy suave: negro arriba → gris casi negro abajo (profundidad) */
-    val fondoAbajo = if (claro) fondo else 0xFF0E0E11.toInt()
+    val fondoAbajo = if (claro) fondo else 0xFF262628.toInt()
     /** Teclas de letras */
-    val tecla = if (claro) 0xFFFFFFFF.toInt() else 0xFF2C2C2F.toInt()
+    val tecla = if (claro) 0xFFFFFFFF.toInt() else 0xFF5A5A5E.toInt()
     /** Mayúscula, borrar, 123, emoji, intro */
     /** Las principales (mayúscula, borrar, 123, emoji, espacio, intro): grafito más oscuro */
     // AMOLED + azul profundo: las teclas principales (mayúscula, 123, emoji, espacio, intro,
     // borrar) en azul noche, las letras con contorno sobre negro puro
-    val teclaFuncion = if (claro) 0xFFABB0BA.toInt() else 0xFF1A2230.toInt()
+    val teclaFuncion = if (claro) 0xFFABB0BA.toInt() else 0xFF3B3B3E.toInt()
     /** Al tocar, las de función toman el color de las letras (como en iOS) */
-    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFF243048.toInt()
-    val funcionPresionada = if (claro) 0xFFFFFFFF.toInt() else 0xFF2A3A58.toInt()
+    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFF3B3B3E.toInt()
+    val funcionPresionada = if (claro) 0xFFFFFFFF.toInt() else 0xFF5A5A5E.toInt()
     /**
      * Diseño C «Contorno nocturno»: las letras son solo un contorno fino sobre negro puro
      * (en AMOLED casi no gasta) y las teclas principales van rellenas.
      */
     // Negro AMOLED (diseño C): letras con contorno fino sobre negro puro y las principales
     // (mayúscula, borrar, 123, emoji, intro) rellenas en grafito
-    val contorno = !claro
+    val contorno = false   // como el iPhone: teclas rellenas grises, sin contorno
     // Contorno más suave (menos contraste con el negro)
     val lineaTecla = 0xFF283040.toInt()
     val filoArriba = 0xFF3E4860.toInt()
@@ -40,12 +40,12 @@ class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
     val rojoIntenso = 0xFF8E8E93.toInt()
     /** Línea de sombra bajo cada tecla */
     /** Borde de abajo de cada tecla (da la profundidad; en AMOLED es un gris muy oscuro) */
-    val sombra = if (claro) 0xFF898A8D.toInt() else 0xFF0E0E10.toInt()
+    val sombra = if (claro) 0xFF898A8D.toInt() else 0xFF0B0B0C.toInt()
     val brillo = 0x00FFFFFF
     /** Letras en blanco cálido (apenas crema): más descansado de noche */
-    val texto = if (claro) 0xFF000000.toInt() else 0xFFF5F2EA.toInt()
+    val texto = if (claro) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
     /** Fondo de la barra de sugerencias: un tono sobre el negro, para separarla sin línea */
-    val fondoBarra = if (claro) 0x00000000 else 0xFF000000.toInt()   // misma pieza que el teclado
+    val fondoBarra = if (claro) 0x00000000 else 0xFF262628.toInt()   // misma pieza que el teclado
     val textoSuave = if (claro) 0x993C3C43.toInt() else 0xB3EBEBF5.toInt()
     val pista = if (claro) 0x803C3C43.toInt() else 0x80EBEBF5.toInt()
     val separador = if (claro) 0x383C3C43 else 0x29FFFFFF

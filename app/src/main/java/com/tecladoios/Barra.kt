@@ -442,10 +442,10 @@ class Barra(context: Context) : View(context) {
                 seguir = true
             } else chipDesliza = -1
         }
-        // Dos puntitos muy tenues separan las sugerencias (ordenan sin líneas)
+        // Como el iPhone: líneas finas grises entre las sugerencias
         if (!tema.claro) {
-            relleno.style = Paint.Style.FILL; relleno.color = 0xFF3A3A3C.toInt()
-            if (destacada < 0) for (j in 1..2) if (celdas[j - 1] != null && celdas[j] != null) c.drawCircle(j * ancho, h / 2f + dp(1f), dp(1.4f), relleno)
+            relleno.style = Paint.Style.FILL; relleno.color = 0xFF4A4A4E.toInt()
+            for (j in 1..2) if (celdas[j - 1] != null && celdas[j] != null) c.drawRect(j * ancho - dp(0.5f), h * 0.28f, j * ancho + dp(0.5f), h * 0.72f, relleno)
         }
         for (i in 0 until 3) {
             val s = celdas[i] ?: continue
@@ -489,7 +489,7 @@ class Barra(context: Context) : View(context) {
             }
             val mostrado = if (esLiteral[i]) "“$s”" else s
             val corto = recortar(mostrado, p, ancho - dp(22f))
-            if (elegidaAqui && !tema.claro) dibujarTeclaElegida(c, x0 + ancho / 2, h, p.measureText(corto), ancho, ec)
+            // Como el iPhone: la palabra elegida solo va en blanco (sin mini tecla)
             val alfaBase = p.alpha
             p.alpha = (alfaBase * (0.2f + 0.8f * ec)).toInt()
             val rev = revision
@@ -678,18 +678,10 @@ class Barra(context: Context) : View(context) {
             if (tema.claro) {
                 if (apretado) { relleno.color = tema.velo(0x30); c.drawCircle(cx, cy, dp(16f), relleno) }
             } else {
-                // Obsidiana carmesí: cada herramienta es una mini tecla roja metálica con base;
-                // al tocarla se hunde sobre su base
-                val lado = minOf(anchoHerr - dp(8f), h - dp(10f)) / 2f
-                val hundir = if (apretado) dp(1.5f) else 0f
+                // Como el iPhone: solo el ícono gris; al tocarlo, un círculo tenue
                 relleno.style = Paint.Style.FILL
-                relleno.color = 0xFF0E0E10.toInt()
-                c.drawRoundRect(cx - lado, cy - lado + dp(2f), cx + lado, cy + lado + dp(2f), dp(7f), dp(7f), relleno)
-                relleno.color = if (apretado) 0xFF2A3A58.toInt() else 0xFF1A2230.toInt()
-                c.drawRoundRect(cx - lado, cy - lado + hundir, cx + lado, cy + lado + hundir, dp(7f), dp(7f), relleno)
-                relleno.color = 0x40FF8A96
-                c.drawRect(cx - lado + dp(7f), cy - lado + hundir + dp(0.4f), cx + lado - dp(7f), cy - lado + hundir + dp(1.2f), relleno)
-                icono.color = 0xFFF5F2EA.toInt()
+                if (apretado) { relleno.color = 0x33FFFFFF; c.drawCircle(cx, cy, dp(16f), relleno) }
+                icono.color = 0xFFD1D1D6.toInt()
             }
             when (hId) {
                 H_EMOJI -> Iconos.cara(c, cx, cy, s, icono)

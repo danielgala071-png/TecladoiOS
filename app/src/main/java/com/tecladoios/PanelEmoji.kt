@@ -555,7 +555,7 @@ class PanelEmoji(context: Context) : View(context) {
                 val mx = rad * 1.05f; val my = rad * 0.92f; val rr = dp(8f)
                 relleno.color = 0xFF0E0E10.toInt()
                 c.drawRoundRect(indicadorX - mx, cy - my + dp(2f), indicadorX + mx, cy + my + dp(2f), rr, rr, relleno)
-                relleno.color = if (deslizandoCat) 0xFF2A3A58.toInt() else 0xFF1A2230.toInt()
+                relleno.color = if (deslizandoCat) 0xFF5A5A5E.toInt() else 0xFF3B3B3E.toInt()
                 c.drawRoundRect(indicadorX - mx, cy - my, indicadorX + mx, cy + my, rr, rr, relleno)
                 relleno.color = 0x40FF8A96
                 c.drawRect(indicadorX - mx + rr, cy - my + dp(0.4f), indicadorX + mx - rr, cy - my + dp(1.2f), relleno)

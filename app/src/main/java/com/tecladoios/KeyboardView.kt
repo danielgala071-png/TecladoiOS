@@ -736,11 +736,12 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ", "0" to "+")
         // Mayúscula activa más sutil, como el iPhone oscuro: grafito claro con flecha blanca
         // Mayúscula activa en azul (el color que acompaña al negro AMOLED)
-        const val SHIFT_BLANCO = 0xFF2F5BD3.toInt()
-        const val SHIFT_BLANCO_APRETADO = 0xFF4A74E8.toInt()
-        const val SHIFT_UNA = 0xFF26406E.toInt()
-        const val SHIFT_UNA_APRETADO = 0xFF34528A.toInt()
-        const val FLECHA_NEGRA = 0xFFFFFFFF.toInt()
+        // Como el iPhone: mayúscula activa blanca con flecha negra
+        const val SHIFT_BLANCO = 0xFFFFFFFF.toInt()
+        const val SHIFT_BLANCO_APRETADO = 0xFFD1D1D6.toInt()
+        const val SHIFT_UNA = 0xFFFFFFFF.toInt()
+        const val SHIFT_UNA_APRETADO = 0xFFD1D1D6.toInt()
+        const val FLECHA_NEGRA = 0xFF000000.toInt()
     }
 
     private class Pulso(var t0: Long, var x: Float, var y: Float) {
@@ -809,7 +810,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private fun hundimiento(p: Pulso, ahora: Long): Float {
         // Profundidad sin gasto: hundida del todo mientras la tocas y en su lugar al soltar
         // (dos dibujos por toque, ningún cuadro de animación)
-        if (Ahorro.activo) return if (p.suelta == 0L) 1f else 0f
+        // Como el iPhone: la tecla no se hunde, solo cambia de color al tocarla
+        if (Ahorro.activo) return 0f
         if (p.suelta == 0L) return suave(((ahora - p.t0) / HUNDIR).coerceIn(0f, 1f))
         val r = ((ahora - p.suelta) / VOLVER).coerceIn(0f, 1f)
         // Resorte de goma más fluido: vuelve, se pasa una sola vez y se asienta suave
@@ -916,15 +918,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 reflejo.strokeWidth = dp(0.8f)
                 c.drawLine(r.left + radio, r.top + dp(0.7f), r.right - radio, r.top + dp(0.7f), reflejo)
             }
-        } else if (!tema.claro && ((t.funcion && t.tipo != K.ESPACIO) || blanca)) {
-            // Obsidiana carmesí: las principales en rojo metálico con un reflejo finito arriba
-            relleno.shader = degradadoMetal(colorTecla(t, false), r.top, r.bottom)
+        } else if (!tema.claro) {
+            // Como el iPhone: tecla gris plana (la sombrita de abajo ya está dibujada)
+            relleno.shader = null; relleno.color = colorTecla(t, false)
             c.drawRoundRect(r, radio, radio, relleno)
-            relleno.shader = null
-            if (!blanca) {
-                reflejo.strokeWidth = dp(0.8f)
-                c.drawLine(r.left + radio, r.top + dp(0.7f), r.right - radio, r.top + dp(0.7f), reflejo)
-            }
         } else cuerpoConRelieve(c, r, radio, colorTecla(t, false), blanca)
     }
 
