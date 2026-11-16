@@ -346,10 +346,10 @@ class PanelEmoji(context: Context) : View(context) {
     private val SEPARACION_DP = 30f
 
     /** Columna un poco más ancha que alta: los emojis respiran como en el iPhone */
-    private fun anchoCol(cel: Float) = tamEmoji(cel) + (cel - tamEmoji(cel)) * 1.15f   // aire de los lados ≈ el de arriba/abajo
+    private fun anchoCol(cel: Float) = tamEmoji(cel) + (cel - tamEmoji(cel)) * 1.55f   // más aire a los lados: no se ven juntos
 
     /** Emoji de 30 a 35 dp (sin pasarse de la casilla), igual espacio arriba/abajo y a los lados */
-    private fun tamEmoji(cel: Float) = (cel * 0.66f).coerceIn(dp(24f), dp(28f)).coerceAtMost(cel * 0.75f)
+    private fun tamEmoji(cel: Float) = (cel * 0.60f).coerceIn(dp(23f), dp(28f)).coerceAtMost(cel * 0.66f)
 
     /** Ancho de cada sección; la de recientes siempre deja lugar para al menos 6 columnas */
     private fun anchoSeccion(k: Int, cel: Float): Float {
@@ -359,7 +359,7 @@ class PanelEmoji(context: Context) : View(context) {
         val ult = bx.size - 1
         return bx[ult] + bloqueCols[k][ult] * anchoCol(cel)
     }
-    private fun altoAbajo() = dp(46f)
+    private fun altoAbajo() = dp(54f)
     private fun arribaGrilla() = dp(30f)
     private fun celda(): Float {
         FILAS = filasPara(height, width)
@@ -657,19 +657,19 @@ class PanelEmoji(context: Context) : View(context) {
         c.drawRect(0f, yAbajo, w, yAbajo + d * 0.6f, relleno)
 
         // Abajo: ABC, buscar, categorías, borrar
-        boton.textSize = dp(15f); boton.color = tema.texto
-        r.set(dp(6f), yAbajo + dp(7f), dp(58f), h - dp(6f))
+        boton.textSize = dp(17f); boton.color = tema.texto
+        r.set(dp(6f), yAbajo + dp(7f), dp(60f), h - dp(6f))
         relleno.color = tema.teclaFuncion
         c.drawRoundRect(r, dp(8f), dp(8f), relleno)
         c.drawText("ABC", r.centerX(), r.centerY() + boton.textSize * 0.36f, boton)
         icono.color = tema.textoSuave
-        Iconos.lupa(c, dp(80f), yAbajo + altoAbajo() / 2, dp(30f), icono)
+        Iconos.lupa(c, dp(81f), yAbajo + altoAbajo() / 2, dp(36f), icono)
         val izq = dp(100f); val der = w - dp(60f)
         val paradas = paradasX.size.coerceAtLeast(1)
         val paso = (der - izq) / paradas
         val actual = categoriaActual()
         // Íconos de sección en proporción a los emojis (≈15 dp con el teclado en 100 × 100)
-        emojiP.textSize = (tamEmoji(celda()) * 0.56f).coerceIn(dp(13f), dp(17f)).coerceAtMost(paso * 0.88f)
+        emojiP.textSize = (tamEmoji(celda()) * 0.78f).coerceIn(dp(18f), dp(22f)).coerceAtMost(paso * 0.86f)
         // Cápsula de las secciones: misma altura y línea que el botón ABC
         val capArriba = yAbajo + dp(7f); val capAbajo = h - dp(6f)
         val capMitad = (capAbajo - capArriba) / 2
@@ -685,7 +685,7 @@ class PanelEmoji(context: Context) : View(context) {
             indicadorX += if (Ahorro.activo) falta else falta * 0.35f
             if (kotlin.math.abs(falta) > 0.5f) postInvalidateOnAnimation() else indicadorX = meta
             val cy = capArriba + capMitad
-            val rad = minOf(paso * 0.48f, dp(17f))
+            val rad = minOf(paso * 0.48f, dp(20f))
             if (tema.claro) {
                 relleno.color = tema.velo(if (deslizandoCat) 0x3D else 0x29)
                 c.drawCircle(indicadorX, cy, rad, relleno)
@@ -708,7 +708,7 @@ class PanelEmoji(context: Context) : View(context) {
         }
         emojiP.alpha = 255
         icono.color = tema.texto
-        Iconos.borrar(c, w - dp(30f), yAbajo + altoAbajo() / 2, dp(40f), icono, false)
+        Iconos.borrar(c, w - dp(30f), yAbajo + altoAbajo() / 2, dp(48f), icono, false)
 
         // Tonos de piel
         val base = tonosDe
