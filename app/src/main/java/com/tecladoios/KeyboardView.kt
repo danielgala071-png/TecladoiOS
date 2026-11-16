@@ -888,8 +888,14 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         tema.contorno && !t.funcion && !blanca   // el espacio va relleno, del color del intro
 
     /** Cuerpo según el diseño: contorno fino para letras, relleno plano para las principales */
+    private val BASE_TECLA = 0xFF1C1C1F.toInt()
+    private val BASE_PROF by lazy { dp(2.5f) }
+
     private fun cuerpoTecla(c: Canvas, r: RectF, radio: Float, t: Tecla, blanca: Boolean) {
         if (deContorno(t, blanca)) {
+            // Cara negra que tapa la base (la base solo asoma por abajo: relieve)
+            relleno.shader = null; relleno.color = tema.fondo
+            c.drawRoundRect(r, radio, radio, relleno)
             // Filo de metal rojo: más claro arriba y oscuro abajo (se dibuja una vez y se guarda)
             borde.color = 0xFFFFFFFF.toInt(); borde.strokeWidth = dp(1f)
             borde.shader = degradadoFilo(r.top, r.bottom)
@@ -961,6 +967,11 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         if (!tema.contorno) {
             relleno.color = tema.sombra
             c.drawRoundRect(r.left, r.top + dp(1.5f), r.right, r.bottom + dp(1.5f), radio, radio, relleno)
+        } else {
+            // Profundidad: cada tecla tiene una base gris oscura que asoma 2,5 dp abajo, así
+            // se ve como una tecla de verdad (en relieve); al presionarla se hunde sobre ella
+            relleno.color = BASE_TECLA
+            c.drawRoundRect(r.left, r.top + BASE_PROF, r.right, r.bottom + BASE_PROF, radio, radio, relleno)
         }
         cuerpoTecla(c, r, radio, k.tecla, blanca)
         if (blanca) flechaNegra(c, k)
@@ -1110,7 +1121,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val r = k.dibujo
         val radio = radioDe(r)
         val blanca = t.tipo == K.SHIFT && shift > 0
-        val prof = dp(1.5f)
+        val prof = if (tema.contorno) BASE_PROF else dp(1.5f)
 
         // 1. Se borra la tecla en su lugar (con su borde) con el mismo degradado del fondo
         //    y se deja el borde fijo abajo
@@ -1118,10 +1129,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         relleno.color = tema.fondo
         c.drawRect(r.left - 1f, r.top - 1f, r.right + 1f, r.bottom + prof + 1f, relleno)
         relleno.shader = null
-        if (!tema.contorno) {
-            relleno.color = tema.sombra
-            c.drawRoundRect(r.left, r.top + prof, r.right, r.bottom + prof, radio, radio, relleno)
-        }
+        relleno.color = if (tema.contorno) BASE_TECLA else tema.sombra
+        c.drawRoundRect(r.left, r.top + prof, r.right, r.bottom + prof, radio, radio, relleno)
 
         c.save()
         // 2. Profundidad: la tecla se hunde derecho (baja 3 dp y se achica apenas, sin
