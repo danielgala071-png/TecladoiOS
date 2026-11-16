@@ -48,14 +48,9 @@ class Capa(context: Context) : View(context) {
             // Como en iOS: el globo es la misma tecla que crece hacia arriba, del mismo color,
             // con una sombra suave y la letra grande
             // Sombra difusa alrededor (más marcada abajo), como en iOS
-            sombraSuave.color = if (tema.claro) 0x38000000 else 0x8C000000.toInt()
-            c.save(); c.translate(0f, 2f * d); c.drawPath(forma, sombraSuave); c.restore()
+            sombraSuave.color = if (tema.claro) 0x38000000 else 0x66000000
+            c.save(); c.translate(0f, 1.5f * d); c.drawPath(forma, sombraSuave); c.restore()
             pintura.shader = null
-            if (!tema.claro) {
-                // Obsidiana carmesí: el globo lleva la misma base roja que asoma bajo las teclas
-                pintura.color = tema.sombra
-                c.save(); c.translate(0f, 2f * d); c.drawPath(forma, pintura); c.restore()
-            }
             pintura.color = tema.tecla
             c.drawPath(forma, pintura)
             // La letra no va en la imagen: se dibuja aparte para que haga su "pop"
@@ -147,8 +142,9 @@ class Capa(context: Context) : View(context) {
     private fun armarForma() {
         val w = tecla.width()
         // Como el globo de iOS: más ancho arriba que la tecla y un poco más alto
-        val ext = w * 0.4f
-        val alto = tecla.height() * 1.18f
+        // Proporciones del iPhone: arriba ~1,65 veces el ancho de la tecla y una tecla de alto
+        val ext = w * 0.32f
+        val alto = tecla.height() * 1.08f
         var izq = tecla.left - ext
         var der = tecla.right + ext
         // Que no se salga por los costados
@@ -156,7 +152,7 @@ class Capa(context: Context) : View(context) {
         if (der > width - 2 * d) { izq -= der - (width - 2 * d); der = width - 2 * d }
         val arriba = (tecla.top - alto).coerceAtLeast(1 * d)
         val cuello = tecla.top - tecla.height() * 0.12f
-        val rr = 8 * d
+        val rr = 10 * d
         val rk = minOf(5.5f * d, tecla.height() * 0.12f)
         forma.reset()
         forma.moveTo(tecla.left + rk, tecla.bottom)
@@ -270,7 +266,7 @@ class Capa(context: Context) : View(context) {
             val cyTecla = tecla.centerY()
             val cy = cyTecla + (cyArriba - cyTecla) * viaje
             val tamTecla = tecla.height() * 0.45f
-            val tamArriba = tecla.height() * 0.8f
+            val tamArriba = tecla.height() * 0.72f   // letra grande como en el iPhone
             letraP.color = tema.texto; letraP.alpha = 255
             letraP.textSize = tamTecla + (tamArriba - tamTecla) * viaje.coerceIn(0f, 1f)
             c.save(); c.scale(pop, pop, limites.centerX(), cy)
