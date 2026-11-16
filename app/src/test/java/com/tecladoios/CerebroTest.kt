@@ -12,6 +12,7 @@ class CerebroTest {
     private val palabras = listOf(
         "de", "que", "hola", "ya", "podemos", "casa", "canción", "esta", "está", "holanda",
         "hora", "hoy", "gracias", "mañana", "porque", "vamos", "quiero", "amor", "nos", "vemos",
+        "la", "del", "no", "lo", "se", "sé", "sino", "si", "es", "en", "serio", "te", "dije", "los", "a",
     )
 
     private fun geoQwerty(): Geometria {
@@ -30,7 +31,9 @@ class CerebroTest {
         val apr = Aprendizaje(File.createTempFile("aprendido", ".tsv").apply { delete() })
         val big = HashMap<String, Array<String>>()
         Motor.leerBigramas(sequenceOf("nos: vemos", "te: quiero"), big)
-        return Motor(dic, Errores.vacio(), apr, big, geo)
+        return Motor(dic, Errores.vacio(), apr, big, geo).also {
+            it.juntas = Juntas.leer(sequenceOf("de la", "lo sé", "es que", "a los", "sino = si no"))
+        }
     }
 
     @Test fun normaliza() {
@@ -118,5 +121,43 @@ class CerebroTest {
         val m = motor(geoQwerty())
         m.aprendido.agregar("qeu", true)
         assertNull(m.proponer("qeu", null, null, emptyList(), true).autocorregir)
+    }
+
+    // ---------- Criterio: dejar, corregir o separar ----------
+
+    @Test fun parejaConocidaGanaALaCorreccion() {
+        // "dela" está a una letra de "del", pero "de la" va seguida: se separa
+        assertEquals("de la", motor().proponer("dela", null, null, emptyList(), true).autocorregir)
+        assertEquals("De la", motor().proponer("Dela", null, null, emptyList(), true).autocorregir)
+    }
+
+    @Test fun tresPalabrasConSuTilde() {
+        assertEquals("no lo sé", motor().proponer("nolose", null, null, emptyList(), true).autocorregir)
+    }
+
+    @Test fun pegadaQueTambienExisteSeDeja() {
+        // "sino" existe: no se separa sola, pero "si no" queda en la barra
+        val p = motor().proponer("sino", null, null, emptyList(), true)
+        assertNull(p.autocorregir)
+        assertTrue(p.opciones.any { it.texto == "si no" })
+    }
+
+    @Test fun separacionDeshechaNoSeRepite() {
+        val m = motor()
+        m.aprendido.rechazar("dela", "de la")
+        assertTrue(m.proponer("dela", null, null, emptyList(), true).autocorregir != "de la")
+    }
+
+    @Test fun pegadaRaraDelDiccionarioIgualSeSepara() {
+        // Los subtítulos traen "esque" como palabra (rara): igual va "es que"
+        val relleno = (0 until 22000).map { i -> "qz" + Integer.toString(i, 26).map { c -> 'a' + Character.digit(c, 26) }.joinToString("") }
+        val dic = Diccionario.armar(palabras + relleno + listOf("esque"), emptyList())
+        val apr = Aprendizaje(File.createTempFile("aprendido", ".tsv").apply { delete() })
+        val m = Motor(dic, Errores.vacio(), apr, HashMap(), Geometria())
+        m.juntas = Juntas.leer(sequenceOf("es que"))
+        assertEquals("es que", m.proponer("esque", null, null, emptyList(), true).autocorregir)
+        // Pero si tú la usas, se respeta
+        m.aprendido.usar("esque", true); m.aprendido.usar("esque", true)
+        assertNull(m.proponer("esque", null, null, emptyList(), true).autocorregir)
     }
 }

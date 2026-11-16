@@ -85,7 +85,9 @@ object Cerebro {
         try { c.assets.open("bigramas.txt").bufferedReader().useLines { Motor.leerBigramas(it, big) } } catch (e: Throwable) { Registro.anotar("bigramas", e) }
         val aprendido = Aprendizaje(File(c.filesDir, "aprendido.tsv"))
         aprendido.cargar()
-        return Motor(dic, Errores.cargar(c), aprendido, big, geo)
+        val juntas = try { c.assets.open("juntas.txt").bufferedReader().useLines { Juntas.leer(it) } }
+            catch (e: Throwable) { Registro.anotar("juntas", e); Juntas.VACIA }
+        return Motor(dic, Errores.cargar(c), aprendido, big, geo).also { it.juntas = juntas }
     }
 
     /**

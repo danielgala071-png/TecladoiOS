@@ -61,9 +61,9 @@ jobs:
           # sin los errores de tipeo. Sin internet el diccionario queda como está.
           BASE=https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/es
           if curl -fsSL -o frecuencias.txt "$BASE/es_full.txt"; then
-            python3 herramientas/ampliar_diccionario.py app/src/main/assets/diccionario.txt frecuencias.txt 260000 app/src/main/assets/errores.txt 12
+            python3 herramientas/ampliar_diccionario.py app/src/main/assets/diccionario.txt frecuencias.txt 260000 app/src/main/assets/errores.txt 12 app/src/main/assets/juntas.txt
           elif curl -fsSL -o frecuencias.txt "$BASE/es_50k.txt"; then
-            python3 herramientas/ampliar_diccionario.py app/src/main/assets/diccionario.txt frecuencias.txt 50000 app/src/main/assets/errores.txt
+            python3 herramientas/ampliar_diccionario.py app/src/main/assets/diccionario.txt frecuencias.txt 50000 app/src/main/assets/errores.txt 1 app/src/main/assets/juntas.txt
           else
             echo "::warning::No se pudo descargar la lista de palabras: se usa el diccionario sin ampliar"
           fi

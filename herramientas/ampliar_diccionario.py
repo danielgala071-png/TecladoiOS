@@ -17,7 +17,11 @@ Al final limpia errores.txt: si un "error de fábrica" ahora es una palabra del 
 quita (una palabra de verdad nunca se corrige).
 
 Si no hay internet o algo falla, el diccionario queda como estaba (nunca rompe la compilación).
-Uso: ampliar_diccionario.py <diccionario.txt> <lista_frecuencias.txt> [cuantas] [errores.txt] [minimo]
+Tampoco entran las parejas que en los subtítulos salen pegadas ("dela", "esque", "loque"): el
+teclado las separa (lista en juntas.txt y, para las raras, cuando las dos piezas son muchísimo
+más usadas que la pegada).
+
+Uso: ampliar_diccionario.py <diccionario.txt> <lista_frecuencias.txt> [cuantas] [errores.txt] [minimo] [juntas.txt]
 """
 import bisect
 import re
@@ -117,6 +121,44 @@ def es_dedazo(w, c, cuenta, borradas):
     return False
 
 
+def leer_juntas(ruta):
+    """Pegadas de juntas.txt ("dela") y las que también existen ("sino": esas sí entran)"""
+    pegadas, dudosas = set(), set()
+    try:
+        for l in open(ruta, encoding="utf-8"):
+            l = l.strip()
+            if not l or l.startswith("#"):
+                continue
+            if "=" in l:
+                dudosas.add(sin_tildes(l.split("=", 1)[0].strip().lower()))
+                continue
+            partes = l.lower().split()
+            if 2 <= len(partes) <= 3:
+                pegadas.add(sin_tildes("".join(partes)))
+    except OSError:
+        pass
+    return pegadas - dudosas, dudosas
+
+
+def es_pegada(w, r, cuenta, pegadas, dudosas):
+    """[w] son dos palabras pegadas: en la lista, o rara y con dos piezas muchísimo más usadas"""
+    k = sin_tildes(w)
+    if k in dudosas:
+        return False
+    if k in pegadas:
+        return True
+    if r < 20000:
+        return False
+    c = cuenta.get(w, 0)
+    for i in range(1, len(w)):
+        a, b = w[:i], w[i:]
+        if (len(a) == 1 and a not in "ayoeu") or (len(b) == 1 and b not in "ayoeu"):
+            continue
+        if min(cuenta.get(a, 0), cuenta.get(b, 0)) >= max(2000, c * 60):
+            return True
+    return False
+
+
 def limpiar_errores(ruta, palabras):
     """Quita de errores.txt los errores que ahora son palabras del diccionario"""
     try:
@@ -145,6 +187,7 @@ def main():
     cuantas = int(sys.argv[3]) if len(sys.argv) > 3 else 50000
     ruta_errores = sys.argv[4] if len(sys.argv) > 4 else None
     minimo = int(sys.argv[5]) if len(sys.argv) > 5 else 1
+    pegadas, dudosas = leer_juntas(sys.argv[6]) if len(sys.argv) > 6 else (set(), set())
     lineas = open(ruta_dic, encoding="utf-8").read().split("\n")
     while lineas and lineas[-1] == "":
         lineas.pop()
@@ -207,6 +250,7 @@ def main():
 
     quitar = {w for w in existentes if w in QUITAR}
     dedazos = 0
+    pegadas_quitadas = []
     nuevas = {}  # índice de línea -> palabras que van después de esa línea
     agregadas = 0
     for r, w in enumerate(frec):
@@ -216,6 +260,10 @@ def main():
             continue
         # Tres letras iguales seguidas ("holaaa", "siii"): se escriben así a propósito
         if re.search(r"(.)\1\1", w):
+            continue
+        # Dos palabras pegadas ("dela", "esque"): no entra, el teclado la separa
+        if es_pegada(w, r, cuenta, pegadas, dudosas):
+            pegadas_quitadas.append(w)
             continue
         # Error de tipeo de los subtítulos: no entra
         if es_dedazo(w, cuenta.get(w, 0), cuenta, borradas):
@@ -242,7 +290,8 @@ def main():
             salida.append(w)
     open(ruta_dic, "w", encoding="utf-8").write("\n".join(salida) + "\n")
     print(f"Diccionario: {agregadas} palabras nuevas, {len(quitar)} quitadas (solo de España), "
-          f"{dedazos} errores de tipeo descartados")
+          f"{dedazos} errores de tipeo descartados, {len(pegadas_quitadas)} pegadas descartadas "
+          f"(ej.: {', '.join(pegadas_quitadas[:15])})")
     if ruta_errores:
         palabras = {l.strip().lower() for l in salida if l.strip() and not l.startswith("#")}
         limpiar_errores(ruta_errores, palabras)

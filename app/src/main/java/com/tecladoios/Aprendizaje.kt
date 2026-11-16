@@ -177,6 +177,15 @@ class Aprendizaje(private val archivo: File) {
         }
     }
 
+    /** Cuántas veces escribiste [b] justo después de [a] (claves sin tildes) */
+    @Synchronized
+    fun seguidas(a: String, b: String): Int {
+        val m = siguientes[a] ?: return 0
+        var n = 0
+        for ((w, v) in m) if (Texto.normal(w) == b) n += v
+        return n
+    }
+
     @Synchronized
     fun predecir(contexto: List<String>): List<Pair<String, Int>> {
         val res = HashMap<String, Int>()

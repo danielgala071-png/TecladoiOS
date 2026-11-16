@@ -57,6 +57,8 @@ class Motor(
 ) {
     @Volatile var contactos: Map<String, String> = emptyMap()
     @Volatile var separarPegadas = true
+    /** Palabras que van seguidas y salen pegadas al escribir rápido (assets/juntas.txt) */
+    @Volatile var juntas: Juntas = Juntas.VACIA
 
     // Filas de costo para la búsqueda en el árbol (una por profundidad)
     private val filas = Array(64) { FloatArray(40) }
@@ -242,6 +244,14 @@ class Motor(
         val ctxFuera = contexto.lastOrNull()?.let { u -> dic.id(u).let { it >= 0 && dic.esExtranjera(it) } } == true
         fun extraFuera(id: Int, k: String): Float =
             if (!ctxFuera && dic.esExtranjera(id) && aprendido.veces(k) <= 0) FUERA else 0f
+        // ¿Lo escrito es una pareja que salió pegada? ("dela" → "de la", "nolose" → "no lo sé")
+        val pareja = juntas.pegadas[clave]
+        // Pegada que "existe" pero solo como palabra rara que nunca usas (los subtítulos de donde
+        // sale el diccionario traen "dela", "esque"…) o solo en otro idioma ("nose"): no cuenta
+        // como palabra buena si hay una forma separada que sí se usa
+        val rara = formasExactas.isNotEmpty() && propia == null && contacto == null &&
+            aprendido.veces(clave) <= 0 && !juntas.dudosas.containsKey(clave) &&
+            formasExactas.all { dic.penal(it) >= RARA || (dic.esExtranjera(it) && !ctxFuera) }
         val lista = ArrayList<Opcion>(12)
         val vistos = HashSet<String>()
         fun meter(t: String, p: Float, corr: Boolean, comp: Boolean) {
@@ -299,7 +309,7 @@ class Motor(
         }
 
         // Error conocido (tablas): manda sobre todo lo demás
-        val conocido = if (!valida || formasExactas.isEmpty()) errores.buscar(clave) ?: errores.buscar(escrito.lowercase()) else null
+        val conocido = if (!valida || formasExactas.isEmpty() || rara) errores.buscar(clave) ?: errores.buscar(escrito.lowercase()) else null
         if (conocido != null && !aprendido.rechazada(escrito, conocido)) meter(conocido, -100f, true, false)
 
         // Las que eliminaste no se sugieren ni corrigen (salvo que sea justo lo que escribiste)
@@ -356,10 +366,36 @@ class Motor(
                 }
                 if (nombre != null && nombre != escrito && Texto.normal(nombre) == clave && !aprendido.rechazada(escrito, nombre)) auto = nombre
             }
-            // Palabras pegadas: "Yanpodemos" → "Ya podemos"
-            if (auto == null && separarPegadas && !valida && clave.length >= 4) separar(clave, escrito)?.let { auto = it; meter(it, -1f, true, false); lista.sortBy { o -> o.puntaje } }
+            // ---------- Criterio: ¿dejar, corregir o separar? ----------
+            //  · Pareja conocida (de la lista, de las frases de fábrica o que TÚ escribes seguido):
+            //    se separa, aunque haya una corrección parecida ("dela" → "de la", no "del")
+            //  · Dos palabras comunes sin más apoyo: se separa solo si no hay una corrección de
+            //    una sola letra ("Yanpodemos" → "Ya podemos"; "cass" → "casa", no "cas s")
+            //  · Si hay duda: no se toca; la separada queda en la barra para elegirla
+            //  · Si deshiciste esa separación antes, no se vuelve a hacer
+            if (separarPegadas && conocido == null && clave.length >= 3 && (!valida || rara)) {
+                val sep = if (pareja != null) Separacion(Texto.conMayusculas(pareja, escrito), FUERTE) else separar(clave, escrito)
+                if (sep != null && !aprendido.rechazada(escrito, sep.texto)) {
+                    val corr = auto
+                    val aplicar = when (sep.nivel) {
+                        FUERTE -> true
+                        COMUN -> !valida && (corr == null || costoDe(corr, clave, xs, ys) > 1.05f)
+                        else -> false
+                    }
+                    if (aplicar) auto = sep.texto
+                    meter(sep.texto, if (aplicar) -1f else (lista.firstOrNull()?.puntaje ?: 0f) + 0.4f, true, false)
+                    lista.sortBy { o -> o.puntaje }
+                }
+            }
             // Solo si no eran palabras pegadas: la opción que les saca mucha ventaja a las demás
             if (auto == null) auto = porVentaja
+        }
+
+        // La pegada TAMBIÉN existe ("sino", "haber", "porque"): se deja, pero la barra ofrece la
+        // separada ("si no", "a ver", "por qué") por si era lo que querías
+        if (separarPegadas && valida) juntas.dudosas[clave]?.let { d ->
+            meter(Texto.conMayusculas(d, escrito), (lista.firstOrNull()?.puntaje ?: 0f) + 0.4f, true, false)
+            lista.sortBy { o -> o.puntaje }
         }
 
         // Las formas con tilde de lo escrito también se ofrecen (esta / está)
@@ -411,27 +447,74 @@ class Motor(
         return if (costo <= presupuesto(n)) costo else null
     }
 
-    /** Dos palabras pegadas, o con una letra junto al espacio (b, n, m, v, c) en vez del espacio */
-    fun separar(clave: String, escrito: String): String? {
+    /** Separación propuesta y qué tan segura es ([FUERTE], [COMUN] o [DUDOSA]) */
+    class Separacion(val texto: String, val nivel: Int)
+
+    /** Número de la pieza [k] si sirve como palabra suelta, o -1 */
+    private fun pieza(k: String): Int {
+        // Las piezas de una letra solo si son palabras comunes (a, y, o, e, u)
+        if (k.length == 1 && k !in UNA_LETRA) return -1
+        val f = dic.formas(k)
+        if (f.isEmpty()) return -1
+        val id = f[0]
+        // Una pieza de otro idioma que no usas no vale ("also" ≠ "al so")
+        if (dic.esExtranjera(id) && aprendido.veces(k) <= 0) return -1
+        return id
+    }
+
+    /** [a] y [b] suelen ir seguidas: en la lista, en las frases de fábrica o porque TÚ las escribes así */
+    private fun vanSeguidas(a: String, b: String): Boolean =
+        juntas.pares.containsKey("$a $b") || bigramas[a]?.any { Texto.normal(it) == b } == true ||
+            aprendido.seguidas(a, b) >= 2
+
+    /**
+     * Dos (o tres) palabras pegadas, o con una letra junto al espacio (b, n, m, v, c) en vez
+     * del espacio: "dela" → "de la", "nolose" → "no lo sé", "Yanpodemos" → "Ya podemos".
+     */
+    fun separar(clave: String, escrito: String): Separacion? {
+        if (clave.length > 24) return null
         var mejor: String? = null
         var mejorP = Float.MAX_VALUE
-        fun probar(a: String, b: String, extra: Float) {
-            if (a.isEmpty() || b.isEmpty()) return
-            val ia = dic.formas(a).firstOrNull() ?: return
-            val ib = dic.formas(b).firstOrNull() ?: return
-            // Las piezas de una letra solo si son palabras comunes (a, y, o, e, u)
-            if (a.length == 1 && a !in setOf("a", "y", "o", "e", "u")) return
-            if (b.length == 1 && b !in setOf("a", "y", "o", "e", "u")) return
-            val p = dic.penal(ia) + dic.penal(ib) + extra
-            if (p < mejorP) { mejorP = p; mejor = dic.palabras[ia] + " " + dic.palabras[ib] }
+        var mejorNivel = DUDOSA
+        fun probar(partes: List<String>, extra: Float, nCambiada: Boolean) {
+            val ids = IntArray(partes.size)
+            for ((i, k) in partes.withIndex()) { val id = pieza(k); if (id < 0) return; ids[i] = id }
+            var suma = 0f; var maxP = 0f
+            for (id in ids) { val p = dic.penal(id); suma += p; if (p > maxP) maxP = p }
+            var seguidas = true
+            for (i in 0 until partes.size - 1) if (!vanSeguidas(partes[i], partes[i + 1])) { seguidas = false; break }
+            // Comunes: cada pieza entre las palabras más usadas (más estricto con tres piezas o
+            // cuando una letra ocupó el lugar del espacio)
+            val comun = when {
+                partes.size == 3 -> maxP <= 3.6f && suma <= 8.5f
+                nCambiada -> maxP <= 4.6f && suma <= 7f
+                else -> maxP <= 5.6f && suma <= 9.5f
+            }
+            val nivel = when { seguidas -> FUERTE; comun -> COMUN; else -> DUDOSA }
+            // Las dudosas solo se ofrecen si son dos piezas tal cual (sin letra cambiada)
+            if (nivel == DUDOSA && (nCambiada || partes.size == 3 || suma > 11f)) return
+            val p = suma + extra - nivel * 6f
+            if (p >= mejorP) return
+            mejorP = p; mejorNivel = nivel
+            // Cómo se escribe cada pieza: con la tilde que lleva en esa pareja ("lo sé", "ya está")
+            val sb = StringBuilder()
+            for (i in partes.indices) {
+                if (i > 0) sb.append(' ')
+                val antes = if (i > 0) juntas.pares["${partes[i - 1]} ${partes[i]}"]?.substringAfterLast(' ') else null
+                val despues = if (i < partes.size - 1) juntas.pares["${partes[i]} ${partes[i + 1]}"]?.substringBefore(' ') else null
+                sb.append(antes ?: despues ?: dic.palabras[ids[i]])
+            }
+            mejor = sb.toString()
         }
         for (i in 1 until clave.length) {
-            probar(clave.substring(0, i), clave.substring(i), 0f)
-            if (clave[i] in "bnmvc" && i + 1 < clave.length) probar(clave.substring(0, i), clave.substring(i + 1), 0.8f)
+            probar(listOf(clave.substring(0, i), clave.substring(i)), 0f, false)
+            if (clave[i] in "bnmvc" && i + 1 < clave.length) probar(listOf(clave.substring(0, i), clave.substring(i + 1)), 0.8f, true)
         }
+        // Tres palabras cortas y muy usadas ("nolose", "telodije", "yalose")
+        if (clave.length in 5..14) for (i in 1 until clave.length - 1) for (j in i + 1 until clave.length)
+            probar(listOf(clave.substring(0, i), clave.substring(i, j), clave.substring(j)), 1.5f, false)
         val m = mejor ?: return null
-        if (mejorP > 11f) return null
-        return Texto.conMayusculas(m, escrito)
+        return Separacion(Texto.conMayusculas(m, escrito), mejorNivel)
     }
 
     /** Siguiente palabra probable después de [contexto] */
@@ -532,6 +615,13 @@ class Motor(
         val INICIO = listOf("hola", "ya", "gracias", "buenos", "sí", "no", "estimado", "ok", "qué", "te", "yo", "bueno")
         val GENERALES = listOf("de", "que", "y", "la", "el", "en", "a", "no", "con", "para", "por", "me")
 
+        const val FUERTE = 2
+        const val COMUN = 1
+        const val DUDOSA = 0
+        /** Desde aquí una palabra es rara (más allá de las ~20 000 más usadas) */
+        const val RARA = 6.5f
+        private val UNA_LETRA = setOf("a", "y", "o", "e", "u")
+
         fun leerBigramas(lineas: Sequence<String>, en: HashMap<String, Array<String>>) {
             for (l in lineas) {
                 if (l.isEmpty() || l[0] == '#') continue
@@ -545,6 +635,48 @@ class Motor(
                 val previos = en[k]
                 en[k] = if (previos == null) nuevos.toTypedArray() else (previos.toList() + nuevos).distinct().toTypedArray()
             }
+        }
+    }
+}
+
+/**
+ * Palabras que van seguidas (assets/juntas.txt). [pegadas]: "dela" → "de la";
+ * [pares]: "de la" (sin tildes) → "de la" (como se escribe); [dudosas]: pegadas que también
+ * existen ("sino" → "si no"), que nunca se separan solas.
+ */
+class Juntas(
+    val pegadas: Map<String, String>,
+    val pares: Map<String, String>,
+    val dudosas: Map<String, String>,
+) {
+    companion object {
+        val VACIA = Juntas(emptyMap(), emptyMap(), emptyMap())
+
+        fun leer(lineas: Sequence<String>): Juntas {
+            val pegadas = HashMap<String, String>(1024)
+            val pares = HashMap<String, String>(1024)
+            val dudosas = HashMap<String, String>(64)
+            for (l0 in lineas) {
+                val l = l0.trim()
+                if (l.isEmpty() || l[0] == '#') continue
+                val igual = l.indexOf('=')
+                if (igual > 0) {
+                    val k = Texto.normal(l.substring(0, igual).trim())
+                    val v = l.substring(igual + 1).trim()
+                    if (k.isNotEmpty() && v.contains(' ')) dudosas[k] = v
+                    continue
+                }
+                val partes = l.split(' ').filter { it.isNotEmpty() }
+                if (partes.size !in 2..3) continue
+                val claves = partes.map { Texto.normal(it) }
+                val texto = partes.joinToString(" ")
+                pegadas.putIfAbsent(claves.joinToString(""), texto)
+                for (i in 0 until partes.size - 1)
+                    pares.putIfAbsent(claves[i] + " " + claves[i + 1], partes[i] + " " + partes[i + 1])
+            }
+            // Las que también existen como palabra nunca se separan solas
+            for (k in dudosas.keys) pegadas.remove(k)
+            return Juntas(pegadas, pares, dudosas)
         }
     }
 }
