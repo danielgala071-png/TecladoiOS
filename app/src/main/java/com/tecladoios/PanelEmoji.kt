@@ -37,7 +37,8 @@ class PanelEmoji(context: Context) : View(context) {
 
     companion object {
         private var cache: List<Categoria>? = null
-        private const val FILAS = 5
+        // 4 filas (antes 5): cada emoji sale más grande y se ve sin forzar la vista
+        private const val FILAS = 4
         private val TONOS = listOf("\uD83C\uDFFB", "\uD83C\uDFFC", "\uD83C\uDFFD", "\uD83C\uDFFE", "\uD83C\uDFFF")
 
         fun cargar(c: Context): List<Categoria> {
@@ -155,7 +156,7 @@ class PanelEmoji(context: Context) : View(context) {
         if (categorias.isEmpty()) { refrescar(); congelado = false }
         val cel = (alto - altoAbajo() - arribaGrilla() - dp(4f)) / FILAS.toFloat()
         if (cel <= 0f) return
-        precalentar((cel * 0.68f).toInt(), 0)
+        precalentar((cel * 0.70f).toInt(), 0)
     }
     /** Recientes: el que usaste entra primero y empuja a los demás */
     private val EMPUJE_DURA = 320f
@@ -429,7 +430,7 @@ class PanelEmoji(context: Context) : View(context) {
 
         // Emojis (solo las columnas visibles). Si alguno está animándose se pide UN solo cuadro nuevo
         animandoGrilla = false
-        emojiP.textSize = cel * 0.68f
+        emojiP.textSize = cel * 0.70f
         val colW = anchoCol(cel)
         precalentar(emojiP.textSize.toInt(), prioridad)
         c.save()

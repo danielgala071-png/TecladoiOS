@@ -1136,7 +1136,35 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         c.drawRect(r.left - 1f, r.top - 1f, r.right + 1f, r.bottom + prof + 1f, relleno)
         relleno.shader = null
         relleno.color = if (tema.contorno) BASE_TECLA else tema.sombra
+        if (Ahorro.activo) relleno.alpha = (255 * (1f - l)).toInt().coerceIn(0, 255)
         c.drawRoundRect(r.left, r.top + prof, r.right, r.bottom + prof, radio, radio, relleno)
+        relleno.alpha = 255
+
+        if (Ahorro.activo) {
+            // Efecto Gboard: al tocar, la tecla «desaparece» (queda el fondo) y su letra se ve
+            // tenue; al soltar vuelve en 110 ms. El globo del iPhone sigue saliendo encima.
+            cuerpoTecla(c, r, radio, t, blanca)
+            if (l > 0.01f) {
+                relleno.shader = degradadoFondo(); relleno.color = tema.fondo
+                relleno.alpha = (255 * l).toInt().coerceIn(0, 255)
+                c.drawRoundRect(r.left - 0.5f, r.top - 0.5f, r.right + 0.5f, r.bottom + 0.5f, radio, radio, relleno)
+                relleno.shader = null; relleno.alpha = 255
+            }
+            val alfaLetra = (255 - 165 * l).toInt().coerceIn(0, 255)
+            if (modoTrackpad) { }
+            else if (blanca) flechaNegra(c, k)
+            else if (t.tipo == K.INTRO && introDestacado) introBlanco(c, k)
+            else {
+                src.set(r.left.toInt().coerceAtLeast(0), r.top.toInt().coerceAtLeast(0),
+                    (r.right + 1).toInt().coerceAtMost(letras.width), (r.bottom + 1).toInt().coerceAtMost(letras.height))
+                dst.set(src)
+                pinturaLetras.color = tema.texto
+                pinturaLetras.alpha = alfaLetra
+                c.drawBitmap(letras, src, dst, pinturaLetras)
+                pinturaLetras.alpha = 255
+            }
+            return
+        }
 
         c.save()
         // 2. Profundidad: la tecla se hunde derecho (baja 3 dp y se achica apenas, sin
