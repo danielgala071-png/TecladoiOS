@@ -343,17 +343,17 @@ class PanelEmoji(context: Context) : View(context) {
 
     // ---------- Medidas ----------
 
-    private val SEPARACION_DP = 30f
+    private val SEPARACION_DP = 18f
 
     /** Columna un poco más ancha que alta: los emojis respiran como en el iPhone */
-    private fun anchoCol(cel: Float) = tamEmoji(cel) + (cel - tamEmoji(cel)) * 1.55f   // más aire a los lados: no se ven juntos
+    private fun anchoCol(cel: Float) = tamEmoji(cel) + (cel - tamEmoji(cel)) * 1.1f   // aire de los lados ≈ el de arriba/abajo
 
     /** Emoji de 30 a 35 dp (sin pasarse de la casilla), igual espacio arriba/abajo y a los lados */
-    private fun tamEmoji(cel: Float) = (cel * 0.60f).coerceIn(dp(23f), dp(28f)).coerceAtMost(cel * 0.66f)
+    private fun tamEmoji(cel: Float) = (cel * 0.80f).coerceIn(dp(26f), dp(38f)).coerceAtMost(cel * 0.86f)
 
     /** Ancho de cada sección; la de recientes siempre deja lugar para al menos 6 columnas */
     private fun anchoSeccion(k: Int, cel: Float): Float {
-        if (k == 0) return maxOf(columnas[k], 6) * anchoCol(cel)
+        if (k == 0) return (if (categorias[k].emojis.isEmpty()) 6 else columnas[k]) * anchoCol(cel)
         val bx = bloqueX.getOrNull(k) ?: return columnas[k] * anchoCol(cel)
         if (bx.isEmpty()) return 0f
         val ult = bx.size - 1
