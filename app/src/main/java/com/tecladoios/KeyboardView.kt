@@ -271,16 +271,25 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         // Entre letras: la más cercana a tu forma de tocar cada una
         var mejor = dentro
         var md = Float.MAX_VALUE
+        // A dos pulgares el dedo cae a menudo en el borde entre dos filas: si el toque está en
+        // el borde de arriba o de abajo de su fila, también compite la letra de la fila vecina
+        // (pero solo gana si está más cerca de verdad o si el cerebro la espera mucho)
+        val alto = dentro.toque.height().coerceAtLeast(1f)
+        val enBorde = (y - dentro.toque.top) / alto < 0.2f || (dentro.toque.bottom - y) / alto < 0.2f
         for (c in colocadas) {
-            if (!c.tecla.esLetra || abs(c.fila - dentro.fila) > 0) continue
+            if (!c.tecla.esLetra) continue
+            val otraFila = abs(c.fila - dentro.fila)
+            if (otraFila > 1 || (otraFila == 1 && !enBorde)) continue
             if (abs(c.dibujo.centerX() - x) > anchoTecla * 1.5f) continue
             val dv = desvio[c.tecla.texto[0]]
             val cx = c.dibujo.centerX() + (dv?.get(0) ?: 0f)
             val cy = c.dibujo.centerY() + (dv?.get(1) ?: 0f)
-            val ex = x - cx; val ey = (y - cy) * 0.6f
-            // Zona caliente: la letra que el cerebro espera atrae el toque un poco más
-            // (hasta 30 % de ventaja), como hace el iPhone con su zona invisible
-            val dd = (ex * ex + ey * ey) * (1f - 0.4f * (probables[c.tecla.texto[0].lowercaseChar()] ?: 0f))
+            val ex = x - cx
+            // En su fila lo vertical pesa poco; la fila vecina se mide en serio y con desventaja
+            val ey = (y - cy) * (if (otraFila == 0) 0.6f else 1.15f)
+            // Zona caliente: la letra que el cerebro espera atrae el toque (hasta 45 % de ventaja),
+            // como hace el iPhone con su zona invisible
+            val dd = (ex * ex + ey * ey) * (1f - 0.45f * (probables[c.tecla.texto[0].lowercaseChar()] ?: 0f))
             if (dd < md) { md = dd; mejor = c }
         }
         return mejor
@@ -333,6 +342,12 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     private val dedos = HashMap<Int, Dedo>()
+    // Última letra tocada (para descartar el toque fantasma del otro pulgar)
+    private var ultimaLetra: Colocada? = null
+    private var ultimoDedo = -1
+    private var ultimaLetraMs = 0L
+    private var ultimaX = 0f
+    private var ultimaY = 0f
     private var presionadas = HashSet<Colocada>()
     // Al mover el cursor, las letras se desvanecen (y vuelven al soltar) en vez de desaparecer de golpe
     private var modoTrackpad = false; set(v) { if (field != v) { field = v; trackpadMs = if (Ahorro.activo) 0L else SystemClock.uptimeMillis(); invalidate() } }
@@ -445,6 +460,16 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         dedos[id] = dd
         if (!panelMano.isEmpty && panelMano.contains(x, y)) { dd.modo = Modo.PANEL; return }
         val c = buscar(x, y) ?: run { dd.modo = Modo.HECHO; return }
+        // Toque fantasma a dos pulgares: la misma letra tocada por OTRO dedo casi en el mismo
+        // instante y en el mismo lugar (el segundo pulgar rozó la tecla) no se escribe dos veces.
+        // Una letra doble de verdad ("ll", "rr") nunca sale tan rápido.
+        val ahoraT = SystemClock.uptimeMillis()
+        if (c.tecla.esLetra && c === ultimaLetra && id != ultimoDedo && ahoraT - ultimaLetraMs < 45L &&
+            (x - ultimaX) * (x - ultimaX) + (y - ultimaY) * (y - ultimaY) < anchoTecla * anchoTecla * 0.36f) {
+            dd.modo = Modo.HECHO
+            return
+        }
+        if (c.tecla.esLetra) { ultimaLetra = c; ultimoDedo = id; ultimaLetraMs = ahoraT; ultimaX = x; ultimaY = y }
         // La vibración va primero: se siente justo al apoyar el dedo, antes de dibujar nada
         oyente?.respuesta(tipoRespuesta(c.tecla))
         dd.tecla = c

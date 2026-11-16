@@ -349,7 +349,7 @@ class PanelEmoji(context: Context) : View(context) {
     private fun anchoCol(cel: Float) = tamEmoji(cel) + (cel - tamEmoji(cel)) * 1.1f   // aire de los lados ≈ el de arriba/abajo
 
     /** Emoji de 30 a 35 dp (sin pasarse de la casilla), igual espacio arriba/abajo y a los lados */
-    private fun tamEmoji(cel: Float) = (cel * 0.80f).coerceIn(dp(26f), dp(38f)).coerceAtMost(cel * 0.86f)
+    private fun tamEmoji(cel: Float) = dp(29f).coerceAtMost(cel * 0.92f)   // 29 dp fijos (sin pasarse de la casilla)
 
     /** Ancho de cada sección; la de recientes siempre deja lugar para al menos 6 columnas */
     private fun anchoSeccion(k: Int, cel: Float): Float {

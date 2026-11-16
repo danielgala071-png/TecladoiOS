@@ -12,7 +12,7 @@ class CerebroTest {
     private val palabras = listOf(
         "de", "que", "hola", "ya", "podemos", "casa", "canción", "esta", "está", "holanda",
         "hora", "hoy", "gracias", "mañana", "porque", "vamos", "quiero", "amor", "nos", "vemos",
-        "la", "del", "no", "lo", "se", "sé", "sino", "si", "es", "en", "serio", "te", "dije", "los", "a",
+        "la", "del", "no", "lo", "se", "sé", "sino", "si", "es", "en", "serio", "te", "dije", "los", "a", "por",
     )
 
     private fun geoQwerty(): Geometria {
@@ -159,5 +159,32 @@ class CerebroTest {
         // Pero si tú la usas, se respeta
         m.aprendido.usar("esque", true); m.aprendido.usar("esque", true)
         assertNull(m.proponer("esque", null, null, emptyList(), true).autocorregir)
+    }
+
+    // ---------- Escenarios ----------
+
+    @Test fun espacioCorrido() {
+        val m = motor()
+        assertEquals("hola" to "que", m.moverEspacio("ho", "laque"))
+        assertEquals("Hola" to "que", m.moverEspacio("Holaq", "ue"))
+        assertEquals("gracias" to "por", m.moverEspacio("graciasp", "or"))
+        // Las dos existen: no se toca
+        assertNull(m.moverEspacio("hola", "que"))
+    }
+
+    @Test fun abreviaturaSeDeja() {
+        val p = motor().proponer("q", null, null, emptyList(), true)
+        assertNull(p.autocorregir)
+        assertTrue(p.opciones.any { it.texto == "que" })
+    }
+
+    @Test fun alargadaSeDeja() {
+        val p = motor().proponer("holaaa", null, null, emptyList(), true)
+        assertNull(p.autocorregir)
+        assertTrue(p.opciones.any { it.texto == "hola" })
+    }
+
+    @Test fun nombreConMayusculasDentroSeDeja() {
+        assertNull(motor().proponer("iPhone", null, null, emptyList(), true).autocorregir)
     }
 }

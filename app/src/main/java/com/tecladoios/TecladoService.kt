@@ -74,6 +74,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     private class Correccion(val original: String, val puesta: String, val separador: String, val atajo: Boolean = false)
     private var ultimaCorreccion: Correccion? = null
+    /** La palabra anterior: como la escribiste y como quedó (para arreglar el espacio corrido) */
+    private var previa: Pair<String, String>? = null
 
     private var modo = Distribuciones.LETRAS
     private var campo = Distribuciones.CAMPO_TEXTO
@@ -279,7 +281,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         }
         if (!restarting) {
             reiniciarPalabra()
-            ultimaCorreccion = null; espacioAuto = false; revision = null
+            ultimaCorreccion = null; espacioAuto = false; revision = null; previa = null
             // Al abrir el teclado en otro campo, las letras aparecen directo (sin que el panel
             // de emojis que quedó abierto baje animado mientras el teclado sube)
             mostrarPanel(Panel.TECLADO, conAnimacion = false)
@@ -879,6 +881,21 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 }
             }
         }
+        // Espacio corrido a dos pulgares: "ho laque" → "hola que", "holaq ue" → "hola que".
+        // Se mira la anterior COMO LA ESCRIBISTE (aunque se haya corregido sola)
+        val prev = previa
+        if (anteriorNueva == null && atajo == null && corregir && sugerir && !respetar && !vinoDeslizado &&
+            prev != null && ctx.isNotEmpty() && ctx.last() == prev.second && !prev.first.contains(' ') && !prev.second.contains(' ')) {
+            val mov = Cerebro.motor?.moverEspacio(prev.first, escrito)
+            if (mov != null) {
+                val previo = antes(prev.second.length + 1 + escrito.length)
+                if (previo.startsWith(prev.second + " ")) {
+                    anteriorVieja = prev.second
+                    anteriorNueva = mov.first
+                    resultado = mov.second
+                }
+            }
+        }
         marcarEdicion()
         // Palabra reabierta con un espacio ya detrás: no se agrega otro, el cursor salta el que hay
         if (respetar && separador == " " && resultado == escrito && despues(1) == " " && selIni == selFin) {
@@ -909,6 +926,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             val original = if (anteriorVieja != null) "$anteriorVieja $escrito" else escrito
             Correccion(original, puesta, separador, atajo != null)
         } else null
+        previa = if (separador == " " && anteriorNueva == null && atajo == null) escrito to resultado else null
         // La palabra corregida se ilumina en la barra (tocarla la deshace)
         barra?.avisarCorreccion(ultimaCorreccion?.puesta)
         reiniciarPalabra()
@@ -938,6 +956,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             buscarEmoji(); return
         }
         val ic = ic() ?: return
+        previa = null
         principal.removeCallbacks(reabrirTrasBorrar)
         // Animación: la letra que se va "entra" en la tecla borrar
         if (selIni == selFin) teclado?.comerLetra(if (palabra.isNotEmpty()) palabra.last().toString() else antes(1))

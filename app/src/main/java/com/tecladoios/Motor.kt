@@ -227,11 +227,41 @@ class Motor(
      */
     private val RISA = Regex("(?:j[aeiou]|ja|js|sj|jk|ks|sk|xd|ha|he|ji)+[jhsk]?|x+d+|j+a+j*|a*j+a+j+[aj]*")
 
-    fun proponer(escrito: String, xs: FloatArray?, ys: FloatArray?, contexto: List<String>, corregir: Boolean): Propuesta {
+    /*
+     * ESCENARIOS: antes de tocar una palabra el cerebro decide en cuál está
+     *  1. Risa (jajaja, jsjs, xd)                 → se deja
+     *  2. Abreviatura del chat (q, xq, tb, ntp)   → se deja; la barra ofrece la palabra completa
+     *  3. Letras alargadas (holaaa, siii)         → se deja; la barra ofrece la normal
+     *  4. Mayúsculas por dentro (iPhone, WhatsApp) → se deja (es un nombre)
+     *  5. Palabra que existe o que tú usas        → se deja; solo pone la tilde si el contexto la
+     *                                               pide con claridad ("cómo estás", "ya está")
+     *  6. Palabras pegadas                        → se separa con criterio (ver más abajo)
+     *  7. Palabra que no existe                   → se corrige si una opción gana con claridad;
+     *                                               si dos empatan, no se toca y se ofrecen las dos
+     *  8. Espacio corrido entre dos palabras      → moverEspacio() ("ho laque" → "hola que")
+     */
+    fun proponer(escrito: String, xs: FloatArray?, ys: FloatArray?, contexto: List<String>, corregir0: Boolean): Propuesta {
         if (escrito.isEmpty()) return Propuesta(emptyList(), null, true)
         val clave = Texto.normal(escrito)
-        // Risas (jaja, jajaja, jsjs, jeje, xd, ksks…) de cualquier largo: nunca se corrigen
+        // 1. Risas (jaja, jajaja, jsjs, jeje, xd, ksks…) de cualquier largo: nunca se corrigen
         if ((clave.length >= 4 || clave.startsWith("xd")) && RISA.matches(clave)) return Propuesta(listOf(Opcion(escrito, 0f, false, false)), null, true)
+        // 2. Abreviaturas del chat: se respetan; la completa queda a un toque
+        ABREVIATURAS[clave]?.let { completa ->
+            if (escrito.length <= 4 && aprendido.eliminada(clave).not())
+                return Propuesta(listOf(Opcion(escrito, 0f, false, false), Opcion(Texto.conMayusculas(completa, escrito), 0.5f, true, false)), null, true)
+        }
+        // 3. Letras alargadas a propósito: se dejan; la palabra normal queda a un toque
+        if (clave.length >= 4 && ALARGADA.containsMatchIn(clave) && clave.all { it.isLetter() }) {
+            val ops = arrayListOf(Opcion(escrito, 0f, false, false))
+            for (base in listOf(clave.replace(ALARGADA_TODO, "$1"), clave.replace(ALARGADA_TODO, "$1$1"))) {
+                val f = dic.formas(base)
+                if (f.isNotEmpty() && ops.none { Texto.normal(it.texto) == base }) ops.add(Opcion(Texto.conMayusculas(dic.palabras[f[0]], escrito), 0.5f, true, false))
+            }
+            return Propuesta(ops, null, true)
+        }
+        // 4. Mayúsculas por dentro (iPhone, WhatsApp, YouTube): es un nombre, no se corrige solo
+        val mezcla = escrito.length >= 3 && escrito.drop(1).any { it.isUpperCase() } && escrito.any { it.isLowerCase() }
+        val corregir = corregir0 && !mezcla
         val soloLetras = clave.all { it.isLetter() || it == '\'' }
         val formasExactas = dic.formas(clave)
         val propia = aprendido.conocida(clave)
@@ -341,6 +371,13 @@ class Motor(
                 val costo = costoDe(mejor.texto, clave, xs, ys)
                 if (mejor.puntaje < umbral + apoyo && penal < 9.5f && costo <= costoMax + apoyo * 0.4f &&
                     !aprendido.rechazada(escrito, mejor.texto)) auto = mejor.texto
+                // Empate en palabra corta sin apoyo del contexto ("ls" → ¿la? ¿lo? ¿los?): no se
+                // adivina; se dejan las dos en la barra para elegir
+                if (auto != null && clave.length <= 3 && apoyo <= 0f) {
+                    val km = Texto.normal(mejor.texto)
+                    val rival = lista.firstOrNull { it !== mejor && !it.completa && it.esCorreccion && Texto.normal(it.texto) != km && !bloqueada(it) }
+                    if (rival != null && rival.puntaje - mejor.puntaje < 0.3f) auto = null
+                }
                 // Palabra larga muy mal tecleada (dos dedos rápido): si una opción le saca mucha
                 // ventaja a todas las demás, es esa (así decide Gboard: la más probable por lejos)
                 if (auto == null && clave.length >= 5 && penal < 9f && !aprendido.rechazada(escrito, mejor.texto)) {
@@ -354,6 +391,17 @@ class Motor(
                 val sinTilde = formasExactas.any { dic.palabras[it].lowercase() == escrito.lowercase() }
                 if (!sinTilde && forma.lowercase() != escrito.lowercase() && !aprendido.rechazada(escrito, forma))
                     auto = Texto.conMayusculas(forma, escrito)
+                // Existe tal cual, pero la frase pide la otra forma con claridad ("cómo estas" →
+                // "cómo estás", "ya esta" → "ya está"): solo si el contexto apoya mucho a la otra
+                // y nada a la escrita
+                if (auto == null && sinTilde && contexto.isNotEmpty() && formasExactas.size > 1) {
+                    val e = escrito.lowercase()
+                    val bonoEscrita = ctxBono[e] ?: 0f
+                    val otra = formasExactas.map { dic.palabras[it] }.filter { it.lowercase() != e }
+                        .maxByOrNull { ctxBono[it.lowercase()] ?: 0f }
+                    if (otra != null && (ctxBono[otra.lowercase()] ?: 0f) >= 1.1f && bonoEscrita < 0.2f &&
+                        aprendido.veces(clave) < 30 && !aprendido.rechazada(escrito, otra)) auto = Texto.conMayusculas(otra, escrito)
+                }
             }
             // Nombres con mayúscula: si esa palabra solo existe como nombre propio (en el
             // diccionario, en tus contactos o como tú la escribes), va con mayúscula: daniel → Daniel
@@ -445,6 +493,59 @@ class Motor(
         }
         val costo = minOf(prev[n], completo)
         return if (costo <= presupuesto(n)) costo else null
+    }
+
+    /** La palabra existe y se usa: común en el diccionario o tuya */
+    private fun firme(k: String): Boolean {
+        if (aprendido.conocida(k) != null || contactos.containsKey(k)) return true
+        val f = dic.formas(k)
+        return f.isNotEmpty() && f.any { dic.penal(it) < RARA && !(dic.esExtranjera(it) && aprendido.veces(k) <= 0) }
+    }
+
+    /** Número de una palabra común (de las ~7 000 más usadas) o tuya, o -1 */
+    private fun comun(k: String): Int {
+        if (k.length == 1 && k !in UNA_LETRA) return -1
+        val f = dic.formas(k)
+        if (f.isEmpty()) return -1
+        val id = f[0]
+        if (dic.esExtranjera(id) && aprendido.veces(k) <= 0) return -1
+        return if (dic.penal(id) <= 5.5f || aprendido.veces(k) >= 3) id else -1
+    }
+
+    /**
+     * Espacio corrido (escribiendo a dos pulgares el espacio cae una letra antes o después):
+     * "ho laque" → "hola que", "holaq ue" → "hola que", "graciasp or" → "gracias por".
+     * [anterior] y [actual] como los ESCRIBISTE. Solo si al menos una no existe y las dos nuevas
+     * son palabras comunes. Devuelve las dos nuevas (con sus mayúsculas) o null.
+     */
+    fun moverEspacio(anterior: String, actual: String): Pair<String, String>? {
+        val a = Texto.normal(anterior); val b = Texto.normal(actual)
+        if (a.isEmpty() || b.isEmpty() || a.length > 20 || b.length > 20) return null
+        if (!a.all { it.isLetter() } || !b.all { it.isLetter() }) return null
+        val fa = firme(a); val fb = firme(b)
+        if (fa && fb) return null
+        if (aprendido.rechazada("$anterior $actual", "")) return null
+        var mejor: Pair<String, String>? = null
+        var mejorP = Float.MAX_VALUE
+        fun probar(x: String, y: String, k: Int) {
+            val ix = comun(x); if (ix < 0) return
+            val iy = comun(y); if (iy < 0) return
+            val p = dic.penal(ix) + dic.penal(iy) + k * 0.6f
+            if (p < mejorP) {
+                mejorP = p
+                mejor = Texto.conMayusculas(dic.palabras[ix], anterior) to
+                    (if (actual.firstOrNull()?.isUpperCase() == true) Texto.capitalizar(dic.palabras[iy]) else dic.palabras[iy])
+            }
+        }
+        for (k in 1..2) {
+            // Letras de la siguiente que eran de la anterior: "ho laque" → "hola que"
+            if (b.length > k) probar(a + b.substring(0, k), b.substring(k), k)
+            // Letras de la anterior que eran de la siguiente: "holaq ue" → "hola que"
+            if (a.length > k) probar(a.substring(0, a.length - k), a.substring(a.length - k) + b, k)
+        }
+        // Lo que ya existía no se cambia por algo apenas mejor
+        if (mejor != null && (fa || fb) && mejorP > 7.5f) return null
+        return mejor
     }
 
     /** Separación propuesta y qué tan segura es ([SEP_FUERTE], [SEP_COMUN] o [SEP_DUDOSA]) */
@@ -621,6 +722,18 @@ class Motor(
         /** Desde aquí una palabra es rara (más allá de las ~20 000 más usadas) */
         const val RARA = 6.5f
         private val UNA_LETRA = setOf("a", "y", "o", "e", "u")
+        private val ALARGADA = Regex("(.)\\1\\1")
+        private val ALARGADA_TODO = Regex("(.)\\1{2,}")
+        /** Abreviaturas del chat: se respetan y la barra ofrece la completa */
+        val ABREVIATURAS = mapOf(
+            "q" to "que", "k" to "que", "xq" to "porque", "pq" to "porque", "xk" to "porque",
+            "tb" to "también", "tmb" to "también", "tbn" to "también", "bn" to "bien", "ntp" to "no te preocupes",
+            "xfa" to "por favor", "pls" to "por favor", "plis" to "por favor", "dnd" to "dónde", "tqm" to "te quiero mucho",
+            "msj" to "mensaje", "x" to "por", "d" to "de", "porfis" to "por favor", "grax" to "gracias",
+            "salu2" to "saludos", "xd" to "xd", "hdp" to "hdp", "ksa" to "casa", "kmo" to "cómo", "q tal" to "qué tal",
+            "nd" to "nada", "tmr" to "tmr", "csm" to "csm", "ctm" to "ctm", "mrd" to "mierda", "bb" to "bebé",
+            "pa" to "para", "pe" to "pues", "nomas" to "nomás",
+        ).filter { it.key != it.value && !it.key.contains(' ') && it.key != "nomas" }
 
         fun leerBigramas(lineas: Sequence<String>, en: HashMap<String, Array<String>>) {
             for (l in lineas) {
