@@ -37,8 +37,8 @@ class PanelEmoji(context: Context) : View(context) {
 
     companion object {
         private var cache: List<Categoria>? = null
-        // 4 filas (antes 5): cada emoji sale más grande y se ve sin forzar la vista
-        private const val FILAS = 4
+        // 5 filas, emojis medianos (70 % de la celda): cómodos de ver sin ocupar tanto
+        private const val FILAS = 5
         private val TONOS = listOf("\uD83C\uDFFB", "\uD83C\uDFFC", "\uD83C\uDFFD", "\uD83C\uDFFE", "\uD83C\uDFFF")
 
         fun cargar(c: Context): List<Categoria> {
