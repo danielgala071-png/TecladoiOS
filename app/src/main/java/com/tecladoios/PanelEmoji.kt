@@ -668,7 +668,7 @@ class PanelEmoji(context: Context) : View(context) {
         val paradas = paradasX.size.coerceAtLeast(1)
         val paso = (der - izq) / paradas
         val actual = categoriaActual()
-        emojiP.textSize = minOf(paso * 0.74f, dp(19f))
+        emojiP.textSize = minOf(dp(15f), paso * 0.9f)   // íconos de sección de 15 dp
         // Cápsula de las secciones: un solo bloque gris oscuro, compacto y fácil de ver
         if (!tema.claro) {
             val cyC = yAbajo + altoAbajo() / 2
