@@ -349,7 +349,7 @@ class PanelEmoji(context: Context) : View(context) {
     private fun anchoCol(cel: Float) = tamEmoji(cel) + (cel - tamEmoji(cel)) * 1.15f   // aire de los lados ≈ el de arriba/abajo
 
     /** Emoji de 30 a 35 dp (sin pasarse de la casilla), igual espacio arriba/abajo y a los lados */
-    private fun tamEmoji(cel: Float) = (cel * 0.74f).coerceIn(dp(30f), dp(35f)).coerceAtMost(cel * 0.8f)
+    private fun tamEmoji(cel: Float) = (cel * 0.66f).coerceIn(dp(24f), dp(28f)).coerceAtMost(cel * 0.75f)
 
     /** Ancho de cada sección; la de recientes siempre deja lugar para al menos 6 columnas */
     private fun anchoSeccion(k: Int, cel: Float): Float {
@@ -668,7 +668,13 @@ class PanelEmoji(context: Context) : View(context) {
         val paradas = paradasX.size.coerceAtLeast(1)
         val paso = (der - izq) / paradas
         val actual = categoriaActual()
-        emojiP.textSize = minOf(paso * 0.58f, dp(19f))
+        emojiP.textSize = minOf(paso * 0.74f, dp(19f))
+        // Cápsula de las secciones: un solo bloque gris oscuro, compacto y fácil de ver
+        if (!tema.claro) {
+            val cyC = yAbajo + altoAbajo() / 2
+            relleno.color = 0xFF1C1C1E.toInt()
+            c.drawRoundRect(izq - dp(3f), cyC - dp(16f), der + dp(3f), cyC + dp(16f), dp(16f), dp(16f), relleno)
+        }
         // Indicador de vidrio que se desliza hasta la categoría actual
         run {
             val meta = izq + paso * actual + paso / 2
@@ -687,9 +693,9 @@ class PanelEmoji(context: Context) : View(context) {
                 val mx = rad * 1.05f; val my = rad * 0.92f; val rr = dp(8f)
                 relleno.color = 0xFF0E0E10.toInt()
                 c.drawRoundRect(indicadorX - mx, cy - my + dp(2f), indicadorX + mx, cy + my + dp(2f), rr, rr, relleno)
-                relleno.color = if (deslizandoCat) 0xFF5A5A5E.toInt() else 0xFF3B3B3E.toInt()
+                relleno.color = if (deslizandoCat) 0xFF636366.toInt() else 0xFF48484A.toInt()
                 c.drawRoundRect(indicadorX - mx, cy - my, indicadorX + mx, cy + my, rr, rr, relleno)
-                relleno.color = 0x40FF8A96
+                relleno.color = 0x26FFFFFF
                 c.drawRect(indicadorX - mx + rr, cy - my + dp(0.4f), indicadorX + mx - rr, cy - my + dp(1.2f), relleno)
             }
         }
