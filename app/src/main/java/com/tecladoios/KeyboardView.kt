@@ -84,7 +84,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                     Canvas(b).drawBitmap(l, 0f, 0f, null)
                     b
                 } catch (e: Throwable) { null }
-                letrasViejasMs = SystemClock.uptimeMillis()
+                // Como un iPhone básico: mayúsculas/minúsculas cambian al instante
+                letrasViejasMs = if (Ahorro.activo) 0L else SystemClock.uptimeMillis()
             }
             field = v; letrasSucias = true; shiftSucia = true; invalidate()
         }
@@ -330,7 +331,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private val dedos = HashMap<Int, Dedo>()
     private var presionadas = HashSet<Colocada>()
     // Al mover el cursor, las letras se desvanecen (y vuelven al soltar) en vez de desaparecer de golpe
-    private var modoTrackpad = false; set(v) { if (field != v) { field = v; trackpadMs = SystemClock.uptimeMillis(); invalidate() } }
+    private var modoTrackpad = false; set(v) { if (field != v) { field = v; trackpadMs = if (Ahorro.activo) 0L else SystemClock.uptimeMillis(); invalidate() } }
     private var trackpadMs = 0L
     private val FUNDIDO_CURSOR = 160f
 
@@ -1252,7 +1253,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     /** La letra borrada aparece arriba de la tecla borrar y se encoge hacia ella */
     fun comerLetra(ch: String) {
-        if (ch.isBlank() || modoTrackpad) return
+        if (ch.isBlank() || modoTrackpad || Ahorro.activo) return
         comida = ch; comidaMs = SystemClock.uptimeMillis(); invalidate()
     }
 
@@ -1397,7 +1398,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private val REBOTE = 260f
 
     /** [lado] -1 = chocó con el inicio, 1 = con el final */
-    fun rebotar(lado: Int) { reboteMs = SystemClock.uptimeMillis(); reboteLado = lado.toFloat(); invalidate() }
+    fun rebotar(lado: Int) { if (Ahorro.activo) return; reboteMs = SystemClock.uptimeMillis(); reboteLado = lado.toFloat(); invalidate() }
 
     private fun desplazamientoRebote(ahora: Long): Float {
         if (reboteMs == 0L) return 0f

@@ -542,7 +542,7 @@ class PanelEmoji(context: Context) : View(context) {
             val meta = izq + paso * actual + paso / 2
             if (indicadorX < 0f) indicadorX = meta
             val falta = meta - indicadorX
-            indicadorX += falta * 0.35f
+            indicadorX += if (Ahorro.activo) falta else falta * 0.35f
             if (kotlin.math.abs(falta) > 0.5f) postInvalidateOnAnimation() else indicadorX = meta
             val cy = yAbajo + altoAbajo() / 2
             val rad = minOf(paso * 0.48f, dp(17f))
@@ -757,7 +757,7 @@ class PanelEmoji(context: Context) : View(context) {
             val cel = celda()
             val fila = ((y - arribaGrilla()) / cel).toInt().coerceIn(0, FILAS - 1)
             saltoEmoji = e; saltoX = x; saltoY = arribaGrilla() + fila * cel + cel / 2
-            saltoMs = android.os.SystemClock.uptimeMillis()
+            if (!Ahorro.activo) saltoMs = android.os.SystemClock.uptimeMillis()
             invalidate()
             elegir(e)
         }

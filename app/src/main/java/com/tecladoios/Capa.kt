@@ -264,7 +264,7 @@ class Capa(context: Context) : View(context) {
             c.restore()
             // La letra (fuera de la escala del globo, para que no se deforme)
             val tl = ((ahora - popMs) / POP).coerceIn(0f, 1f)
-            val pop = if (globo) 1f + 0.08f * kotlin.math.exp(-4.5f * tl) * kotlin.math.sin(Math.PI.toFloat() * 2.2f * tl) else 1f
+            val pop = if (globo && !Ahorro.activo) 1f + 0.08f * kotlin.math.exp(-4.5f * tl) * kotlin.math.sin(Math.PI.toFloat() * 2.2f * tl) else 1f
             if (globo && tl < 1f) postInvalidateOnAnimation()
             val cyArriba = limites.top + (tecla.top - limites.top) * 0.5f + flota
             val cyTecla = tecla.centerY()
