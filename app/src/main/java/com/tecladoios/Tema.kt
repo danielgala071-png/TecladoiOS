@@ -23,8 +23,9 @@ class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
     // borrar) en azul noche, las letras con contorno sobre negro puro
     val teclaFuncion = if (claro) 0xFFABB0BA.toInt() else 0xFF3B3B3E.toInt()
     /** Al tocar, las de función toman el color de las letras (como en iOS) */
-    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFF3B3B3E.toInt()
-    val funcionPresionada = if (claro) 0xFFFFFFFF.toInt() else 0xFF5A5A5E.toInt()
+    // Efecto Gboard: al tocar, la tecla se aclara
+    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFF85858A.toInt()
+    val funcionPresionada = if (claro) 0xFFFFFFFF.toInt() else 0xFF6E6E73.toInt()
     /**
      * Diseño C «Contorno nocturno»: las letras son solo un contorno fino sobre negro puro
      * (en AMOLED casi no gasta) y las teclas principales van rellenas.

@@ -821,14 +821,18 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     /** Cuánta luz tiene la tecla (0..1) */
     private fun luzDe(p: Pulso, ahora: Long): Float {
         if (p.suelta == 0L) return 1f   // apretada: color de tecla apretada al instante
-        if (Ahorro.activo) return 0f    // al soltar vuelve al instante
+        // Como Gboard: al soltar, el gris claro se apaga rápido (110 ms)
+        if (Ahorro.activo) { val r = ((ahora - p.suelta) / GBOARD_APAGA).coerceIn(0f, 1f); return 1f - r }
         val r = ((ahora - p.suelta) / APAGAR).coerceIn(0f, 1f)
         val u = 1f - r
         return p.nivel.coerceIn(0f, 1f) * u * u
     }
 
     private fun terminado(p: Pulso, ahora: Long) =
-        p.suelta != 0L && (Ahorro.activo || ahora - p.suelta >= maxOf(VOLVER, APAGAR))
+        p.suelta != 0L && (if (Ahorro.activo) ahora - p.suelta >= GBOARD_APAGA else ahora - p.suelta >= maxOf(VOLVER, APAGAR))
+
+    /** Efecto Gboard: la tecla se aclara al instante al tocarla y se apaga en 110 ms al soltar */
+    private val GBOARD_APAGA = 110f
 
     private fun ensuciar() { sucio = true; invalidate() }
 
@@ -1608,7 +1612,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 if (terminado(e.value, ahora)) { it.remove(); continue }
                 dibujarPulso(c, e.key, e.value, ahora, fondo, letras)
             }
-            if (!Ahorro.activo && pulsos.values.any { it.suelta != 0L || ahora - it.t0 < maxOf(HUNDIR, EXPANDE) }) postInvalidateOnAnimation()
+            if (if (Ahorro.activo) pulsos.values.any { it.suelta != 0L } else pulsos.values.any { it.suelta != 0L || ahora - it.t0 < maxOf(HUNDIR, EXPANDE) }) postInvalidateOnAnimation()
         }
 
 
