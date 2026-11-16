@@ -577,7 +577,7 @@ class Barra(context: Context) : View(context) {
         // Cara en rojo metálico
         if (caraTecla == null || caraAlto != alto) {
             caraTecla = android.graphics.LinearGradient(0f, 0f, 0f, alto,
-                intArrayOf(0xFF3E3E42.toInt(), 0xFF2C2C2E.toInt(), 0xFF232325.toInt()), floatArrayOf(0f, 0.55f, 1f),
+                intArrayOf(0xFF2E4372.toInt(), 0xFF223258.toInt(), 0xFF1A2440.toInt()), floatArrayOf(0f, 0.55f, 1f),
                 android.graphics.Shader.TileMode.CLAMP)
             caraAlto = alto
         }
@@ -682,7 +682,7 @@ class Barra(context: Context) : View(context) {
                 relleno.style = Paint.Style.FILL
                 relleno.color = 0xFF0E0E10.toInt()
                 c.drawRoundRect(cx - lado, cy - lado + dp(2f), cx + lado, cy + lado + dp(2f), dp(7f), dp(7f), relleno)
-                relleno.color = if (apretado) 0xFF48484A.toInt() else 0xFF2C2C2E.toInt()
+                relleno.color = if (apretado) 0xFF2A3A58.toInt() else 0xFF1A2230.toInt()
                 c.drawRoundRect(cx - lado, cy - lado + hundir, cx + lado, cy + lado + hundir, dp(7f), dp(7f), relleno)
                 relleno.color = 0x40FF8A96
                 c.drawRect(cx - lado + dp(7f), cy - lado + hundir + dp(0.4f), cx + lado - dp(7f), cy - lado + hundir + dp(1.2f), relleno)
@@ -790,7 +790,8 @@ class Barra(context: Context) : View(context) {
                 tocando = false; invalidate()
                 if (!arrastrando && !largaHecha) {
                     val z = zonas.firstOrNull { it.first.contains(e.x, e.y) }
-                    if (z != null) { oyente?.respuesta(Respuesta.Tipo.LETRA); z.second() }
+                    // Al tocar una palabra: su propia vibración (distinta a la de las teclas)
+                    if (z != null) { oyente?.respuesta(Respuesta.Tipo.PALABRA); z.second() }
                 }
             }
             MotionEvent.ACTION_CANCEL -> { removeCallbacks(larga); tocando = false; invalidate() }

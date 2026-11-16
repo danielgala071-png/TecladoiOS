@@ -316,7 +316,8 @@ class Motor(
             if (conocido != null && !aprendido.rechazada(escrito, conocido)) {
                 auto = Texto.conMayusculas(conocido, escrito)
             } else if (!valida && mejor != null && mejor.esCorreccion) {
-                val costoMax = when { clave.length <= 2 -> 0.9f; clave.length <= 4 -> 1.3f; else -> 1.9f }
+                // Más eficaz: acepta un poco más de error de dedo antes de corregir
+                val costoMax = when { clave.length <= 2 -> 0.9f; clave.length <= 4 -> 1.45f; else -> 2.15f }
                 val id = dic.id(mejor.texto)
                 val penal = if (id >= 0) dic.penal(id) else 1.5f
                 // Puntaje de lo escrito si fuera una palabra rara: hay que superarlo
@@ -328,10 +329,10 @@ class Motor(
                     !aprendido.rechazada(escrito, mejor.texto)) auto = mejor.texto
                 // Palabra larga muy mal tecleada (dos dedos rápido): si una opción le saca mucha
                 // ventaja a todas las demás, es esa (así decide Gboard: la más probable por lejos)
-                if (auto == null && clave.length >= 6 && penal < 9f && !aprendido.rechazada(escrito, mejor.texto)) {
+                if (auto == null && clave.length >= 5 && penal < 9f && !aprendido.rechazada(escrito, mejor.texto)) {
                     val segunda = lista.firstOrNull { it !== mejor && !it.completa && !bloqueada(it) }
                     val ventaja = (segunda?.puntaje ?: (mejor.puntaje + 9f)) - mejor.puntaje
-                    if (ventaja >= 1.6f && mejor.puntaje < umbral + 2.5f && costo <= 2.4f + 0.12f * (clave.length - 6)) porVentaja = mejor.texto
+                    if (ventaja >= 1.4f && mejor.puntaje < umbral + 2.5f && costo <= 2.4f + 0.12f * (clave.length - 6)) porVentaja = mejor.texto
                 }
             } else if (valida && formasExactas.isNotEmpty()) {
                 // Existe, pero quizás solo con tilde ("cancion" → "canción")

@@ -1069,8 +1069,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private fun pedirSugerencias() {
         if (!sugerir) return
         val m = Cerebro.motor ?: run { actualizarBarra(); return }
-        // Zona caliente: las letras que probablemente siguen (también al borrar una)
-        teclado?.probables = if (cfg.zonaCaliente && modo == Distribuciones.LETRAS) m.letrasProbables(palabra) else emptyMap()
+        // Zona caliente: se calcula en el hilo del cerebro (nada extra al tocar la tecla)
+        val zona = cfg.zonaCaliente && modo == Distribuciones.LETRAS
         val escrito = palabra.toString()
         val n = escrito.length
         val xs = tx.copyOf(n); val ys = ty.copyOf(n)
@@ -1085,8 +1085,10 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 if (deslizado) Propuesta(alts.map { Opcion(it, 0f, false, false) }, null, true)
                 else m.proponer(escrito, xs, ys, ctx, corregir)
             } catch (e: Throwable) { Registro.anotar("proponer", e); null }
+            val prob = if (zona) try { m.letrasProbables(escrito) } catch (_: Throwable) { emptyMap() } else emptyMap()
             if (p != null) principal.post {
                 if (turno.get() == t && palabra.toString() == escrito) {
+                    teclado?.probables = prob
                     propuesta = p; propuestaDe = escrito
                     actualizarBarra()
                     Medidor.sugerencia(System.nanoTime() - pedidoNs)

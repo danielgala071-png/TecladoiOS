@@ -120,7 +120,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
         val filas = distribucion.filas.size
         val escala = (alturaForzada ?: config?.altura ?: 100) / 100f
-        var base = if (filas >= 5) 57f else 62f   // teclas más grandes (más fáciles a dos dedos)
+        // Filas un poco menos altas (antes 62 dp): teclas más anchas que altas, cómodas a dos dedos
+        var base = if (filas >= 5) 52f else 56f
         // En horizontal: altura cómoda según la pantalla (ni aplastadas ni tapando todo)
         if (resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
             val altoPantalla = resources.configuration.screenHeightDp.toFloat()
@@ -198,8 +199,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 // Letras más compactas: un poco más de aire alrededor (el toque sigue siendo la
                 // celda completa, así no se pierde precisión)
                 // Letras más anchas: menos aire a los lados (4 dp en vez de 9)
-                val sx = if (grande) sepX * 0.6f else sepX * 0.7f
-                val sy = if (grande) sepY else sepY + dp(2.5f)
+                val sx = if (grande) sepX * 0.6f else sepX * 0.5f
+                val sy = if (grande) sepY else sepY + dp(1.5f)
                 val dib = RectF(x + sx / 2, y0 + sy / 2, x + ancho - sx / 2, y0 + altoEsta - sy / 2)
                 if (t.tipo != K.VACIA) lista.add(Colocada(t, toque, dib, fi))
                 if (t.esLetra) geo.poner(t.texto[0], dib.centerX(), dib.centerY())
@@ -734,10 +735,11 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val LETRAS_TEL = mapOf("1" to "", "2" to "ABC", "3" to "DEF", "4" to "GHI", "5" to "JKL",
             "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ", "0" to "+")
         // Mayúscula activa más sutil, como el iPhone oscuro: grafito claro con flecha blanca
-        const val SHIFT_BLANCO = 0xFF56565B.toInt()
-        const val SHIFT_BLANCO_APRETADO = 0xFF6A6A70.toInt()
-        const val SHIFT_UNA = 0xFF48484A.toInt()
-        const val SHIFT_UNA_APRETADO = 0xFF5A5A5E.toInt()
+        // Mayúscula activa en azul (el color que acompaña al negro AMOLED)
+        const val SHIFT_BLANCO = 0xFF2F5BD3.toInt()
+        const val SHIFT_BLANCO_APRETADO = 0xFF4A74E8.toInt()
+        const val SHIFT_UNA = 0xFF26406E.toInt()
+        const val SHIFT_UNA_APRETADO = 0xFF34528A.toInt()
         const val FLECHA_NEGRA = 0xFFFFFFFF.toInt()
     }
 
@@ -889,7 +891,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         tema.contorno && !t.funcion && !blanca   // el espacio va relleno, del color del intro
 
     /** Cuerpo según el diseño: contorno fino para letras, relleno plano para las principales */
-    private val BASE_TECLA = 0xFF1C1C1F.toInt()
+    private val BASE_TECLA = 0xFF121722.toInt()   // base azul noche bajo cada tecla
     private val BASE_PROF by lazy { dp(2.5f) }
 
     private fun cuerpoTecla(c: Canvas, r: RectF, radio: Float, t: Tecla, blanca: Boolean) {

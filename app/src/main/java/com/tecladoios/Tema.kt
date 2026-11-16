@@ -19,10 +19,12 @@ class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
     val tecla = if (claro) 0xFFFFFFFF.toInt() else 0xFF2C2C2F.toInt()
     /** Mayúscula, borrar, 123, emoji, intro */
     /** Las principales (mayúscula, borrar, 123, emoji, espacio, intro): grafito más oscuro */
-    val teclaFuncion = if (claro) 0xFFABB0BA.toInt() else 0xFF2C2C2E.toInt()   // grafito: teclas principales diferenciadas
+    // AMOLED + azul profundo: las teclas principales (mayúscula, 123, emoji, espacio, intro,
+    // borrar) en azul noche, las letras con contorno sobre negro puro
+    val teclaFuncion = if (claro) 0xFFABB0BA.toInt() else 0xFF1A2230.toInt()
     /** Al tocar, las de función toman el color de las letras (como en iOS) */
-    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFF3A3A3C.toInt()
-    val funcionPresionada = if (claro) 0xFFFFFFFF.toInt() else 0xFF48484A.toInt()
+    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFF243048.toInt()
+    val funcionPresionada = if (claro) 0xFFFFFFFF.toInt() else 0xFF2A3A58.toInt()
     /**
      * Diseño C «Contorno nocturno»: las letras son solo un contorno fino sobre negro puro
      * (en AMOLED casi no gasta) y las teclas principales van rellenas.
@@ -30,9 +32,9 @@ class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
     // Negro AMOLED (diseño C): letras con contorno fino sobre negro puro y las principales
     // (mayúscula, borrar, 123, emoji, intro) rellenas en grafito
     val contorno = !claro
-    val lineaTecla = 0xFF38383A.toInt()
-    val filoArriba = 0xFF4A4A4E.toInt()
-    val filoAbajo = 0xFF1C1C1E.toInt()
+    val lineaTecla = 0xFF2E3644.toInt()
+    val filoArriba = 0xFF4A5670.toInt()
+    val filoAbajo = 0xFF161B24.toInt()
     /** Gris claro de detalle (antes rojo) */
     val rojoIntenso = 0xFF8E8E93.toInt()
     /** Línea de sombra bajo cada tecla */

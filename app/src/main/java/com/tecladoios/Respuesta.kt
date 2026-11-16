@@ -11,7 +11,7 @@ import android.os.VibratorManager
 /** Vibración firme y sonido al tocar cada tecla */
 class Respuesta(c: Context) {
 
-    enum class Tipo { LETRA, ESPACIO, BORRAR, MAYUS, INTRO, FUNCION, SUAVE }
+    enum class Tipo { LETRA, ESPACIO, BORRAR, MAYUS, INTRO, FUNCION, SUAVE, PALABRA }
 
     private val vibrador: Vibrator? = try {
         if (Build.VERSION.SDK_INT >= 31) (c.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
@@ -83,34 +83,29 @@ class Respuesta(c: Context) {
     private var efIntro: VibrationEffect? = null
 
     /**
-     * Vibración con textura: cada tipo de tecla se siente distinto, y su fuerza se ajusta en
-     * Ajustes con dos barras (100 % = la de la versión 7.182):
-     * - Letras: un golpe seco (58 ms a fuerza máxima).
-     * - Espacio: «tac-tac». Borrar: golpe con eco. Intro: doble y pesado.
-     * - Mayúscula, 123, emoji: crece de suave a fuerte.
-     * Subir la barra alarga el golpe (el motor ya va a su fuerza máxima); bajarla lo acorta y
-     * también le baja la fuerza.
+     * Vibración sutil pero con diferencia clara entre teclas (cortita: no se encima al
+     * escribir rápido y casi no gasta):
+     * - Letras: un «tic» suave de 14 ms.
+     * - Palabra de la barra: un «tic» un poco más firme (18 ms).
+     * - Espacio: doble tic («tic-tic»).
+     * - Borrar: tic con un eco muy suave.
+     * - Intro: doble tic más marcado.
+     * - Mayúscula, 123, emoji: crece de suave a firme.
      */
-    private var armadoLetras = -1
-    private var armadoTeclas = -1
+    private var efPalabra: VibrationEffect? = null
 
     private fun armar() {
-        val pl = config?.vibLetras ?: 100
-        val pt = config?.vibTeclas ?: 100
-        if (efLetra != null && pl == armadoLetras && pt == armadoTeclas) return
-        armadoLetras = pl; armadoTeclas = pt
+        if (efLetra != null) return
         try {
             val max = if (conAmplitud) 255 else VibrationEffect.DEFAULT_AMPLITUDE
-            val fl = pl / 100f; val ft = pt / 100f
-            fun ms(base: Long, f: Float) = (base * f).toLong().coerceAtLeast(6L)
-            fun fuerza(base: Int, f: Float) = (base * minOf(1f, 0.35f + 0.65f * f)).toInt().coerceIn(1, 255)
-            efLetra = if (conAmplitud) VibrationEffect.createOneShot(ms(58, fl), fuerza(255, fl))
-                else VibrationEffect.createOneShot(ms(58, fl), max)
-            efFuerte = onda(longArrayOf(0, ms(36, ft), ms(80, ft)), intArrayOf(0, fuerza(220, ft), fuerza(255, ft)))
-            efSuave = VibrationEffect.createOneShot(14L, max)
-            efEspacio = onda(longArrayOf(0, ms(52, ft), 45, ms(52, ft)), intArrayOf(0, fuerza(255, ft), 0, fuerza(255, ft)))
-            efBorrar = onda(longArrayOf(0, ms(52, ft), 38, ms(36, ft)), intArrayOf(0, fuerza(255, ft), 0, fuerza(240, ft)))
-            efIntro = onda(longArrayOf(0, ms(90, ft), 45, ms(120, ft)), intArrayOf(0, fuerza(255, ft), 0, fuerza(255, ft)))
+            fun f(x: Int) = if (conAmplitud) x else max
+            efLetra = VibrationEffect.createOneShot(14L, f(150))
+            efPalabra = VibrationEffect.createOneShot(18L, f(190))
+            efFuerte = onda(longArrayOf(0, 10, 18), intArrayOf(0, 90, 200))
+            efSuave = VibrationEffect.createOneShot(10L, f(120))
+            efEspacio = onda(longArrayOf(0, 12, 30, 12), intArrayOf(0, 180, 0, 160))
+            efBorrar = onda(longArrayOf(0, 14, 22, 10), intArrayOf(0, 190, 0, 90))
+            efIntro = onda(longArrayOf(0, 20, 32, 24), intArrayOf(0, 220, 0, 220))
         } catch (_: Throwable) { }
     }
 
@@ -129,6 +124,7 @@ class Respuesta(c: Context) {
                 Tipo.INTRO -> efIntro
                 Tipo.MAYUS, Tipo.FUNCION -> efFuerte
                 Tipo.SUAVE -> efSuave
+                Tipo.PALABRA -> efPalabra
                 else -> efLetra
             } ?: return
             v.vibrate(ef)
