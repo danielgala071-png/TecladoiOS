@@ -223,9 +223,13 @@ class Motor(
      * Sugerencias para [escrito] (como se ve en pantalla) con los toques de cada letra
      * ([xs], [ys] en píxeles, NaN si no se sabe) y las palabras de antes ([contexto]).
      */
+    private val RISA = Regex("(?:j[aeiou]|ja|js|sj|jk|ks|sk|xd|ha|he|ji)+[jhsk]?|x+d+|j+a+j*|a*j+a+j+[aj]*")
+
     fun proponer(escrito: String, xs: FloatArray?, ys: FloatArray?, contexto: List<String>, corregir: Boolean): Propuesta {
         if (escrito.isEmpty()) return Propuesta(emptyList(), null, true)
         val clave = Texto.normal(escrito)
+        // Risas (jaja, jajaja, jsjs, jeje, xd, ksks…) de cualquier largo: nunca se corrigen
+        if ((clave.length >= 4 || clave.startsWith("xd")) && RISA.matches(clave)) return Propuesta(listOf(Opcion(escrito, 0f, false, false)), null, true)
         val soloLetras = clave.all { it.isLetter() || it == '\'' }
         val formasExactas = dic.formas(clave)
         val propia = aprendido.conocida(clave)

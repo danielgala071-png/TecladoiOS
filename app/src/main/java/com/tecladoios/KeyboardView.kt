@@ -277,7 +277,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             val ex = x - cx; val ey = (y - cy) * 0.6f
             // Zona caliente: la letra que el cerebro espera atrae el toque un poco más
             // (hasta 30 % de ventaja), como hace el iPhone con su zona invisible
-            val dd = (ex * ex + ey * ey) * (1f - 0.3f * (probables[c.tecla.texto[0].lowercaseChar()] ?: 0f))
+            val dd = (ex * ex + ey * ey) * (1f - 0.4f * (probables[c.tecla.texto[0].lowercaseChar()] ?: 0f))
             if (dd < md) { md = dd; mejor = c }
         }
         return mejor
