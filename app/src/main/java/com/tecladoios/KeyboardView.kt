@@ -737,12 +737,13 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ", "0" to "+")
         // Mayúscula activa más sutil, como el iPhone oscuro: grafito claro con flecha blanca
         // Mayúscula activa en azul (el color que acompaña al negro AMOLED)
-        // Como el iPhone: mayúscula activa blanca con flecha negra
-        const val SHIFT_BLANCO = 0xFFFFFFFF.toInt()
-        const val SHIFT_BLANCO_APRETADO = 0xFFD1D1D6.toInt()
-        const val SHIFT_UNA = 0xFFFFFFFF.toInt()
-        const val SHIFT_UNA_APRETADO = 0xFFD1D1D6.toInt()
-        const val FLECHA_NEGRA = 0xFF000000.toInt()
+        // Mayúscula activa: la tecla sigue negra AMOLED con su contorno; solo cambia la flecha
+        // (vacía = apagada, rellena blanca = activa, rellena con rayita = bloqueada)
+        const val SHIFT_BLANCO = 0xFF000000.toInt()
+        const val SHIFT_BLANCO_APRETADO = 0xFF000000.toInt()
+        const val SHIFT_UNA = 0xFF000000.toInt()
+        const val SHIFT_UNA_APRETADO = 0xFF000000.toInt()
+        const val FLECHA_NEGRA = 0xFFFFFFFF.toInt()   // la flecha activa va en blanco
     }
 
     private class Pulso(var t0: Long, var x: Float, var y: Float) {
@@ -928,7 +929,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             // con un contorno muy tenue para que se vea dónde está cada una
             relleno.shader = null; relleno.color = colorTecla(t, false)
             c.drawRoundRect(r, radio, radio, relleno)
-            if (t.funcion && !blanca) {
+            if (t.funcion) {
                 borde.shader = null; borde.color = 0x1FFFFFFF; borde.strokeWidth = dp(1f)
                 val m = dp(0.5f)
                 c.drawRoundRect(r.left + m, r.top + m, r.right - m, r.bottom - m, radio, radio, borde)
