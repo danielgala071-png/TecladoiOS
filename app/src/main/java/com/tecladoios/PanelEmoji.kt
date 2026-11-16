@@ -26,7 +26,8 @@ class PanelEmoji(context: Context) : View(context) {
     }
 
     /** Categoría con sus grupos ([grupos] = cuántos emojis tiene cada grupo, en orden) */
-    class Categoria(val nombre: String, val emojis: List<String>, val grupos: IntArray = intArrayOf(emojis.size))
+    class Categoria(val nombre: String, val emojis: List<String>, val grupos: IntArray = intArrayOf(emojis.size),
+                    val icono: String? = null, val tono: Boolean = false)
 
     var oyente: Oyente? = null
     var tema = Tema(Tema.AZUL); set(v) { field = v; invalidate() }
@@ -46,18 +47,28 @@ class PanelEmoji(context: Context) : View(context) {
             val lista = ArrayList<Categoria>()
             try {
                 var nombre: String? = null
+                var icono: String? = null
+                var tono = false
                 val emojis = ArrayList<String>()
                 val grupos = ArrayList<Int>()
                 fun cerrar() {
                     val n = nombre ?: return
                     val g = grupos.filter { it > 0 }
-                    if (emojis.isNotEmpty()) lista.add(Categoria(n, emojis.toList(), g.toIntArray()))
+                    if (emojis.isNotEmpty()) lista.add(Categoria(n, emojis.toList(), g.toIntArray(), icono, tono))
                     emojis.clear(); grupos.clear()
                 }
                 c.assets.open("emojis.txt").bufferedReader().useLines { ls ->
                     for (l in ls) {
                         if (l.isEmpty() || l[0] == '#') continue
-                        if (l[0] == '@') { cerrar(); nombre = l.substring(1).trim(); continue }
+                        if (l[0] == '@') {
+                            cerrar()
+                            // «@NOMBRE|ícono|tono»: ícono de la barra de abajo y si lleva tono de piel
+                            val partes = l.substring(1).split('|')
+                            nombre = partes[0].trim()
+                            icono = partes.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() }
+                            tono = partes.getOrNull(2)?.trim() == "tono"
+                            continue
+                        }
                         if (l[0] == '%') { grupos.add(0); continue }
                         if (nombre == null) continue
                         if (grupos.isEmpty()) grupos.add(0)
@@ -79,17 +90,54 @@ class PanelEmoji(context: Context) : View(context) {
                 "\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62\uDB40\uDC73\uDB40\uDC63\uDB40\uDC74\uDB40\uDC7F",
                 "\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62\uDB40\uDC77\uDB40\uDC6C\uDB40\uDC73\uDB40\uDC7F",
             ).filter { p.hasGlyph(it) }
-            lista.add(Categoria("BANDERAS", especiales + banderas))
+            lista.add(Categoria("BANDERAS", especiales + banderas, icono = "\uD83C\uDFF3\uFE0F"))
             cache = lista
             return lista
         }
 
+        private fun esTono(cp: Int) = cp in 0x1F3FB..0x1F3FF
+
+        /** El emoji sin tono de piel */
+        fun sinTono(e: String): String {
+            val sb = StringBuilder()
+            var i = 0
+            while (i < e.length) { val cp = e.codePointAt(i); if (!esTono(cp)) sb.appendCodePoint(cp); i += Character.charCount(cp) }
+            return sb.toString()
+        }
+
+        /** Lleva tono si es UNA sola persona o mano (también profesiones: 👩‍⚕️), no familias ni parejas */
         fun admiteTono(e: String): Boolean = try {
-            val cp = e.codePointAt(0)
-            UCharacter.hasBinaryProperty(cp, UProperty.EMOJI_MODIFIER_BASE) && !e.contains("\u200D")
+            val b = sinTono(e)
+            val cp = b.codePointAt(0)
+            if (!UCharacter.hasBinaryProperty(cp, UProperty.EMOJI_MODIFIER_BASE)) false
+            else {
+                var n = 0; var i = 0
+                while (i < b.length) {
+                    val c = b.codePointAt(i)
+                    if (UCharacter.hasBinaryProperty(c, UProperty.EMOJI_MODIFIER_BASE)) n++
+                    if (c == 0x1F91D) n += 2          // 🤝 dentro de una secuencia: dos personas
+                    i += Character.charCount(c)
+                }
+                n == 1
+            }
         } catch (_: Throwable) { false }
 
-        fun conTono(e: String, tono: String): String {
+        private val pruebaGlifo = Paint()
+        private val conTonoCache = HashMap<String, String>()
+
+        /** Tono general (0 = amarillo) aplicado al emoji, si admite tono y el teléfono lo tiene */
+        fun conTonoGeneral(e: String, tono: Int): String {
+            if (tono <= 0 || tono > TONOS.size || !admiteTono(e)) return e
+            val clave = e + tono
+            conTonoCache[clave]?.let { return it }
+            val t = conTono(sinTono(e), TONOS[tono - 1])
+            val r = if (pruebaGlifo.hasGlyph(t)) t else e
+            conTonoCache[clave] = r
+            return r
+        }
+
+        fun conTono(e0: String, tono: String): String {
+            val e = sinTono(e0)
             val cp = e.codePointAt(0)
             val base = String(Character.toChars(cp))
             val resto = e.substring(base.length).removePrefix("\uFE0F")
@@ -142,16 +190,41 @@ class PanelEmoji(context: Context) : View(context) {
         abiertoMs = android.os.SystemClock.uptimeMillis()
         // Mientras el panel sube queda quieto (sin redibujar): así la subida va fluida
         congelado = true
-        atajos = base.map { it.emojis.firstOrNull() ?: "•" }
+        atajos = base.map { it.icono ?: it.emojis.firstOrNull() ?: "•" }
         inicioCat = IntArray(0)
-        categorias = listOf(Categoria("Usados recientemente", recientes())) +
-            base.map { Categoria(nombreBonito(it.nombre), it.emojis) }
+        categorias = armarCategorias(base)
         celdaArmada = -1f
         corrimiento = 0f
         indicadorX = -1f
         scroller.forceFinished(true)
         invalidate()
     }
+
+    /** Tono de piel general (0 = amarillo, 1..5 = claro a oscuro) para manos y personas */
+    private var tonoGeneral = prefs.getInt("tono_piel", 0)
+
+    private fun armarCategorias(base: List<Categoria>): List<Categoria> =
+        listOf(Categoria("Usados recientemente", recientes())) + base.map { c ->
+            val lista = if (c.tono && tonoGeneral > 0) c.emojis.map { conTonoGeneral(it, tonoGeneral) } else c.emojis
+            Categoria(nombreBonito(c.nombre), lista, icono = c.icono, tono = c.tono)
+        }
+
+    private fun cambiarTono(t: Int) {
+        if (t == tonoGeneral) return
+        tonoGeneral = t
+        prefs.edit().putInt("tono_piel", t).apply()
+        categorias = armarCategorias(cargar(context))   // mismo lugar: no se mueve la vista
+        oyente?.respuesta(Respuesta.Tipo.SUAVE)
+        invalidate()
+    }
+
+    private val COLORES_TONO = intArrayOf(0xFFFFC83D.toInt(), 0xFFF7DECE.toInt(), 0xFFF3D2A2.toInt(),
+        0xFFD5AB88.toInt(), 0xFFAF7E57.toInt(), 0xFF7C533E.toInt())
+
+    /** Centro X del círculo de tono [i] (arriba a la derecha, junto al título) */
+    private fun xTono(i: Int) = width - dp(14f) - (5 - i) * dp(24f)
+
+    private fun hayTonoArriba(): Boolean = categorias.getOrNull(categoriaActual())?.tono == true
 
     // ---------- Animaciones del panel ----------
     private var recientesAntes: List<String> = emptyList()
@@ -462,6 +535,20 @@ class PanelEmoji(context: Context) : View(context) {
             tx = maxOf(tx, x0 + dp(4f))
             c.drawText(nombre, tx, dp(21f), titulo)
         }
+        // Tono de piel general: 6 círculos arriba a la derecha en Manos y Personas
+        if (hayTonoArriba()) {
+            relleno.color = tema.fondo
+            c.drawRect(xTono(0) - dp(14f), 0f, w, arribaGrilla() - dp(2f), relleno)
+            for (i in 0..5) {
+                val cx = xTono(i); val cy = dp(16f)
+                relleno.color = COLORES_TONO[i]
+                c.drawCircle(cx, cy, dp(8f), relleno)
+                if (i == tonoGeneral) {
+                    filoIndicador.color = tema.texto; filoIndicador.strokeWidth = dp(2f)
+                    c.drawCircle(cx, cy, dp(10.5f), filoIndicador)
+                }
+            }
+        }
 
         // Emojis (solo las columnas visibles). Si alguno está animándose se pide UN solo cuadro nuevo
         animandoGrilla = false
@@ -676,7 +763,7 @@ class PanelEmoji(context: Context) : View(context) {
     private val larga = Runnable {
         val e = emojiEn(x0, y0) ?: return@Runnable
         if (!admiteTono(e)) return@Runnable
-        tonosDe = e
+        tonosDe = sinTono(e)
         presionado = null
         val anch = celda() * 0.95f
         var izq = x0 - anch * 3
@@ -701,6 +788,9 @@ class PanelEmoji(context: Context) : View(context) {
                 } else if (e.y > h - altoAbajo() && e.x > width - dp(60f)) {
                     borrando = true; oyente?.borrar(); oyente?.respuesta(Respuesta.Tipo.BORRAR)
                     postDelayed(repetirBorrar, 420L)
+                } else if (e.y < arribaGrilla() && hayTonoArriba() && e.x > xTono(0) - dp(14f)) {
+                    val i = ((e.x - (xTono(0) - dp(12f))) / dp(24f)).toInt().coerceIn(0, 5)
+                    cambiarTono(i)
                 } else if (e.y < h - altoAbajo()) {
                     presionado = emojiEn(e.x, e.y)
                     if (presionado != null) invalidate()
