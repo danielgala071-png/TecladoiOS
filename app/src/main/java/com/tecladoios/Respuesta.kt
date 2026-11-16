@@ -85,7 +85,7 @@ class Respuesta(c: Context) {
     /**
      * Vibración sutil pero con diferencia clara entre teclas (cortita: no se encima al
      * escribir rápido y casi no gasta):
-     * - Letras: un «tic» suave de 14 ms.
+     * - Letras: un golpe firme de 20 ms, con la fuerza de espacio, intro y borrar.
      * - Palabra de la barra: un «tic» un poco más firme (18 ms).
      * - Espacio: doble tic («tic-tic»).
      * - Borrar: tic con un eco muy suave.
@@ -99,7 +99,8 @@ class Respuesta(c: Context) {
         try {
             val max = if (conAmplitud) 255 else VibrationEffect.DEFAULT_AMPLITUDE
             fun f(x: Int) = if (conAmplitud) x else max
-            efLetra = VibrationEffect.createOneShot(14L, f(150))
+            // Letras con la misma fuerza que espacio, intro y borrar (un solo golpe firme)
+            efLetra = VibrationEffect.createOneShot(20L, f(220))
             efPalabra = VibrationEffect.createOneShot(18L, f(190))
             efFuerte = onda(longArrayOf(0, 10, 18), intArrayOf(0, 90, 200))
             efSuave = VibrationEffect.createOneShot(10L, f(120))
