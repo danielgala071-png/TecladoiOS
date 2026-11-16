@@ -346,10 +346,10 @@ class PanelEmoji(context: Context) : View(context) {
     private val SEPARACION_DP = 30f
 
     /** Columna un poco más ancha que alta: los emojis respiran como en el iPhone */
-    private fun anchoCol(cel: Float) = cel * 1.04f
+    private fun anchoCol(cel: Float) = tamEmoji(cel) + (cel - tamEmoji(cel)) * 1.15f   // aire de los lados ≈ el de arriba/abajo
 
     /** Emoji de 30 a 35 dp (sin pasarse de la casilla), igual espacio arriba/abajo y a los lados */
-    private fun tamEmoji(cel: Float) = (cel * 0.8f).coerceIn(dp(30f), dp(35f)).coerceAtMost(cel * 0.9f)
+    private fun tamEmoji(cel: Float) = (cel * 0.74f).coerceIn(dp(30f), dp(35f)).coerceAtMost(cel * 0.8f)
 
     /** Ancho de cada sección; la de recientes siempre deja lugar para al menos 6 columnas */
     private fun anchoSeccion(k: Int, cel: Float): Float {
@@ -486,7 +486,15 @@ class PanelEmoji(context: Context) : View(context) {
         c.drawBitmap(bmp, cx - bmp.width / 2f, cy - bmp.height / 2f, pintaImagen)
     }
     private val titulo = Paint(Paint.ANTI_ALIAS_FLAG).apply { Fuentes.aplicar(this, 600); letterSpacing = 0.03f }
-    private val grises = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply { setSaturation(0f) })
+    // Íconos inactivos en gris claro parejo: sin color y aclarados (el ❤️ rojo ya no se ve negro)
+    private val grises = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply {
+        setSaturation(0f)
+        postConcat(android.graphics.ColorMatrix(floatArrayOf(
+            0.6f, 0f, 0f, 0f, 85f,
+            0f, 0.6f, 0f, 0f, 85f,
+            0f, 0f, 0.6f, 0f, 85f,
+            0f, 0f, 0f, 1f, 0f)))
+    })
     private val aviso = Paint(Paint.ANTI_ALIAS_FLAG).apply { Fuentes.aplicar(this, 400) }
     private val boton = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; Fuentes.aplicar(this, 500) }
     private val icono = Paint(Paint.ANTI_ALIAS_FLAG)
