@@ -444,7 +444,7 @@ class Barra(context: Context) : View(context) {
         }
         // Como el iPhone: líneas finas grises entre las sugerencias
         if (!tema.claro) {
-            relleno.style = Paint.Style.FILL; relleno.color = 0xFF4A4A4E.toInt()
+            relleno.style = Paint.Style.FILL; relleno.color = 0xFF2A2A2C.toInt()
             for (j in 1..2) if (celdas[j - 1] != null && celdas[j] != null) c.drawRect(j * ancho - dp(0.5f), h * 0.28f, j * ancho + dp(0.5f), h * 0.72f, relleno)
         }
         for (i in 0 until 3) {

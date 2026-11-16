@@ -924,9 +924,16 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 c.drawLine(r.left + radio, r.top + dp(0.7f), r.right - radio, r.top + dp(0.7f), reflejo)
             }
         } else if (!tema.claro) {
-            // Como el iPhone: tecla gris plana (la sombrita de abajo ya está dibujada)
+            // Letras en grafito; mayúscula, 123, emoji, espacio, intro y borrar en negro AMOLED
+            // con un contorno muy tenue para que se vea dónde está cada una
             relleno.shader = null; relleno.color = colorTecla(t, false)
             c.drawRoundRect(r, radio, radio, relleno)
+            if (t.funcion && !blanca) {
+                borde.shader = null; borde.color = 0x1FFFFFFF; borde.strokeWidth = dp(1f)
+                val m = dp(0.5f)
+                c.drawRoundRect(r.left + m, r.top + m, r.right - m, r.bottom - m, radio, radio, borde)
+                borde.strokeWidth = dp(0.6f); borde.color = tema.bordeTecla
+            }
         } else cuerpoConRelieve(c, r, radio, colorTecla(t, false), blanca)
     }
 
