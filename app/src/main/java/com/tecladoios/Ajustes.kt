@@ -49,6 +49,8 @@ object Ajustes {
     const val SONIDO = "sonido"
     const val VOLUMEN = "volumen"            // 0..100
     const val VIBRACION = "vibracion"
+    const val VIB_LETRAS = "vib_letras"       // fuerza de vibración en letras (%)
+    const val VIB_TECLAS = "vib_teclas"       // fuerza en mayúscula, 123, emoji, espacio, intro y borrar (%)
     const val FUERZA = "fuerza_vibracion"    // 1..5
 
     // Portapapeles y otros
@@ -116,6 +118,8 @@ class Config(p: SharedPreferences) {
     val sonido = p.getBoolean(Ajustes.SONIDO, false)
     val volumen = p.getInt(Ajustes.VOLUMEN, 40).coerceIn(0, 100)
     val vibracion = p.getBoolean(Ajustes.VIBRACION, true)
+    val vibLetras = p.getInt(Ajustes.VIB_LETRAS, 100)
+    val vibTeclas = p.getInt(Ajustes.VIB_TECLAS, 100)
     val fuerza = p.getInt(Ajustes.FUERZA, 5).coerceIn(1, 5)
 
     val portapapeles = p.getBoolean(Ajustes.PORTAPAPELES, true)

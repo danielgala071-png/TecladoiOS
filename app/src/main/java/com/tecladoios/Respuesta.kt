@@ -83,30 +83,34 @@ class Respuesta(c: Context) {
     private var efIntro: VibrationEffect? = null
 
     /**
-     * Vibración con textura: cada tipo de tecla se siente claramente distinto.
-     * - Letras: «tic» seco, fuerte y corto (32 ms): rápido a dos pulgares.
-     * - Espacio: «tac-tac», doble golpe.
-     * - Borrar: golpe fuerte y un eco más suave (se siente como «quitar»).
-     * - Intro: golpe largo y pesado, doble.
-     * - Mayúscula, 123, emoji y demás: crece de suave a fuerte («bum»).
+     * Vibración con textura: cada tipo de tecla se siente distinto, y su fuerza se ajusta en
+     * Ajustes con dos barras (100 % = la de la versión 7.182):
+     * - Letras: un golpe seco (58 ms a fuerza máxima).
+     * - Espacio: «tac-tac». Borrar: golpe con eco. Intro: doble y pesado.
+     * - Mayúscula, 123, emoji: crece de suave a fuerte.
+     * Subir la barra alarga el golpe (el motor ya va a su fuerza máxima); bajarla lo acorta y
+     * también le baja la fuerza.
      */
+    private var armadoLetras = -1
+    private var armadoTeclas = -1
+
     private fun armar() {
-        if (efLetra != null) return
+        val pl = config?.vibLetras ?: 100
+        val pt = config?.vibTeclas ?: 100
+        if (efLetra != null && pl == armadoLetras && pt == armadoTeclas) return
+        armadoLetras = pl; armadoTeclas = pt
         try {
             val max = if (conAmplitud) 255 else VibrationEffect.DEFAULT_AMPLITUDE
-            // Letras: golpe fuerte pero corto. Antes duraba 32 ms y, a dos pulgares, una
-            // vibración se encimaba con la siguiente (se sentía como si la tecla se pegara).
-            // La vibración de la 7.174: letras un golpe fuerte de 32 ms; mayúscula/123/emoji
-            // crecen de suave a fuerte; espacio tac-tac; borrar con eco; intro doble y pesado
-            // Más fuerte: letras +80 % (32 → 58 ms al máximo) y las demás teclas +100 %
-            // (el doble de golpe y a toda fuerza). El motor ya va a fuerza máxima, así que la
-            // fuerza extra se logra alargando el golpe.
-            efLetra = VibrationEffect.createOneShot(58L, max)
-            efFuerte = onda(longArrayOf(0, 36, 80), intArrayOf(0, 220, 255))
+            val fl = pl / 100f; val ft = pt / 100f
+            fun ms(base: Long, f: Float) = (base * f).toLong().coerceAtLeast(6L)
+            fun fuerza(base: Int, f: Float) = (base * minOf(1f, 0.35f + 0.65f * f)).toInt().coerceIn(1, 255)
+            efLetra = if (conAmplitud) VibrationEffect.createOneShot(ms(58, fl), fuerza(255, fl))
+                else VibrationEffect.createOneShot(ms(58, fl), max)
+            efFuerte = onda(longArrayOf(0, ms(36, ft), ms(80, ft)), intArrayOf(0, fuerza(220, ft), fuerza(255, ft)))
             efSuave = VibrationEffect.createOneShot(14L, max)
-            efEspacio = onda(longArrayOf(0, 52, 45, 52), intArrayOf(0, 255, 0, 255))
-            efBorrar = onda(longArrayOf(0, 52, 38, 36), intArrayOf(0, 255, 0, 240))
-            efIntro = onda(longArrayOf(0, 90, 45, 120), intArrayOf(0, 255, 0, 255))
+            efEspacio = onda(longArrayOf(0, ms(52, ft), 45, ms(52, ft)), intArrayOf(0, fuerza(255, ft), 0, fuerza(255, ft)))
+            efBorrar = onda(longArrayOf(0, ms(52, ft), 38, ms(36, ft)), intArrayOf(0, fuerza(255, ft), 0, fuerza(240, ft)))
+            efIntro = onda(longArrayOf(0, ms(90, ft), 45, ms(120, ft)), intArrayOf(0, fuerza(255, ft), 0, fuerza(255, ft)))
         } catch (_: Throwable) { }
     }
 
