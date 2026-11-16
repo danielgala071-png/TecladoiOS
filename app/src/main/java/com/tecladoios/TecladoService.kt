@@ -1704,12 +1704,16 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     override fun emoji(e: String) {
         val ic = ic() ?: return
         marcarEdicion()
+        // Si hay una palabra a medio escribir, se cierra como con espacio (corrigiéndola si estaba
+        // mal escrita) y el emoji va después: antes el emoji reemplazaba la palabra en composición
+        if (palabra.isNotEmpty()) terminarPalabra(" ")
         if (buscandoEmoji) {
             ic.commitText(e, 1)
             return
         }
         ic.commitText(e, 1)
         ultimaCorreccion = null; espacioAuto = false
+        refrescar()
     }
 
     override fun buscar() {
