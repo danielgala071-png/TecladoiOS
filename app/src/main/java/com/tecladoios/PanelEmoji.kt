@@ -109,15 +109,27 @@ class PanelEmoji(context: Context) : View(context) {
      */
     private var FILAS = 5
 
+    private var filasClave = -1L
+    private var filasValor = 4
+
     private fun filasPara(alto: Int, ancho: Int): Int {
-        val grilla = alto - altoAbajo() - arribaGrilla() - dp(4f)
-        val w = if (ancho > 0) ancho else resources.displayMetrics.widthPixels
-        if (grilla <= 0f || w <= 0) return 5
-        // Al revés del tamaño del teclado (se ve mejor así): teclado más grande → más filas y
-        // emojis más chicos; teclado más chico → menos filas y emojis más grandes.
-        // Con el tamaño de siempre (≈165 dp de grilla, ≈360 dp de ancho) quedan 5 filas.
-        val tam = kotlin.math.sqrt((grilla / dp(165f)) * (w / dp(360f)))
-        return kotlin.math.round(5f * Math.pow(tam.toDouble(), 2.2).toFloat()).toInt().coerceIn(4, 7)
+        // Se recalcula solo cuando cambia el tamaño del panel (no en cada dibujo)
+        val clave = alto.toLong() * 100000L + ancho
+        if (clave == filasClave) return filasValor
+        filasClave = clave
+        filasValor = filasCalculo(alto, ancho)
+        return filasValor
+    }
+
+    private fun filasCalculo(alto: Int, ancho: Int): Int {
+        // Según el tamaño que elegiste en Ajustes (alto y ancho): con 100 × 100 quedan 4 filas.
+        // Al revés del tamaño (se ve mejor así): teclado más grande → más filas y emojis más
+        // chicos; teclado más chico → menos filas y emojis más grandes.
+        val p = Ajustes.prefs(context)
+        val alt = p.getInt(Ajustes.ALTURA, 100).coerceIn(75, 135) / 100f
+        val anc = p.getInt(Ajustes.ANCHO, 100).coerceIn(70, 100) / 100f
+        val tam = kotlin.math.sqrt(alt * anc)
+        return kotlin.math.round(4f * Math.pow(tam.toDouble(), 2.5).toFloat()).toInt().coerceIn(3, 6)
     }
 
     /** Vuelve a leer los recientes y arma las secciones (cada categoría con su título) */
@@ -173,7 +185,7 @@ class PanelEmoji(context: Context) : View(context) {
         FILAS = filasPara(alto, width)
         val cel = (alto - altoAbajo() - arribaGrilla() - dp(4f)) / FILAS.toFloat()
         if (cel <= 0f) return
-        precalentar((cel * 0.70f).toInt(), 0)
+        precalentar((cel * 0.62f).toInt(), 0)
     }
     /** Recientes: el que usaste entra primero y empuja a los demás */
     private val EMPUJE_DURA = 320f
@@ -450,7 +462,7 @@ class PanelEmoji(context: Context) : View(context) {
 
         // Emojis (solo las columnas visibles). Si alguno está animándose se pide UN solo cuadro nuevo
         animandoGrilla = false
-        emojiP.textSize = cel * 0.70f
+        emojiP.textSize = cel * 0.62f   // más aire entre emojis: se ven más ordenados
         val colW = anchoCol(cel)
         precalentar(emojiP.textSize.toInt(), prioridad)
         c.save()
