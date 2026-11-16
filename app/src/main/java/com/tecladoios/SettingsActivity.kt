@@ -345,6 +345,7 @@ class SettingsActivity : Activity() {
 
         val est = seccion("Mis estadísticas", "Solo números: nunca se guarda lo que escribes.")
         boton(est, "Ver mis estadísticas") { verEstadisticas() }
+        boton(est, "Compartir mi uso con Claude", sub = "Solo números: dónde tocas cada tecla, qué letras borras y confundes, y tus ajustes") { compartirUso() }
 
         val otros = seccion("Otros")
         interruptor(otros, "Ocultar el ícono de la app", Ajustes.ICONO_OCULTO, false, "Abre los ajustes desde el engranaje del teclado") { si ->
@@ -443,6 +444,42 @@ class SettingsActivity : Activity() {
             .setMessage(Estadisticas.resumen(prefs, top))
             .setNegativeButton("Reiniciar") { _, _ -> Estadisticas.reiniciar(prefs) }
             .setPositiveButton("Cerrar", null).show()
+    }
+
+    /**
+     * Informe de uso para ajustar el teclado a tu manera de escribir. Solo números (nada de
+     * lo que escribes): desvío de tus toques en cada tecla, letras que borras justo después
+     * de escribirlas, pares de letras que confundes, velocidad y tus ajustes actuales.
+     */
+    private fun compartirUso() = conMotor { m ->
+        val sb = StringBuilder()
+        val dm = resources.displayMetrics
+        sb.append("TecladoiOS: mi uso (solo números)\n")
+        sb.append("Versión: ").append(try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Throwable) { "?" }).append('\n')
+        sb.append("Pantalla: ").append((dm.widthPixels / dm.density).toInt()).append(" x ").append((dm.heightPixels / dm.density).toInt()).append(" dp\n")
+        val pal = prefs.getLong("est_palabras", 0); val let = prefs.getLong("est_letras", 0)
+        val cor = prefs.getLong("est_correcciones", 0); val min = prefs.getLong("est_ms", 0) / 60000.0
+        sb.append("Palabras: ").append(pal).append(" · letras: ").append(let).append(" · corregidas: ").append(cor)
+        if (pal > 0) sb.append(" (").append(cor * 100 / pal).append(" %)")
+        if (min > 0.5) sb.append(" · ").append((pal / min).toInt()).append(" palabras/min")
+        sb.append('\n')
+        sb.append("\nAjustes: altura ").append(prefs.getInt(Ajustes.ALTURA, 100)).append(" %, ancho ").append(prefs.getInt(Ajustes.ANCHO, 100))
+            .append(" %, espacio abajo ").append(prefs.getInt(Ajustes.MARGEN_ABAJO, 0)).append(", una mano ").append(prefs.getInt(Ajustes.UNA_MANO, 0))
+            .append(", vibración ").append(if (prefs.getBoolean(Ajustes.VIBRACION, true)) "sí" else "no")
+            .append(", mantener ").append(prefs.getInt(Ajustes.RETARDO_LARGA, 320)).append(" ms")
+            .append(", escribir al tocar ").append(if (prefs.getBoolean(Ajustes.AL_TOCAR, true)) "sí" else "no").append('\n')
+        sb.append("\nLetras (usada / borrada enseguida / % de error):\n")
+        val err = Estadisticas.erroresPorLetra(prefs).sortedByDescending { if (it.second > 0) it.third * 1000 / it.second else 0 }
+        for ((ch, u, e) in err) sb.append(ch).append(": ").append(u).append(" / ").append(e).append(" / ").append(if (u > 0) e * 100 / u else 0).append(" %\n")
+        sb.append("\nDónde tocas cada tecla (desvío del centro, en anchos de tecla; + derecha / + abajo):\n")
+        sb.append(prefs.getString("desvios", null) ?: "aún sin datos").append('\n')
+        sb.append("\nLetras que confundes (pusiste → iba):\n")
+        val conf = synchronized(m.aprendido) { m.aprendido.confusiones.entries.sortedByDescending { it.value }.take(25).map { it.key to it.value } }
+        if (conf.isEmpty()) sb.append("aún sin datos\n")
+        for ((par, v) in conf) if (par.length == 2) sb.append(par[0]).append(" → ").append(par[1]).append(": ").append(v).append('\n')
+        sb.append("\nVelocidad del teclado:\n").append(Medidor.resumen(this))
+        val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, sb.toString())
+        startActivity(Intent.createChooser(i, "Compartir mi uso"))
     }
 
     // ---------- Autocompletar ----------

@@ -717,7 +717,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     private fun teclaReal(texto: String, x: Float, y: Float, esLetra: Boolean) {
         if (buscandoEmoji) { consultaEmoji.append(texto.lowercase()); buscarEmoji(); return }
-        if (aprender) Estadisticas.letra()
+        if (aprender) Estadisticas.letra(if (esLetra) texto.firstOrNull() else null)
         val ic = ic() ?: return
         var t = texto
         if (texto.length == 1 && texto[0].isLetter() && shift > 0) t = texto.uppercase()
@@ -931,6 +931,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     }
 
     private fun borrarTexto() {
+        if (aprender) Estadisticas.borrado()
         if (buscandoEmoji) {
             if (consultaEmoji.isNotEmpty()) consultaEmoji.setLength(consultaEmoji.length - 1)
             buscarEmoji(); return

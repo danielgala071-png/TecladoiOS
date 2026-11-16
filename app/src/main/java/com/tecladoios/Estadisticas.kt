@@ -21,16 +21,46 @@ object Estadisticas {
     private var cargado = false
     private var ultimaTecla = 0L
 
+    // Errores reales por letra: cuántas veces la escribiste y cuántas la borraste enseguida
+    private const val USOS = "est_usos_letra"
+    private const val ERRORES = "est_errores_letra"
+    private val usos = IntArray(27)
+    private val errores = IntArray(27)
+    private var ultimaLetra = -1
+
+    private fun leerArreglo(s: String?, a: IntArray) {
+        s?.split(',')?.forEachIndexed { i, v -> if (i < a.size) a[i] = v.toIntOrNull() ?: 0 }
+    }
+
+    /** Borraste: si fue justo después de escribir una letra (menos de 2 s), cuenta como error de esa letra */
+    fun borrado() {
+        val i = ultimaLetra
+        if (i >= 0 && SystemClock.uptimeMillis() - ultimaTecla < 2000) errores[i]++
+        ultimaLetra = -1
+    }
+
+    /** Letra por letra: veces usada y veces borrada enseguida (para el informe de uso) */
+    fun erroresPorLetra(p: SharedPreferences): List<Triple<Char, Int, Int>> {
+        val u = IntArray(27); val e = IntArray(27)
+        leerArreglo(p.getString(USOS, null), u); leerArreglo(p.getString(ERRORES, null), e)
+        val letras = "abcdefghijklmnopqrstuvwxyzñ"
+        return letras.mapIndexedNotNull { _, ch -> val i = Texto.indice(ch); if (i >= 0 && u[i] > 0) Triple(ch, u[i], e[i]) else null }
+    }
+
     fun cargar(p: SharedPreferences) {
         if (cargado) return
         palabras = p.getLong(PALABRAS, 0); letras = p.getLong(LETRAS, 0)
         correcciones = p.getLong(CORRECCIONES, 0); ms = p.getLong(MS, 0)
+        leerArreglo(p.getString(USOS, null), usos); leerArreglo(p.getString(ERRORES, null), errores)
         if (!p.contains(DESDE)) p.edit().putLong(DESDE, System.currentTimeMillis()).apply()
         cargado = true
     }
 
     /** Cada letra: suma el tiempo desde la anterior si fue hace poco (pausas largas no cuentan) */
-    fun letra() {
+    fun letra(ch: Char? = null) {
+        val i = if (ch != null) Texto.indice(ch.lowercaseChar()) else -1
+        if (i >= 0) usos[i]++
+        ultimaLetra = i
         val ahora = SystemClock.uptimeMillis()
         val d = ahora - ultimaTecla
         if (d in 1..2500) ms += d
@@ -43,12 +73,14 @@ object Estadisticas {
     fun guardar(p: SharedPreferences) {
         if (!cargado) return
         p.edit().putLong(PALABRAS, palabras).putLong(LETRAS, letras)
-            .putLong(CORRECCIONES, correcciones).putLong(MS, ms).apply()
+            .putLong(CORRECCIONES, correcciones).putLong(MS, ms)
+            .putString(USOS, usos.joinToString(",")).putString(ERRORES, errores.joinToString(",")).apply()
     }
 
     fun reiniciar(p: SharedPreferences) {
         palabras = 0; letras = 0; correcciones = 0; ms = 0
-        p.edit().remove(PALABRAS).remove(LETRAS).remove(CORRECCIONES).remove(MS)
+        usos.fill(0); errores.fill(0)
+        p.edit().remove(USOS).remove(ERRORES).remove(PALABRAS).remove(LETRAS).remove(CORRECCIONES).remove(MS)
             .putLong(DESDE, System.currentTimeMillis()).apply()
     }
 
