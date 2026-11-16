@@ -129,7 +129,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             base = (altoPantalla * (if (filas >= 5) 0.12f else 0.14f)).coerceIn(44f, base)
         }
         // (+3 dp que antes eran margen debajo del teclado: ahora son de la fila de abajo)
-        val h = (dp(base) * filas * escala + dp(8f) + dp(6f) + dp(3f)).toInt()
+        // +6 dp para la fila de abajo más alta (123, emoji, espacio, intro): las letras no cambian
+        val masAbajo = if (distribucion.filas.lastOrNull()?.teclas?.any { it.tipo == K.ESPACIO } == true) dp(6f) else 0f
+        val h = (dp(base) * filas * escala + dp(8f) + dp(6f) + dp(3f) + masAbajo).toInt()
         setMeasuredDimension(w, h)
     }
 
@@ -161,7 +163,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         // Los 7 dp que eran margen (abajo y debajo del teclado) van enteros a la fila de abajo;
         // las demás filas quedan del mismo alto que antes
         // La fila de abajo (123, emoji, espacio, intro) es más alta: se lleva 12 dp extra
-        val extraAbajo = if (filas.size >= 2 && filas.last().teclas.any { it.tipo == K.ESPACIO }) dp(12f) else 0f
+        val extraAbajo = if (filas.size >= 2 && filas.last().teclas.any { it.tipo == K.ESPACIO }) dp(18f) else 0f
         altoFila = (h - arriba - abajo - extraAbajo) / filas.size
         // Teclado dividido (celular echado): las letras se separan a los lados para los pulgares,
         // como en el iPad. La fila de abajo (espacio) queda entera.
@@ -200,8 +202,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 // Letras más compactas: un poco más de aire alrededor (el toque sigue siendo la
                 // celda completa, así no se pierde precisión)
                 // Letras más anchas: menos aire a los lados (4 dp en vez de 9)
-                val sx = if (grande) sepX * 0.6f else sepX * 0.5f
-                val sy = if (grande) sepY else sepY + dp(1.5f)
+                val sx = if (grande) sepX * 0.25f else sepX * 0.5f
+                val sy = if (grande) sepY * 0.5f else sepY + dp(1.5f)
                 val dib = RectF(x + sx / 2, y0 + sy / 2, x + ancho - sx / 2, y0 + altoEsta - sy / 2)
                 if (t.tipo != K.VACIA) lista.add(Colocada(t, toque, dib, fi))
                 if (t.esLetra) geo.poner(t.texto[0], dib.centerX(), dib.centerY())

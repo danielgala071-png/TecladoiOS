@@ -96,17 +96,17 @@ object Distribuciones {
     })
 
     private fun filaAbajo(modo: Int, campo: Int): Fila {
-        val izquierda = if (modo == LETRAS) Tecla(K.NUM, "123", 1.3f) else Tecla(K.ABC, "ABC", 1.3f)
-        val emoji = Tecla(K.EMOJI, "", 1.1f)
-        val intro = Tecla(K.INTRO, "", 2.0f)
+        val izquierda = if (modo == LETRAS) Tecla(K.NUM, "123", 1.45f) else Tecla(K.ABC, "ABC", 1.45f)
+        val emoji = Tecla(K.EMOJI, "", 1.25f)
+        val intro = Tecla(K.INTRO, "", 2.2f)
         return when (campo) {
-            CAMPO_CORREO -> Fila(listOf(izquierda, emoji, texto("@", 1f), Tecla(K.ESPACIO, "", 3.6f),
+            CAMPO_CORREO -> Fila(listOf(izquierda, emoji, texto("@", 1f), Tecla(K.ESPACIO, "", 3.1f),
                 texto(".", 1f, listOf(",", "-", "_", ".com", ".pe", ".gob.pe")), intro))
             // Como en iOS: en direcciones web van "/" "." y ".com" (manteniéndolo: .pe .org .net…)
-            CAMPO_WEB -> Fila(listOf(izquierda, emoji, texto("/", 1f), Tecla(K.ESPACIO, "", 2.2f),
+            CAMPO_WEB -> Fila(listOf(izquierda, emoji, texto("/", 1f), Tecla(K.ESPACIO, "", 1.7f),
                 texto(".", 1f, listOf("-", "_", ":")), texto(".com", 1.4f, listOf(".pe", ".com.pe", ".gob.pe", ".org", ".net", ".es")), intro))
             // Sin la tecla del punto: el espacio ocupa su lugar (el punto sale con doble espacio o en 123)
-            else -> Fila(listOf(izquierda, emoji, Tecla(K.ESPACIO, "", 5.6f), intro))
+            else -> Fila(listOf(izquierda, emoji, Tecla(K.ESPACIO, "", 5.1f), intro))
         }
     }
 
