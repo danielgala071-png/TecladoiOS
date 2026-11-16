@@ -185,7 +185,7 @@ class PanelEmoji(context: Context) : View(context) {
         FILAS = filasPara(alto, width)
         val cel = (alto - altoAbajo() - arribaGrilla() - dp(4f)) / FILAS.toFloat()
         if (cel <= 0f) return
-        precalentar((cel * 0.62f).toInt(), 0)
+        precalentar(tamEmoji(cel).toInt(), 0)
     }
     /** Recientes: el que usaste entra primero y empuja a los demás */
     private val EMPUJE_DURA = 320f
@@ -273,7 +273,10 @@ class PanelEmoji(context: Context) : View(context) {
     private val SEPARACION_DP = 30f
 
     /** Columna un poco más ancha que alta: los emojis respiran como en el iPhone */
-    private fun anchoCol(cel: Float) = cel * 1.12f
+    private fun anchoCol(cel: Float) = cel * 1.04f
+
+    /** Emoji de 30 a 35 dp (sin pasarse de la casilla), igual espacio arriba/abajo y a los lados */
+    private fun tamEmoji(cel: Float) = (cel * 0.8f).coerceIn(dp(30f), dp(35f)).coerceAtMost(cel * 0.9f)
 
     /** Ancho de cada sección; la de recientes siempre deja lugar para al menos 6 columnas */
     private fun anchoSeccion(k: Int, cel: Float): Float {
@@ -462,7 +465,7 @@ class PanelEmoji(context: Context) : View(context) {
 
         // Emojis (solo las columnas visibles). Si alguno está animándose se pide UN solo cuadro nuevo
         animandoGrilla = false
-        emojiP.textSize = cel * 0.62f   // más aire entre emojis: se ven más ordenados
+        emojiP.textSize = tamEmoji(cel)   // 30–35 dp, en cuadrícula pareja
         val colW = anchoCol(cel)
         precalentar(emojiP.textSize.toInt(), prioridad)
         c.save()
