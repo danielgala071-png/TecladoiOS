@@ -302,7 +302,8 @@ class PanelEmoji(context: Context) : View(context) {
     // Imágenes de los emojis ya dibujados: con espacio para casi todos, así cambiar de
     // categoría no tiene que dibujar decenas de emojis de golpe (eso era el tironcito)
     private val imagenes = object : android.util.LruCache<String, android.graphics.Bitmap>(
-        (Runtime.getRuntime().maxMemory() / 1024 / 4).toInt().coerceIn(16 * 1024, 72 * 1024)) {
+        // Tope medio de memoria (antes hasta 72 MB): ahorra RAM y el celular se calienta menos
+        (Runtime.getRuntime().maxMemory() / 1024 / 12).toInt().coerceIn(8 * 1024, 24 * 1024)) {
         override fun sizeOf(key: String, value: android.graphics.Bitmap) = value.byteCount / 1024
     }
     private val pintaImagen = Paint(Paint.FILTER_BITMAP_FLAG)

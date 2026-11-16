@@ -112,10 +112,12 @@ class Capa(context: Context) : View(context) {
     private val porPreparar = ArrayDeque<Pair<RectF, String>>()
     private val guardaTecla = RectF()
 
+    private val globoDirecto = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    /** Ya no se preparan imágenes de globos (se dibujan directo): nada que hacer al abrir */
     fun precalentarGlobos(lista: List<Pair<RectF, String>>) {
-        porPreparar.clear(); porPreparar.addAll(lista)
-        removeCallbacks(preparar)
-        postDelayed(preparar, 250L)
+        porPreparar.clear(); removeCallbacks(preparar)
+        globos.values.forEach { if (!it.isRecycled) it.recycle() }; globos.clear()
     }
 
     private val preparar = object : Runnable {
@@ -247,16 +249,15 @@ class Capa(context: Context) : View(context) {
                 viaje = 1f - e
                 postInvalidateOnAnimation()
             }
-            // El globo (sombra, vidrio, filo) se arma UNA vez por tecla y se guarda: después
-            // cada cuadro solo lo copia
-            val img = imagenGlobo()
+            // El globo se dibuja directo (forma + sombra en la GPU): sin guardar una imagen por
+            // tecla, así ahorra varios MB de RAM y no trabaja al abrir el teclado
             c.save()
             c.translate(0f, flota)
             c.scale(escX, escY, tecla.centerX(), tecla.bottom)
-            if (img != null) {
-                pintaGlobo.alpha = (alfa * 255).toInt().coerceIn(0, 255)
-                c.drawBitmap(img, limites.left - MARGEN * d, limites.top - MARGEN * d, pintaGlobo)
-            }
+            globoDirecto.color = tema.tecla
+            globoDirecto.alpha = (alfa * 255).toInt().coerceIn(0, 255)
+            globoDirecto.setShadowLayer(4f * d, 0f, 1.5f * d, if (tema.claro) 0x38000000 else 0x66000000)
+            c.drawPath(forma, globoDirecto)
             c.restore()
             // La letra (fuera de la escala del globo, para que no se deforme)
             val tl = ((ahora - popMs) / POP).coerceIn(0f, 1f)

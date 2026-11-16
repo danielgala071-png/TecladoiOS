@@ -75,7 +75,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             shiftAntes = field; shiftCambioMs = if (Ahorro.activo) 0L else SystemClock.uptimeMillis()
             // Minúsculas ↔ mayúsculas con un fundido cortito (se guarda cómo se veían)
             val l = cacheLetras
-            if (l != null && !l.isRecycled && isShown && distribucion.nombre == "abc" && !modoTrackpad) {
+            // Sin animación (como el iPhone): no se copia la imagen de las letras en cada mayúscula
+            if (!Ahorro.activo && l != null && !l.isRecycled && isShown && distribucion.nombre == "abc" && !modoTrackpad) {
                 letrasViejas = try {
                     // Se reutiliza la misma imagen (sin crear una nueva en cada cambio de mayúscula)
                     val b = bufferMayus?.takeIf { !it.isRecycled && it.width == l.width && it.height == l.height }
