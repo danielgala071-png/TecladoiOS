@@ -668,12 +668,14 @@ class PanelEmoji(context: Context) : View(context) {
         val paradas = paradasX.size.coerceAtLeast(1)
         val paso = (der - izq) / paradas
         val actual = categoriaActual()
-        emojiP.textSize = minOf(dp(15f), paso * 0.9f)   // íconos de sección de 15 dp
-        // Cápsula de las secciones: un solo bloque gris oscuro, compacto y fácil de ver
+        // Íconos de sección en proporción a los emojis (≈15 dp con el teclado en 100 × 100)
+        emojiP.textSize = (tamEmoji(celda()) * 0.56f).coerceIn(dp(13f), dp(17f)).coerceAtMost(paso * 0.88f)
+        // Cápsula de las secciones: misma altura y línea que el botón ABC
+        val capArriba = yAbajo + dp(7f); val capAbajo = h - dp(6f)
+        val capMitad = (capAbajo - capArriba) / 2
         if (!tema.claro) {
-            val cyC = yAbajo + altoAbajo() / 2
             relleno.color = 0xFF1C1C1E.toInt()
-            c.drawRoundRect(izq - dp(3f), cyC - dp(16f), der + dp(3f), cyC + dp(16f), dp(16f), dp(16f), relleno)
+            c.drawRoundRect(izq - dp(3f), capArriba, der + dp(3f), capAbajo, capMitad, capMitad, relleno)
         }
         // Indicador de vidrio que se desliza hasta la categoría actual
         run {
@@ -682,26 +684,21 @@ class PanelEmoji(context: Context) : View(context) {
             val falta = meta - indicadorX
             indicadorX += if (Ahorro.activo) falta else falta * 0.35f
             if (kotlin.math.abs(falta) > 0.5f) postInvalidateOnAnimation() else indicadorX = meta
-            val cy = yAbajo + altoAbajo() / 2
+            val cy = capArriba + capMitad
             val rad = minOf(paso * 0.48f, dp(17f))
             if (tema.claro) {
                 relleno.color = tema.velo(if (deslizandoCat) 0x3D else 0x29)
                 c.drawCircle(indicadorX, cy, rad, relleno)
             } else {
-                // Obsidiana carmesí: la categoría actual va sobre la misma mini tecla de la barra
-                // (base roja abajo, cara en rojo metálico) y se desliza al cambiar
-                val mx = rad * 1.05f; val my = rad * 0.92f; val rr = dp(8f)
-                relleno.color = 0xFF0E0E10.toInt()
-                c.drawRoundRect(indicadorX - mx, cy - my + dp(2f), indicadorX + mx, cy + my + dp(2f), rr, rr, relleno)
+                // Recuadro de la sección actual: llena el alto de la cápsula con 3 dp de borde
+                val mx = paso * 0.5f - dp(0.5f); val my = capMitad - dp(3f); val rr = my
                 relleno.color = if (deslizandoCat) 0xFF636366.toInt() else 0xFF48484A.toInt()
                 c.drawRoundRect(indicadorX - mx, cy - my, indicadorX + mx, cy + my, rr, rr, relleno)
-                relleno.color = 0x26FFFFFF
-                c.drawRect(indicadorX - mx + rr, cy - my + dp(0.4f), indicadorX + mx - rr, cy - my + dp(1.2f), relleno)
             }
         }
         for (k in 0 until paradas) {
             val cx = izq + paso * k + paso / 2
-            val cy = yAbajo + altoAbajo() / 2
+            val cy = capArriba + capMitad
             val ic = when (k) { 0 -> "\uD83D\uDD52"; else -> atajos.getOrElse(k - 1) { "•" } }
             // Íconos de categoría en gris como el iPhone; la actual, a color
             pintaImagen.colorFilter = if (k == actual) null else grises
