@@ -32,8 +32,9 @@ class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
     // Negro AMOLED (diseño C): letras con contorno fino sobre negro puro y las principales
     // (mayúscula, borrar, 123, emoji, intro) rellenas en grafito
     val contorno = !claro
-    val lineaTecla = 0xFF2E3644.toInt()
-    val filoArriba = 0xFF4A5670.toInt()
+    // Contorno más suave (menos contraste con el negro)
+    val lineaTecla = 0xFF283040.toInt()
+    val filoArriba = 0xFF3E4860.toInt()
     val filoAbajo = 0xFF161B24.toInt()
     /** Gris claro de detalle (antes rojo) */
     val rojoIntenso = 0xFF8E8E93.toInt()

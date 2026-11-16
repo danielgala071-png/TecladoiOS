@@ -1867,6 +1867,14 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         }
     }
 
+    override fun descartarCaptura() {
+        val cap = captura ?: return
+        // Ya no se vuelve a ofrecer esta captura (la foto sigue en tu galería)
+        prefs.edit().putLong("ultima_captura", cap.ms).apply()
+        captura = null; barra?.captura(null); actualizarBarra()
+        respuesta.tocar(Respuesta.Tipo.FUNCION)
+    }
+
     override fun respuesta(tipo: Respuesta.Tipo) = respuesta.tocar(tipo)
 
     override fun deshacerCorreccion() {

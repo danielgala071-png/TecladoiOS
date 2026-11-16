@@ -956,7 +956,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private val reflejo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x40FF8A96; strokeCap = Paint.Cap.ROUND }
 
     /** Esquinas como las teclas de iOS: poco curvas */
-    private fun radioDe(r: RectF) = minOf(dp(5.5f), r.height() * 0.13f)
+    // Suavizado: esquinas más redondeadas (más suave a la vista)
+    private fun radioDe(r: RectF) = minOf(dp(7.5f), r.height() * 0.18f)
 
     /**
      * Tecla plana como en iOS: el color de la tecla y una línea de sombra de 1 dp abajo.

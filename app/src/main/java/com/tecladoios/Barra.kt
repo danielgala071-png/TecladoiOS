@@ -27,6 +27,8 @@ class Barra(context: Context) : View(context) {
         fun herramienta(cual: Int)
         fun pegarChip()
         fun enviarCaptura()
+        /** Mantener presionada la captura: se quita de las sugerencias (no se borra la foto) */
+        fun descartarCaptura() {}
         fun emojiBuscado(e: String)
         fun cerrarBusqueda()
         fun respuesta(tipo: Respuesta.Tipo)
@@ -630,6 +632,7 @@ class Barra(context: Context) : View(context) {
             c.drawRoundRect(r, dp(6f), dp(6f), relleno)
             relleno.style = Paint.Style.FILL
             zonas.add(RectF(r) to { oyente?.enviarCaptura() })
+            zonasLargas.add(RectF(r) to { oyente?.descartarCaptura() })
             izq = r.right + dp(8f)
         }
         val chip = chipTexto
