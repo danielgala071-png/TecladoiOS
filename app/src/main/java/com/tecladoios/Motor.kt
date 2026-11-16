@@ -374,12 +374,12 @@ class Motor(
             //  · Si hay duda: no se toca; la separada queda en la barra para elegirla
             //  · Si deshiciste esa separación antes, no se vuelve a hacer
             if (separarPegadas && conocido == null && clave.length >= 3 && (!valida || rara)) {
-                val sep = if (pareja != null) Separacion(Texto.conMayusculas(pareja, escrito), FUERTE) else separar(clave, escrito)
+                val sep = if (pareja != null) Separacion(Texto.conMayusculas(pareja, escrito), SEP_FUERTE) else separar(clave, escrito)
                 if (sep != null && !aprendido.rechazada(escrito, sep.texto)) {
                     val corr = auto
                     val aplicar = when (sep.nivel) {
-                        FUERTE -> true
-                        COMUN -> !valida && (corr == null || costoDe(corr, clave, xs, ys) > 1.05f)
+                        SEP_FUERTE -> true
+                        SEP_COMUN -> !valida && (corr == null || costoDe(corr, clave, xs, ys) > 1.05f)
                         else -> false
                     }
                     if (aplicar) auto = sep.texto
@@ -447,7 +447,7 @@ class Motor(
         return if (costo <= presupuesto(n)) costo else null
     }
 
-    /** Separación propuesta y qué tan segura es ([FUERTE], [COMUN] o [DUDOSA]) */
+    /** Separación propuesta y qué tan segura es ([SEP_FUERTE], [SEP_COMUN] o [SEP_DUDOSA]) */
     class Separacion(val texto: String, val nivel: Int)
 
     /** Número de la pieza [k] si sirve como palabra suelta, o -1 */
@@ -475,7 +475,7 @@ class Motor(
         if (clave.length > 24) return null
         var mejor: String? = null
         var mejorP = Float.MAX_VALUE
-        var mejorNivel = DUDOSA
+        var mejorNivel = SEP_DUDOSA
         fun probar(partes: List<String>, extra: Float, nCambiada: Boolean) {
             val ids = IntArray(partes.size)
             for ((i, k) in partes.withIndex()) { val id = pieza(k); if (id < 0) return; ids[i] = id }
@@ -490,9 +490,9 @@ class Motor(
                 nCambiada -> maxP <= 4.6f && suma <= 7f
                 else -> maxP <= 5.6f && suma <= 9.5f
             }
-            val nivel = when { seguidas -> FUERTE; comun -> COMUN; else -> DUDOSA }
+            val nivel = when { seguidas -> SEP_FUERTE; comun -> SEP_COMUN; else -> SEP_DUDOSA }
             // Las dudosas solo se ofrecen si son dos piezas tal cual (sin letra cambiada)
-            if (nivel == DUDOSA && (nCambiada || partes.size == 3 || suma > 11f)) return
+            if (nivel == SEP_DUDOSA && (nCambiada || partes.size == 3 || suma > 11f)) return
             val p = suma + extra - nivel * 6f
             if (p >= mejorP) return
             mejorP = p; mejorNivel = nivel
@@ -615,9 +615,9 @@ class Motor(
         val INICIO = listOf("hola", "ya", "gracias", "buenos", "sí", "no", "estimado", "ok", "qué", "te", "yo", "bueno")
         val GENERALES = listOf("de", "que", "y", "la", "el", "en", "a", "no", "con", "para", "por", "me")
 
-        const val FUERTE = 2
-        const val COMUN = 1
-        const val DUDOSA = 0
+        const val SEP_FUERTE = 2
+        const val SEP_COMUN = 1
+        const val SEP_DUDOSA = 0
         /** Desde aquí una palabra es rara (más allá de las ~20 000 más usadas) */
         const val RARA = 6.5f
         private val UNA_LETRA = setOf("a", "y", "o", "e", "u")

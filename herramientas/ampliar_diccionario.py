@@ -18,8 +18,7 @@ quita (una palabra de verdad nunca se corrige).
 
 Si no hay internet o algo falla, el diccionario queda como estaba (nunca rompe la compilación).
 Tampoco entran las parejas que en los subtítulos salen pegadas ("dela", "esque", "loque"): el
-teclado las separa (lista en juntas.txt y, para las raras, cuando las dos piezas son muchísimo
-más usadas que la pegada).
+teclado las separa (lista en juntas.txt).
 
 Uso: ampliar_diccionario.py <diccionario.txt> <lista_frecuencias.txt> [cuantas] [errores.txt] [minimo] [juntas.txt]
 """
@@ -141,21 +140,12 @@ def leer_juntas(ruta):
 
 
 def es_pegada(w, r, cuenta, pegadas, dudosas):
-    """[w] son dos palabras pegadas: en la lista, o rara y con dos piezas muchísimo más usadas"""
+    """[w] son palabras pegadas de la lista (juntas.txt)"""
     k = sin_tildes(w)
     if k in dudosas:
         return False
     if k in pegadas:
         return True
-    if r < 20000:
-        return False
-    c = cuenta.get(w, 0)
-    for i in range(1, len(w)):
-        a, b = w[:i], w[i:]
-        if (len(a) == 1 and a not in "ayoeu") or (len(b) == 1 and b not in "ayoeu"):
-            continue
-        if min(cuenta.get(a, 0), cuenta.get(b, 0)) >= max(2000, c * 60):
-            return True
     return False
 
 
