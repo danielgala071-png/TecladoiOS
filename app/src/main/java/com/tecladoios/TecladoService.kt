@@ -115,7 +115,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
      * izquierda y al lado sus correcciones, con la letra que cambia resaltada. Al elegir una,
      * se reemplaza la palabra entera sin tener que borrarla.
      */
-    private class Revision(val ini: Int, val fin: Int, val original: String, val opciones: List<String>)
+    private class Revision(val ini: Int, val fin: Int, val original: String, val opciones: List<String>, val bienEscrita: Boolean = false)
     private var revision: Revision? = null
 
     private enum class Panel { TECLADO, EMOJI, EDICION, PORTAPAPELES }
@@ -1114,8 +1114,10 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         // Palabra mal escrita tocada: [tal cual] [corrección] [otra opción]
         revision?.let { rv ->
             if (palabra.isEmpty()) {
-                b.revision = rv.original
-                b.mostrarSugerencias(rv.opciones, rv.original, true)
+                // Mal escrita: en rojo suave con la letra que cambia resaltada.
+                // Bien escrita: la palabra tal cual y sus parecidas, sin marcar error.
+                b.revision = if (rv.bienEscrita) null else rv.original
+                b.mostrarSugerencias(rv.opciones, rv.original, !rv.bienEscrita)
                 return
             }
         }
@@ -1195,8 +1197,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         revision?.let { rv ->
             revision = null
             if (esLiteral) {
-                // La dejas como está: el cerebro la aprende y no vuelve a marcarla
-                if (aprender) Cerebro.motor?.aprendido?.agregar(texto)
+                // La dejas como está: si estaba mal escrita, el cerebro la aprende
+                if (aprender && !rv.bienEscrita) Cerebro.motor?.aprendido?.agregar(texto)
             } else {
                 // Se vuelve a leer la palabra donde está el cursor AHORA y solo se cambia si
                 // sigue siendo la misma: así nunca se borra una palabra por una posición vieja
@@ -1473,7 +1475,9 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         ejecutar.execute {
             if (turno.get() != t) return@execute
             val p = try { m.proponer(w, null, null, ctx, true) } catch (e: Throwable) { Registro.anotar("revisar", e); null }
-            if (p == null || p.valida) return@execute
+            // Al tocar una palabra (bien o mal escrita), la barra ofrece esa palabra y otras
+            // parecidas para cambiarla con un toque. Solo cuando tocas sobre ella.
+            if (p == null) return@execute
             val mayus = w[0].isUpperCase()
             val ops = (listOfNotNull(p.autocorregir) + p.opciones.map { it.texto })
                 .map { if (mayus) it.replaceFirstChar { c -> c.uppercaseChar() } else it }
@@ -1481,7 +1485,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             if (ops.isEmpty()) return@execute
             principal.post {
                 if (turno.get() == t && palabra.isEmpty() && selIni == selFin && selIni in ini..fin) {
-                    revision = Revision(ini, fin, w, ops)
+                    revision = Revision(ini, fin, w, ops, p.valida)
                     actualizarBarra()
                 }
             }

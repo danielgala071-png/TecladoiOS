@@ -12,20 +12,20 @@ import java.util.concurrent.Executors
  */
 class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
     /** Fondo del teclado */
-    val fondo = if (claro) 0xFFD1D4DA.toInt() else 0xFF262628.toInt()   // gris oscuro del teclado del iPhone
+    val fondo = if (claro) 0xFFD1D4DA.toInt() else 0xFF000000.toInt()   // AMOLED: negro puro (teclas grises como el iPhone)
     /** Fondo con degradado muy suave: negro arriba → gris casi negro abajo (profundidad) */
-    val fondoAbajo = if (claro) fondo else 0xFF262628.toInt()
+    val fondoAbajo = if (claro) fondo else 0xFF000000.toInt()
     /** Teclas de letras */
-    val tecla = if (claro) 0xFFFFFFFF.toInt() else 0xFF5A5A5E.toInt()
+    val tecla = if (claro) 0xFFFFFFFF.toInt() else 0xFF4A4A4E.toInt()
     /** Mayúscula, borrar, 123, emoji, intro */
     /** Las principales (mayúscula, borrar, 123, emoji, espacio, intro): grafito más oscuro */
     // AMOLED + azul profundo: las teclas principales (mayúscula, 123, emoji, espacio, intro,
     // borrar) en azul noche, las letras con contorno sobre negro puro
-    val teclaFuncion = if (claro) 0xFFABB0BA.toInt() else 0xFF3B3B3E.toInt()
+    val teclaFuncion = if (claro) 0xFFABB0BA.toInt() else 0xFF2A2A2D.toInt()
     /** Al tocar, las de función toman el color de las letras (como en iOS) */
     // Efecto Gboard: al tocar, la tecla se aclara
-    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFF85858A.toInt()
-    val funcionPresionada = if (claro) 0xFFFFFFFF.toInt() else 0xFF6E6E73.toInt()
+    val teclaPresionada = if (claro) 0xFFABB0BA.toInt() else 0xFF6E6E73.toInt()
+    val funcionPresionada = if (claro) 0xFFFFFFFF.toInt() else 0xFF4A4A4E.toInt()
     /**
      * Diseño C «Contorno nocturno»: las letras son solo un contorno fino sobre negro puro
      * (en AMOLED casi no gasta) y las teclas principales van rellenas.
@@ -46,7 +46,7 @@ class Tema(val acento: Int = AZUL, val claro: Boolean = false) {
     /** Letras en blanco cálido (apenas crema): más descansado de noche */
     val texto = if (claro) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
     /** Fondo de la barra de sugerencias: un tono sobre el negro, para separarla sin línea */
-    val fondoBarra = if (claro) 0x00000000 else 0xFF262628.toInt()   // misma pieza que el teclado
+    val fondoBarra = if (claro) 0x00000000 else 0xFF000000.toInt()   // misma pieza que el teclado
     val textoSuave = if (claro) 0x993C3C43.toInt() else 0xB3EBEBF5.toInt()
     val pista = if (claro) 0x803C3C43.toInt() else 0x80EBEBF5.toInt()
     val separador = if (claro) 0x383C3C43 else 0x29FFFFFF
