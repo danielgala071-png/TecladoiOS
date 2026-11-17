@@ -216,6 +216,18 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             if (der - c.toque.right < dp(4f)) c.toque.right = w
         }
         colocadas = lista.toTypedArray()
+        // Límites de cada fila (para correr la línea entre filas según dónde tocas de verdad)
+        filaArriba = FloatArray(filas.size) { Float.MAX_VALUE }
+        filaAbajo = FloatArray(filas.size) { -Float.MAX_VALUE }
+        filaLetras = BooleanArray(filas.size)
+        filaEspacio = BooleanArray(filas.size)
+        for (c in colocadas) {
+            if (c.tecla.tipo == K.ESPACIO) filaEspacio[c.fila] = true
+            filaArriba[c.fila] = minOf(filaArriba[c.fila], c.toque.top)
+            filaAbajo[c.fila] = maxOf(filaAbajo[c.fila], c.toque.bottom)
+            if (c.tecla.esLetra) filaLetras[c.fila] = true
+        }
+        mediasSucias = true
         pulsos.clear()   // las teclas se volvieron a armar: las animaciones viejas ya no sirven
         haloCache = null
         sepYActual = sepY
@@ -228,15 +240,80 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     private val desvio = HashMap<Char, FloatArray>()
 
+    // Límites de cada fila y si tiene letras (se arman en reacomodar)
+    private var filaArriba = FloatArray(0)
+    private var filaAbajo = FloatArray(0)
+    private var filaLetras = BooleanArray(0)
+    private var filaEspacio = BooleanArray(0)
+    /** Desvío vertical medio de cada fila (px): cuánto más abajo/arriba tocas esa fila */
+    private var mediaFila = FloatArray(0)
+    private var mediasSucias = true
+
+    // El toque se aprende recién cuando escribes la letra siguiente: si la borraste enseguida
+    // (era un error), no se aprende. Así un toque equivocado no empuja la tecla al lado malo.
+    private var porAprender: Char? = null
+    private var porAprenderX = 0f
+    private var porAprenderY = 0f
+
     private fun aprenderDesvio(ch: Char, x: Float, y: Float, centro: RectF) {
-        val v = desvio.getOrPut(ch) { FloatArray(2) }
-        // Aprende dónde sueles tocar cada tecla (como el iPhone, sin que se vea distinto)
-        val lim = anchoTecla * 0.3f
-        v[0] = (v[0] * 0.96f + (x - centro.centerX()) * 0.04f).coerceIn(-lim, lim)
-        v[1] = (v[1] * 0.96f + (y - centro.centerY()) * 0.04f).coerceIn(-lim, lim)
+        confirmarDesvio()
+        porAprender = ch
+        porAprenderX = x - centro.centerX()
+        porAprenderY = y - centro.centerY()
     }
 
-    fun desviosTexto(): String = desvio.entries.joinToString(";") { "${it.key},${it.value[0] / anchoTecla},${it.value[1] / anchoTecla}" }
+    /** Borraste: el último toque no se aprende */
+    private fun descartarDesvio() { porAprender = null }
+
+    private fun confirmarDesvio() {
+        val ch = porAprender ?: return
+        porAprender = null
+        val v = desvio.getOrPut(ch) { FloatArray(2) }
+        // Aprende dónde sueles tocar cada tecla (como el iPhone, sin que se vea distinto).
+        // Antes el tope era 0.3 de tecla en los dos ejes y tu fila de arriba ya lo tocaba
+        // (u y t en 0.30): ahora llega a 0.4 a los lados y a 0.55 hacia arriba/abajo
+        val limX = anchoTecla * 0.4f
+        val limY = minOf(anchoTecla * 0.55f, altoFila * 0.45f)
+        v[0] = (v[0] * 0.96f + porAprenderX * 0.04f).coerceIn(-limX, limX)
+        v[1] = (v[1] * 0.96f + porAprenderY * 0.04f).coerceIn(-limY, limY)
+        mediasSucias = true
+    }
+
+    /** Desvío vertical medio de cada fila con letras (0 en las demás) */
+    private fun mediasFilas(): FloatArray {
+        if (!mediasSucias && mediaFila.size == filaArriba.size) return mediaFila
+        val suma = FloatArray(filaArriba.size); val n = IntArray(filaArriba.size)
+        for (c in colocadas) {
+            if (!c.tecla.esLetra) continue
+            val dv = desvio[c.tecla.texto[0]] ?: continue
+            suma[c.fila] += dv[1]; n[c.fila]++
+        }
+        // Con pocas letras aprendidas la media se acerca a 0 (no se mueve nada por 2 toques)
+        mediaFila = FloatArray(suma.size) { if (n[it] == 0) 0f else suma[it] / (n[it] + 2) }
+        mediasSucias = false
+        return mediaFila
+    }
+
+    /**
+     * Línea entre la fila [f] y la de abajo, corrida según dónde tocas cada una: si la fila de
+     * arriba la tocas más abajo de su centro, la línea baja (hasta 40 % de fila)
+     */
+    private fun lineaBajo(f: Int, m: FloatArray): Float {
+        val base = filaAbajo[f]
+        // Solo entre dos filas de letras, o entre la última de letras y la del espacio
+        // (la fila de números de arriba no se toca: ahí no sabemos dónde tocas)
+        if (f + 1 >= m.size || !filaLetras[f] || !(filaLetras[f + 1] || filaEspacio[f + 1])) return base
+        val corre = ((m[f] + m[f + 1]) / 2f).coerceIn(-altoFila * 0.4f, altoFila * 0.4f)
+        return base + corre
+    }
+
+    fun desviosTexto(): String {
+        confirmarDesvio()
+        // Si el teclado aún no se midió, se guarda lo leído tal cual (antes se perdía)
+        if (desvio.isEmpty() && pendientes.isNotEmpty())
+            return pendientes.entries.joinToString(";") { "${it.key},${it.value[0]},${it.value[1]}" }
+        return desvio.entries.joinToString(";") { "${it.key},${it.value[0] / anchoTecla},${it.value[1] / anchoTecla}" }
+    }
 
     fun leerDesvios(s: String?) {
         if (s.isNullOrEmpty()) return
@@ -253,9 +330,30 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         if (pendientes.isNotEmpty() && anchoTecla > 1f) {
             for ((k, v) in pendientes) desvio[k] = floatArrayOf(v[0] * anchoTecla, v[1] * anchoTecla)
             pendientes.clear()
+            mediasSucias = true
         }
         var dentro: Colocada? = null
         for (c in colocadas) if (c.toque.contains(x, y)) { dentro = c; break }
+        // Fila según dónde tocas de verdad: la línea entre filas se corre con tu costumbre
+        // (tocas la fila de arriba más abajo de su centro → esa fila recibe más toques abajo)
+        var arribaFila = 0f; var abajoFila = 0f
+        if (dentro != null && filaArriba.size == distribucion.filas.size) {
+            val m = mediasFilas()
+            var f = dentro.fila
+            if (f > 0 && y < lineaBajo(f - 1, m)) f--
+            else if (f + 1 < m.size && y > lineaBajo(f, m)) f++
+            if (f != dentro.fila) {
+                var otra: Colocada? = null; var mx = Float.MAX_VALUE
+                for (c in colocadas) {
+                    if (c.fila != f) continue
+                    val dx = maxOf(c.toque.left - x, 0f, x - c.toque.right)
+                    if (dx < mx) { mx = dx; otra = c }
+                }
+                if (otra != null) dentro = otra
+            }
+            arribaFila = if (f > 0) lineaBajo(f - 1, m) else filaArriba[f]
+            abajoFila = lineaBajo(f, m)
+        } else if (dentro != null) { arribaFila = dentro.toque.top; abajoFila = dentro.toque.bottom }
         if (dentro == null) {
             // Fuera de todas (borde de abajo o de arriba): la más cercana
             var mejor: Colocada? = null; var md = Float.MAX_VALUE
@@ -274,8 +372,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         // A dos pulgares el dedo cae a menudo en el borde entre dos filas: si el toque está en
         // el borde de arriba o de abajo de su fila, también compite la letra de la fila vecina
         // (pero solo gana si está más cerca de verdad o si el cerebro la espera mucho)
-        val alto = dentro.toque.height().coerceAtLeast(1f)
-        val enBorde = (y - dentro.toque.top) / alto < 0.2f || (dentro.toque.bottom - y) / alto < 0.2f
+        val alto = (abajoFila - arribaFila).coerceAtLeast(1f)
+        val enBorde = (y - arribaFila) / alto < 0.2f || (abajoFila - y) / alto < 0.2f
         for (c in colocadas) {
             if (!c.tecla.esLetra) continue
             val otraFila = abs(c.fila - dentro.fila)
@@ -491,6 +589,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
                 }
             }
             K.BORRAR -> {
+                descartarDesvio()
                 oyente?.codigo(K.BORRAR)
                 postDelayed(dd.repetir, 420L)
             }

@@ -46,6 +46,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private lateinit var respuesta: Respuesta
     private lateinit var portapapeles: Portapapeles
     private val principal = Handler(Looper.getMainLooper())
+    /** Para las sugerencias: mensajes asíncronos que no esperan a que termine de armarse el cuadro */
+    private val rapido = Handler.createAsync(Looper.getMainLooper())
 
     // Vistas
     private var marco: Marco? = null
@@ -1106,16 +1108,19 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 if (deslizado) Propuesta(alts.map { Opcion(it, 0f, false, false) }, null, true)
                 else m.proponer(escrito, xs, ys, ctx, corregir)
             } catch (e: Throwable) { Registro.anotar("proponer", e); null }
-            val prob = if (zona) try { m.letrasProbables(escrito) } catch (_: Throwable) { emptyMap() } else emptyMap()
-            if (p != null) principal.post {
+            // Primero la barra (lo que se ve) y recién después la zona caliente (lo que no se ve)
+            if (p != null) rapido.post {
                 if (turno.get() == t && palabra.toString() == escrito) {
-                    teclado?.probables = prob
                     propuesta = p; propuestaDe = escrito
                     actualizarBarra()
                     Medidor.sugerencia(System.nanoTime() - pedidoNs)
                     Medidor.guardarSiToca(this)
                 }
             }
+            if (zona && turno.get() == t) {
+                val prob = try { m.letrasProbables(escrito) } catch (_: Throwable) { emptyMap() }
+                rapido.post { if (turno.get() == t && palabra.toString() == escrito) teclado?.probables = prob }
+            } else if (!zona) rapido.post { if (turno.get() == t) teclado?.probables = emptyMap() }
         }
     }
 
