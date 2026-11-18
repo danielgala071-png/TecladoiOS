@@ -249,34 +249,98 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     private var mediaFila = FloatArray(0)
     private var mediasSucias = true
 
-    // El toque se aprende recién cuando escribes la letra siguiente: si la borraste enseguida
-    // (era un error), no se aprende. Así un toque equivocado no empuja la tecla al lado malo.
-    private var porAprender: Char? = null
-    private var porAprenderX = 0f
-    private var porAprenderY = 0f
+    // Los toques se aprenden por PALABRA, recién cuando la terminas y ya se sabe qué letra
+    // iba de verdad. Antes se aprendía cada letra tal como cayó: si tocabas «w» queriendo «e»
+    // y la autocorrección lo arreglaba, igual se aprendía como «w» → la w se iba corriendo
+    // hacia la e (llegó al tope de 0.4) y te robaba cada vez más «e». Ahora ese toque se
+    // aprende para la «e», que es la que querías.
+    private val toques = ArrayList<FloatArray>(24)   // [letra, x, y]
 
-    private fun aprenderDesvio(ch: Char, x: Float, y: Float, centro: RectF) {
-        confirmarDesvio()
-        porAprender = ch
-        porAprenderX = x - centro.centerX()
-        porAprenderY = y - centro.centerY()
+    private fun aprenderDesvio(ch: Char, x: Float, y: Float, @Suppress("UNUSED_PARAMETER") centro: RectF) {
+        if (toques.size >= 40) toques.removeAt(0)
+        toques.add(floatArrayOf(ch.lowercaseChar().code.toFloat(), x, y))
     }
 
     /** Borraste: el último toque no se aprende */
-    private fun descartarDesvio() { porAprender = null }
+    private fun descartarDesvio() { if (toques.isNotEmpty()) toques.removeAt(toques.size - 1) }
 
-    private fun confirmarDesvio() {
-        val ch = porAprender ?: return
-        porAprender = null
+    /** La palabra se dejó sin terminar (cursor movido, campo nuevo…): no se aprende nada */
+    fun olvidarToques() { toques.clear() }
+
+    /**
+     * Terminaste la palabra: [escrito] es lo que tocaste y [final] lo que quedó (corregido o no).
+     * - Igual: cada toque se aprende para su letra.
+     * - Corregida cambiando 1 o 2 letras (mismo largo): esos toques se aprenden para la letra
+     *   que iba, si está al lado (si cayó lejos fue un error de otro tipo y se ignora).
+     * - Otra cosa (letras de más o de menos, palabra reabierta): no se aprende, por las dudas.
+     */
+    fun cerrarToques(escrito: String, final: String) {
+        val t = ArrayList(toques); toques.clear()
+        val a = Texto.normal(escrito); val b = Texto.normal(final)
+        if (t.size != a.length || a.length != b.length || t.isEmpty()) return
+        var difieren = 0
+        for (i in a.indices) if (a[i] != b[i]) difieren++
+        if (difieren > 2) return
+        for (i in a.indices) {
+            val tocada = t[i][0].toInt().toChar()
+            if (Texto.normal(tocada) != a[i]) return   // no calzan: mejor no aprender
+            val iba = if (a[i] == b[i]) tocada else b[i]
+            val c = letra(iba) ?: continue
+            val dx = t[i][1] - c.dibujo.centerX(); val dy = t[i][2] - c.dibujo.centerY()
+            // Una corrección solo enseña si el dedo cayó cerca de la letra que iba
+            if (a[i] != b[i] && (abs(dx) > anchoTecla * 1.3f || abs(dy) > altoFila * 1.2f)) continue
+            sumarDesvio(iba, dx, dy, if (a[i] == b[i]) 0.04f else 0.06f)
+        }
+    }
+
+    private fun letra(ch: Char): Colocada? {
+        for (c in colocadas) if (c.tecla.esLetra && c.tecla.texto[0].lowercaseChar() == ch) return c
+        return null
+    }
+
+    private fun sumarDesvio(ch: Char, dx: Float, dy: Float, paso: Float) {
         val v = desvio.getOrPut(ch) { FloatArray(2) }
         // Aprende dónde sueles tocar cada tecla (como el iPhone, sin que se vea distinto).
-        // Antes el tope era 0.3 de tecla en los dos ejes y tu fila de arriba ya lo tocaba
-        // (u y t en 0.30): ahora llega a 0.4 a los lados y a 0.55 hacia arriba/abajo
-        val limX = anchoTecla * 0.4f
+        // A los lados ahora llega a 0.3 de tecla (0.35 en las de los bordes, solo hacia
+        // adentro): con 0.4 la w quedaba casi encima de la e. Arriba/abajo sigue en 0.55.
+        val c = letra(ch)
+        val izqBorde = c != null && colocadas.none { it.fila == c.fila && it.tecla.esLetra && it.dibujo.centerX() < c.dibujo.centerX() - 1f }
+        val derBorde = c != null && colocadas.none { it.fila == c.fila && it.tecla.esLetra && it.dibujo.centerX() > c.dibujo.centerX() + 1f }
+        val limIzq = anchoTecla * (if (derBorde) 0.35f else 0.3f)
+        val limDer = anchoTecla * (if (izqBorde) 0.35f else 0.3f)
         val limY = minOf(anchoTecla * 0.55f, altoFila * 0.45f)
-        v[0] = (v[0] * 0.96f + porAprenderX * 0.04f).coerceIn(-limX, limX)
-        v[1] = (v[1] * 0.96f + porAprenderY * 0.04f).coerceIn(-limY, limY)
+        v[0] = (v[0] * (1f - paso) + dx * paso).coerceIn(-limIzq, limDer)
+        v[1] = (v[1] * (1f - paso) + dy * paso).coerceIn(-limY, limY)
+        separarVecinas()
         mediasSucias = true
+    }
+
+    /**
+     * Ninguna letra puede quedar «encima» de su vecina: entre los centros aprendidos de dos
+     * letras seguidas de una fila quedan al menos 0.75 de tecla. Si se acercan más, las dos
+     * vuelven un poco hacia su lugar. (Arregla también lo que ya se había aprendido mal.)
+     */
+    private fun separarVecinas() {
+        if (anchoTecla <= 1f) return
+        val minimo = anchoTecla * 0.75f
+        val porFila = colocadas.filter { it.tecla.esLetra }.groupBy { it.fila }
+        for (fila in porFila.values) {
+            val o = fila.sortedBy { it.dibujo.centerX() }
+            for (i in 0 until o.size - 1) {
+                val ka = o[i].tecla.texto[0].lowercaseChar(); val kb = o[i + 1].tecla.texto[0].lowercaseChar()
+                val va = desvio[ka]; val vb = desvio[kb]
+                val xa = o[i].dibujo.centerX() + (va?.get(0) ?: 0f)
+                val xb = o[i + 1].dibujo.centerX() + (vb?.get(0) ?: 0f)
+                val falta = minimo - (xb - xa)
+                if (falta <= 0f) continue
+                // Se reparte según cuánto se movió cada una (la que más se corrió, más vuelve)
+                val ma = maxOf(va?.get(0) ?: 0f, 0f); val mb = maxOf(-(vb?.get(0) ?: 0f), 0f)
+                val total = ma + mb
+                if (total <= 0f) continue
+                va?.let { it[0] -= falta * (ma / total) }
+                vb?.let { it[0] += falta * (mb / total) }
+            }
+        }
     }
 
     /** Desvío vertical medio de cada fila con letras (0 en las demás) */
@@ -285,7 +349,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val suma = FloatArray(filaArriba.size); val n = IntArray(filaArriba.size)
         for (c in colocadas) {
             if (!c.tecla.esLetra) continue
-            val dv = desvio[c.tecla.texto[0]] ?: continue
+            val dv = desvio[c.tecla.texto[0].lowercaseChar()] ?: continue
             suma[c.fila] += dv[1]; n[c.fila]++
         }
         // Con pocas letras aprendidas la media se acerca a 0 (no se mueve nada por 2 toques)
@@ -308,7 +372,6 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     fun desviosTexto(): String {
-        confirmarDesvio()
         // Si el teclado aún no se midió, se guarda lo leído tal cual (antes se perdía)
         if (desvio.isEmpty() && pendientes.isNotEmpty())
             return pendientes.entries.joinToString(";") { "${it.key},${it.value[0]},${it.value[1]}" }
@@ -330,6 +393,14 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         if (pendientes.isNotEmpty() && anchoTecla > 1f) {
             for ((k, v) in pendientes) desvio[k] = floatArrayOf(v[0] * anchoTecla, v[1] * anchoTecla)
             pendientes.clear()
+            // Lo guardado con el tope anterior (0.4) se lleva al nuevo y se separan las vecinas
+            for ((k, v) in desvio) {
+                val c = letra(k.lowercaseChar()) ?: continue
+                val bordeIzq = colocadas.none { it.fila == c.fila && it.tecla.esLetra && it.dibujo.centerX() < c.dibujo.centerX() - 1f }
+                val bordeDer = colocadas.none { it.fila == c.fila && it.tecla.esLetra && it.dibujo.centerX() > c.dibujo.centerX() + 1f }
+                v[0] = v[0].coerceIn(-anchoTecla * (if (bordeDer) 0.35f else 0.3f), anchoTecla * (if (bordeIzq) 0.35f else 0.3f))
+            }
+            separarVecinas()
             mediasSucias = true
         }
         var dentro: Colocada? = null
@@ -379,7 +450,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             val otraFila = abs(c.fila - dentro.fila)
             if (otraFila > 1 || (otraFila == 1 && !enBorde)) continue
             if (abs(c.dibujo.centerX() - x) > anchoTecla * 1.5f) continue
-            val dv = desvio[c.tecla.texto[0]]
+            val dv = desvio[c.tecla.texto[0].lowercaseChar()]
             val cx = c.dibujo.centerX() + (dv?.get(0) ?: 0f)
             val cy = c.dibujo.centerY() + (dv?.get(1) ?: 0f)
             val ex = x - cx

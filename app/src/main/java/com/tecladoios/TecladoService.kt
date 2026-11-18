@@ -600,6 +600,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     private fun reiniciarPalabra() {
         teclado?.probables = emptyMap()
+        teclado?.olvidarToques()
         ctxPalabra = null
         reabierta = false
         palabra.setLength(0)
@@ -898,6 +899,9 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 }
             }
         }
+        // Dónde tocas cada letra se aprende ahora, ya sabiendo qué letra iba de verdad
+        if (aprender && !vinoDeslizado && !respetar && atajo == null && anteriorNueva == null) teclado?.cerrarToques(escrito, resultado)
+        else teclado?.olvidarToques()
         marcarEdicion()
         // Palabra reabierta con un espacio ya detrás: no se agrega otro, el cursor salta el que hay
         if (respetar && separador == " " && resultado == escrito && despues(1) == " " && selIni == selFin) {
@@ -1109,7 +1113,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 else m.proponer(escrito, xs, ys, ctx, corregir)
             } catch (e: Throwable) { Registro.anotar("proponer", e); null }
             // Primero la barra (lo que se ve) y recién después la zona caliente (lo que no se ve)
-            if (p != null) rapido.post {
+            // La barra pasa adelante de la cola del hilo principal: no espera a dibujos pendientes
+            if (p != null) rapido.postAtFrontOfQueue {
                 if (turno.get() == t && palabra.toString() == escrito) {
                     propuesta = p; propuestaDe = escrito
                     actualizarBarra()
@@ -1274,6 +1279,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             ultimaCorreccion = if (texto != escrito && !esLiteral) Correccion(escrito, texto, " ", Atajos.expandir(cfg.atajos, escrito) == texto) else null
             // Mis confusiones: elegiste la corrección tú mismo → aprende qué letra confundiste
             if (!esLiteral && texto != escrito && aprender) Cerebro.motor?.aprendido?.confundir(escrito, texto)
+            // Y dónde tocaste: cada toque se aprende para la letra que de verdad iba
+            if (!vinoDeslizado && aprender) teclado?.cerrarToques(escrito, texto)
         } else {
             val previo = antes(1)
             val pre = if (previo.isNotEmpty() && previo != " " && previo != "\n") " " else ""

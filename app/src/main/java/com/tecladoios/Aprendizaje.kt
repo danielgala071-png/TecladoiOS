@@ -44,8 +44,9 @@ class Aprendizaje(private val archivo: File) {
             if (par.length != 2) continue
             val a = Texto.indice(par[0]); val b = Texto.indice(par[1])
             if (a < 0 || b < 0) continue
-            // 1 vez: 15 %, 2: 27 %, 3: 37 %… hasta 60 %
-            d[a * 27 + b] = (0.7f * (1f - Math.pow(0.7, v.toDouble()).toFloat())).coerceIn(0f, 0.7f)
+            // Sube más rápido que antes: 1 vez 27 %, 2: 43 %, 3: 53 %, 4: 60 %… hasta 70 %
+            // (antes 4 veces daban 53 %: tus w→e y u→i se corregían con poca confianza)
+            d[a * 27 + b] = (0.7f * (1f - Math.pow(0.62, v.toDouble()).toFloat())).coerceIn(0f, 0.7f)
         }
         descuento = d
     }

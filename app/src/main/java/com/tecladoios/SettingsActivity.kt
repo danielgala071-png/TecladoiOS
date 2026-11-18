@@ -473,6 +473,7 @@ class SettingsActivity : Activity() {
         for ((ch, u, e) in err) sb.append(ch).append(": ").append(u).append(" / ").append(e).append(" / ").append(if (u > 0) e * 100 / u else 0).append(" %\n")
         sb.append("\nDónde tocas cada tecla (desvío del centro, en anchos de tecla; + derecha / + abajo):\n")
         sb.append(prefs.getString("desvios", null) ?: "aún sin datos").append('\n')
+        lecturaToque(prefs.getString("desvios", null), prefs.getInt(Ajustes.ALTURA, 100))?.let { sb.append('\n').append(it) }
         sb.append("\nLetras que confundes (pusiste → iba):\n")
         val conf = synchronized(m.aprendido) { m.aprendido.confusiones.entries.sortedByDescending { it.value }.take(25).map { it.key to it.value } }
         if (conf.isEmpty()) sb.append("aún sin datos\n")
@@ -480,6 +481,33 @@ class SettingsActivity : Activity() {
         sb.append("\nVelocidad del teclado:\n").append(Medidor.resumen(this))
         val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, sb.toString())
         startActivity(Intent.createChooser(i, "Compartir mi uso"))
+    }
+
+    /**
+     * Lectura en palabras de los desvíos: cuánto más abajo/arriba tocas cada fila y, si el
+     * teclado te queda alto o bajo para tu mano, cuánta altura conviene probar.
+     */
+    private fun lecturaToque(desvios: String?, altura: Int): String? {
+        if (desvios.isNullOrEmpty()) return null
+        val v = HashMap<Char, Float>()
+        for (p in desvios.split(';')) {
+            val q = p.split(','); if (q.size != 3 || q[0].length != 1) continue
+            v[q[0][0]] = q[2].toFloatOrNull() ?: continue
+        }
+        fun media(fila: String): Float? = fila.mapNotNull { v[it] }.takeIf { it.size >= 3 }?.average()?.toFloat()
+        val arriba = media("qwertyuiop"); val centro = media("asdfghjklñ"); val abajo = media("zxcvbnm")
+        if (arriba == null || abajo == null) return null
+        fun f(x: Float?) = if (x == null) "?" else "%+.2f".format(java.util.Locale.US, x)
+        val sb = StringBuilder("Lectura del toque (vertical por fila): arriba ${f(arriba)} · centro ${f(centro)} · abajo ${f(abajo)}\n")
+        // Fila de arriba tocada abajo y la de abajo tocada arriba = el teclado es más alto que
+        // lo que recorre tu dedo. Al revés = te queda bajo.
+        val aprieta = arriba - abajo
+        when {
+            aprieta > 0.2f -> sb.append("→ Tocas hacia el centro: el teclado te queda alto. Prueba la altura en ${(altura - (aprieta * 25).toInt().coerceIn(3, 12))} %.\n")
+            aprieta < -0.2f -> sb.append("→ Tocas hacia afuera: el teclado te queda bajo. Prueba la altura en ${(altura + (-aprieta * 25).toInt().coerceIn(3, 12))} %.\n")
+            else -> sb.append("→ La altura te queda bien.\n")
+        }
+        return sb.toString()
     }
 
     // ---------- Autocompletar ----------
