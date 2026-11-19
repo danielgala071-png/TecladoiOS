@@ -50,6 +50,9 @@ jobs:
           fi
           rm -f frecuencias.txt
 
+      - name: Recortar el diccionario a las palabras más usadas (menos RAM)
+        run: python3 herramientas/recortar_diccionario.py app/src/main/assets 50000
+
       - name: Compilar los errores de fábrica (arranque instantáneo y casi sin memoria)
         run: |
           # El teclado usa errores.bin directo desde el APK; el .txt queda solo en el repositorio

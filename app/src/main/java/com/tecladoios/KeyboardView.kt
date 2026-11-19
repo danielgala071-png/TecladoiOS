@@ -461,7 +461,10 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             val ey = (y - cy) * (if (otraFila == 0) 0.6f else 1.15f)
             // Zona caliente: la letra que el cerebro espera atrae el toque (hasta 45 % de ventaja),
             // como hace el iPhone con su zona invisible
-            val dd = (ex * ex + ey * ey) * (1f - 0.45f * (probables[c.tecla.texto[0].lowercaseChar()] ?: 0f))
+            val ch = c.tecla.texto[0].lowercaseChar()
+            // Tu uso: en el borde entre dos letras gana apenas la que más escribes (la ñ, w, k,
+            // z y x salían cuando ibas a l, p, e, i o a)
+            val dd = (ex * ex + ey * ey) * (1f - 0.45f * (probables[ch] ?: 0f)) * (1f - (VENTAJA_USO[ch] ?: 0f))
             if (dd < md) { md = dd; mejor = c }
         }
         return mejor
@@ -472,6 +475,18 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
      * toque, sin verse (como la zona invisible del iPhone). Vacío fuera de una palabra.
      */
     var probables: Map<Char, Float> = emptyMap()
+
+    /**
+     * Cuánto se usa cada letra (de tus datos: 42 351 letras). Ventaja de 0 a 12 % en el
+     * borde entre dos teclas: e, a, o, s… le ganan a w, ñ, k, z, x cuando el toque es dudoso.
+     */
+    private val VENTAJA_USO: Map<Char, Float> = run {
+        val usos = mapOf('a' to 5468, 'e' to 5145, 'o' to 3720, 's' to 2994, 'r' to 2335, 'i' to 2215,
+            'n' to 2214, 't' to 1898, 'u' to 1845, 'm' to 1594, 'l' to 1463, 'd' to 1446, 'p' to 1251,
+            'c' to 1245, 'j' to 1150, 'y' to 751, 'q' to 667, 'g' to 613, 'b' to 589, 'h' to 467,
+            'v' to 462, 'w' to 287, 'f' to 234, 'ñ' to 164, 'k' to 155, 'z' to 141, 'x' to 133)
+        usos.mapValues { 0.12f * kotlin.math.sqrt(it.value / 5468f) }
+    }
 
     // ---------- Dedos ----------
 
@@ -1339,7 +1354,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
      * una almohadilla de color crece desde el centro hasta llenarla y, al soltar, sube con un
      * resorte suave mientras el color se apaga. Todo con rectángulos: nada pesado por cuadro.
      */
-    private fun dibujarPulso(c: Canvas, k: Colocada, p: Pulso, ahora: Long, fondo: Bitmap, letras: Bitmap) {
+    private fun dibujarPulso(c: Canvas, k: Colocada, p: Pulso, ahora: Long, fondo: Bitmap?, letras: Bitmap?) {
         val h = hundimiento(p, ahora)
         val l = luzDe(p, ahora)
         if (kotlin.math.abs(h) <= 0.01f && l <= 0.01f) return
@@ -1374,7 +1389,12 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             if (modoTrackpad) { }
             else if (blanca) flechaNegra(c, k)
             else if (t.tipo == K.INTRO && introDestacado) introBlanco(c, k)
-            else {
+            else if (letras == null) {
+                // Sin imagen: la letra se pinta directo, tenue mientras está apretada
+                val n = c.saveLayerAlpha(r.left - 1f, r.top - 1f, r.right + 1f, r.bottom + 1f, alfaLetra)
+                dibujarEtiqueta(c, k)
+                c.restoreToCount(n)
+            } else {
                 src.set(r.left.toInt().coerceAtLeast(0), r.top.toInt().coerceAtLeast(0),
                     (r.right + 1).toInt().coerceAtMost(letras.width), (r.bottom + 1).toInt().coerceAtMost(letras.height))
                 dst.set(src)
@@ -1385,6 +1405,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             }
             return
         }
+        if (fondo == null || letras == null) return
 
         c.save()
         // 2. Profundidad: la tecla se hunde derecho (baja 3 dp y se achica apenas, sin
@@ -1766,9 +1787,45 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         }
     }
 
+    /**
+     * Ahorro de RAM: el teclado se dibuja directo en la pantalla, sin guardar imágenes del
+     * teclado entero (antes había una copia en RAM y otra en la GPU, ~10 MB). Android guarda
+     * solo la lista de trazos y la vuelve a pintar; solo se redibuja al tocar una tecla.
+     */
+    private fun dibujarDirecto(c: Canvas) {
+        if (sucio || letrasSucias || shiftSucia) {
+            prepararPinturas()
+            sucio = false; letrasSucias = false; shiftSucia = false
+        }
+        val ahora = SystemClock.uptimeMillis()
+        val rebote = desplazamientoRebote(ahora)
+        if (rebote != 0f) c.translate(rebote, 0f)
+        for (k in colocadas) dibujarCuerpo(c, k)
+        // Al mover el cursor con el espacio las letras se ocultan (como iOS)
+        if (!modoTrackpad) {
+            for (k in colocadas) dibujarEtiqueta(c, k)
+            if (!panelMano.isEmpty) {
+                icono.color = tema.textoSuave
+                Iconos.expandir(c, botonExpandir.centerX(), botonExpandir.centerY(), botonExpandir.width(), icono)
+                Iconos.flecha(c, botonCambiar.centerX(), botonCambiar.centerY(), botonCambiar.width(), icono, if (unaMano == 1) 180f else 0f)
+            }
+        }
+        // Teclas apretadas: se marcan al tocar y vuelven al soltar
+        if (pulsos.isNotEmpty()) {
+            val it = pulsos.entries.iterator()
+            while (it.hasNext()) {
+                val e = it.next()
+                if (terminado(e.value, ahora)) { it.remove(); continue }
+                dibujarPulso(c, e.key, e.value, ahora, null, null)
+            }
+            if (pulsos.values.any { it.suelta != 0L }) postInvalidateOnAnimation()
+        }
+    }
+
     private fun dibujarTodo(c: Canvas) {
         if (width <= 0 || height <= 0) return
         pedirGlobos()
+        if (Ahorro.activo) { dibujarDirecto(c); return }
         val f0 = cacheFondo
         val l0 = cacheLetras
         if (f0 == null || f0.isRecycled || f0.width != width || f0.height < height ||

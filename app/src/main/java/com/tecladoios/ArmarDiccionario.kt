@@ -14,7 +14,7 @@ object ArmarDiccionario {
      * ~260 000 más 100 000 de inglés y portugués). Las listas del Perú, los nombres de apps y
      * las palabras de las frases entran siempre, aparte de este tope.
      */
-    const val MAX_PALABRAS = 80_000
+    const val MAX_PALABRAS = 50_000
 
     private fun palabrasDeFrases(lineas: (String) -> List<String>): List<String> {
         val res = LinkedHashSet<String>()

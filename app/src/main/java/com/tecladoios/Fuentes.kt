@@ -26,11 +26,9 @@ object Fuentes {
     fun tipo(peso: Int = 400): Typeface {
         val p = cercano(peso)
         return cache.getOrPut(p) {
-            val c = app
-            val propia = if (c != null) {
-                try { Typeface.createFromAsset(c.assets, "fuentes/inter-$p.otf") } catch (_: Exception) { null }
-            } else null
-            propia ?: Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), peso, false)
+            // Ahorro de RAM: la letra del sistema (ya está cargada en memoria por Android);
+            // sin archivos de fuente propios dentro de la app
+            Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), p, false)
         }
     }
 

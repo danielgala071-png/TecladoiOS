@@ -136,10 +136,21 @@ object Cerebro {
         }
     }
 
+    private var ultimoGuardado = 0L
+
     /** Guarda lo aprendido en segundo plano (si hubo cambios) */
     fun guardar() {
         val m = motor ?: return
         if (m.aprendido.cambios == 0) return
+        ultimoGuardado = android.os.SystemClock.uptimeMillis()
         hilo.execute { m.aprendido.guardar() }
+    }
+
+    /** Ahorro de batería: al cerrar el teclado solo se guarda cada 10 minutos (o con muchos cambios) */
+    fun guardarSiToca() {
+        val m = motor ?: return
+        if (m.aprendido.cambios == 0) return
+        if (m.aprendido.cambios < 200 && android.os.SystemClock.uptimeMillis() - ultimoGuardado < 10 * 60_000L) return
+        guardar()
     }
 }

@@ -55,6 +55,30 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private var teclado: KeyboardView? = null
     private var capa: Capa? = null
     private var panelEmoji: PanelEmoji? = null
+    private var cuerpoV: ViewGroup? = null
+    private var cierres = 0
+
+    /** Crea el panel de emojis solo cuando se abre (ahorra RAM mientras escribes) */
+    private fun asegurarEmojis(): PanelEmoji? {
+        panelEmoji?.let { return it }
+        val cu = cuerpoV ?: return null
+        return try {
+            val pe = PanelEmoji(this).apply { oyente = this@TecladoService; visibility = View.INVISIBLE; tema = this@TecladoService.tema }
+            cu.addView(pe, 1, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            panelEmoji = pe
+            teclado?.let { kb -> pe.preparar(kb.height) }
+            pe
+        } catch (e: Throwable) { Registro.anotar("crear emojis", e); null }
+    }
+
+    /** Quita el panel de emojis (teclado escondido): su memoria queda libre */
+    private fun quitarEmojis() {
+        val pe = panelEmoji ?: return
+        if (panel == Panel.EMOJI) return
+        pe.soltarMemoria()
+        (pe.parent as? ViewGroup)?.removeView(pe)
+        panelEmoji = null
+    }
     private var panelEdicion: PanelEdicion? = null
     private var panelCopiado: PanelPortapapeles? = null
     private var ajusteTamano: AjusteTamano? = null
@@ -162,6 +186,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private fun soltarMemoria(todo: Boolean) {
         try {
             if (todo || panel != Panel.EMOJI) panelEmoji?.soltarMemoria()
+            if (todo) quitarEmojis()
             capa?.soltarMemoria()
             teclado?.soltarMemoria(todo)
         } catch (e: Throwable) { Registro.anotar("soltar memoria", e) }
@@ -206,14 +231,13 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             leerDesvios(prefs.getString("desvios", null))
         }
         val br = Barra(c).apply { oyente = this@TecladoService; herramientasActivas = cfg.barraHerramientas }
-        // INVISIBLE (no GONE): ya está medido y armado, abrirlo no obliga a rehacer el diseño
-        val pe = PanelEmoji(c).apply { oyente = this@TecladoService; visibility = View.INVISIBLE }
+        // Ahorro de RAM: el panel de emojis se crea recién al abrirlo y se suelta al esconder
         val ed = PanelEdicion(c).apply { oyente = this@TecladoService; visibility = View.GONE; alResponder = { respuesta.tocar(it) } }
         val pc = PanelPortapapeles(c).apply { oyente = this@TecladoService; visibility = View.GONE; alResponder = { respuesta.tocar(it) } }
         val aj = AjusteTamano(c).apply { oyente = this@TecladoService; visibility = View.GONE }
         val cuerpo = Cuerpo(c).apply {
             addView(kb, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            for (v in listOf(pe, ed, pc)) addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            for (v in listOf(ed, pc)) addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
         val columna = LinearLayout(c).apply {
             orientation = LinearLayout.VERTICAL
@@ -232,7 +256,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             }
         }
         marco = m; barra = br; teclado = kb; capa = cp
-        panelEmoji = pe; panelEdicion = ed; panelCopiado = pc; ajusteTamano = aj
+        cuerpoV = cuerpo
+        panelEmoji = null; panelEdicion = ed; panelCopiado = pc; ajusteTamano = aj
         m.margenAbajo = (cfg.margenAbajo * resources.displayMetrics.density).toInt()
         m.margenLado = ladoPara(cfg.ancho)
         aplicarTema(acentoApp)
@@ -242,8 +267,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     override fun onWindowShown() {
         super.onWindowShown()
         aplicarVidrio()
-        // Deja listos los emojis en segundo plano para que el panel abra sin tirón
-        teclado?.let { kb -> kb.post { panelEmoji?.preparar(kb.height) } }
+        // Los emojis ya no se preparan al abrir el teclado: se crean al tocar el botón de emojis
     }
 
     // ---------- Vidrio: desenfoque real de lo que hay detrás ----------
@@ -332,8 +356,10 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         if (ajusteTamano?.visibility == View.VISIBLE) cerrarTamano()
         if (palabra.isNotEmpty()) { currentInputConnection?.finishComposingText(); reiniciarPalabra() }
         cerrarBusqueda()
-        teclado?.let { prefs.edit().putString("desvios", it.desviosTexto()).apply() }
-        Cerebro.guardar()
+        // Ahorro: dónde tocas se guarda cada 15 cierres del teclado (no en cada uno)
+        cierres++
+        if (cierres % 15 == 0) teclado?.let { prefs.edit().putString("desvios", it.desviosTexto()).apply() }
+        Cerebro.guardarSiToca()
     }
 
     private fun leerCampo(info: EditorInfo) {
@@ -968,7 +994,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             m.aprendido.siguiente(contexto, limpio.lowercase())
             contexto.add(limpio)
         }
-        if (m.aprendido.cambios > 25) Cerebro.guardar()
+        if (m.aprendido.cambios > 200) Cerebro.guardar()
     }
 
     private fun borrarTexto() {
@@ -1598,7 +1624,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         // Primero se prepara el contenido y recién después se anima: así el primer cuadro de
         // la animación no carga nada (antes se armaba todo en medio y daba un tirón)
         when (p) {
-            Panel.EMOJI -> { soltarComposicion(); panelEmoji?.refrescar() }
+            Panel.EMOJI -> { soltarComposicion(); asegurarEmojis()?.refrescar() }
             Panel.PORTAPAPELES -> { panelCopiado?.activo = cfg.portapapeles; panelCopiado?.elementos = portapapeles.elementos() }
             Panel.EDICION -> { soltarComposicion(); panelEdicion?.seleccionando = false }
             Panel.TECLADO -> {}
