@@ -56,7 +56,9 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         set(v) {
             // Transición abc ↔ 123: se guarda la imagen de la distribución que se va para que
             // sus letras salgan rodando mientras entran las nuevas, fila por fila
-            if (field.nombre != v.nombre && cacheFondo != null && cacheLetras != null && isShown) {
+            // Ahorro: sin animación no se guarda la imagen vieja; se redibuja en la misma (sin
+            // crear imágenes nuevas de todo el teclado en cada cambio abc ↔ 123)
+            if (!Ahorro.activo && field.nombre != v.nombre && cacheFondo != null && cacheLetras != null && isShown) {
                 guardarLibre(anteriorFondo); guardarLibre(anteriorLetras)
                 anteriorFondo = cacheFondo; anteriorLetras = cacheLetras
                 cacheFondo = null; cacheLetras = null
@@ -861,6 +863,17 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         dedos.clear(); presionadas.clear(); pulsos.clear(); modoTrackpad = false
         capa.ocultarGlobo(); capa.ocultarOpciones()
         invalidate()
+    }
+
+    /**
+     * Suelta las imágenes que no hacen falta. [todo] también suelta las de las teclas (se
+     * vuelven a dibujar la próxima vez que se abre). No se liberan a mano: solo se sueltan.
+     */
+    fun soltarMemoria(todo: Boolean) {
+        letrasViejas = null; bufferMayus = null; haloCache = null
+        anteriorFondo = null; anteriorLetras = null
+        libres.clear()
+        if (todo) { cacheFondo = null; cacheLetras = null; sucio = true }
     }
 
     override fun onDetachedFromWindow() {

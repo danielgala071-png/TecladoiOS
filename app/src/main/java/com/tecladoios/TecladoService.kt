@@ -146,6 +146,28 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         try { window?.window?.setWindowAnimations(R.style.AnimacionTeclado) } catch (e: Throwable) { Registro.anotar("animación ventana", e) }
     }
 
+    // ---------- Ahorro de RAM ----------
+
+    /** Teclado escondido: suelta imágenes de emojis, globos y teclas (se rehacen al abrir) */
+    override fun onWindowHidden() {
+        super.onWindowHidden()
+        soltarMemoria(true)
+    }
+
+    /** Android pide memoria: se suelta lo que no se está usando */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) soltarMemoria(!isInputViewShown)
+    }
+
+    private fun soltarMemoria(todo: Boolean) {
+        try {
+            if (todo || panel != Panel.EMOJI) panelEmoji?.soltarMemoria()
+            capa?.soltarMemoria()
+            teclado?.soltarMemoria(todo)
+        } catch (e: Throwable) { Registro.anotar("soltar memoria", e) }
+    }
+
     override fun onDestroy() {
         Codigos.alLlegar = null
         if (android.os.Build.VERSION.SDK_INT >= 31) oyenteDesenfoque?.let {

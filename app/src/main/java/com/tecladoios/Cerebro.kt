@@ -40,7 +40,9 @@ object Cerebro {
                 if (Ajustes.prefs(app).getBoolean(Ajustes.CONTACTOS, false)) cargarContactos(app)
                 limpiezaSemanal(app, m)
                 // El índice para deslizar se arma después, sin apuro
-                hilo.execute { try { deslizar?.preparar() } catch (e: Throwable) { Registro.anotar("preparar deslizar", e) } }
+                // Solo si "Escribir deslizando" está activado (si no, no gasta memoria ni batería)
+                if (Ajustes.prefs(app).getBoolean(Ajustes.DESLIZAR, true))
+                    hilo.execute { try { deslizar?.preparar() } catch (e: Throwable) { Registro.anotar("preparar deslizar", e) } }
             } catch (e: Throwable) {
                 Registro.anotar("armar cerebro", e)
             } finally {

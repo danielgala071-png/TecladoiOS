@@ -114,6 +114,12 @@ class Capa(context: Context) : View(context) {
 
     private val globoDirecto = Paint(Paint.ANTI_ALIAS_FLAG)
 
+    /** Suelta las imágenes de los globos (se vuelven a hacer al tocar) */
+    fun soltarMemoria() {
+        porPreparar.clear(); removeCallbacks(preparar)
+        globos.clear()
+    }
+
     /** Ya no se preparan imágenes de globos (se dibujan directo): nada que hacer al abrir */
     fun precalentarGlobos(lista: List<Pair<RectF, String>>) {
         porPreparar.clear(); removeCallbacks(preparar)

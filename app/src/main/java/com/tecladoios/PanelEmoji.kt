@@ -258,7 +258,15 @@ class PanelEmoji(context: Context) : View(context) {
         FILAS = filasPara(alto, width)
         val cel = (alto - altoAbajo() - arribaGrilla() - dp(4f)) / FILAS.toFloat()
         if (cel <= 0f) return
-        precalentar(tamEmoji(cel).toInt(), 0)
+        // Ya no se dibujan los emojis al abrir el teclado (se gastaba RAM y batería aunque
+        // nunca abrieras los emojis): se preparan recién cuando abres el panel
+    }
+
+    /** Suelta las imágenes de los emojis (teclado escondido o el sistema pide memoria) */
+    fun soltarMemoria() {
+        vueltaPrecalentar++
+        tamPrecalentado = -1
+        imagenes.evictAll()
     }
     /** Recientes: el que usaste entra primero y empuja a los demás */
     private val EMPUJE_DURA = 320f
@@ -412,7 +420,8 @@ class PanelEmoji(context: Context) : View(context) {
     // categoría no tiene que dibujar decenas de emojis de golpe (eso era el tironcito)
     private val imagenes = object : android.util.LruCache<String, android.graphics.Bitmap>(
         // Tope medio de memoria (antes hasta 72 MB): ahorra RAM y el celular se calienta menos
-        (Runtime.getRuntime().maxMemory() / 1024 / 12).toInt().coerceIn(8 * 1024, 24 * 1024)) {
+        // Ahorro de RAM: tope fijo de 6 MB (antes hasta 24 MB) y se vacía al cerrar el teclado
+        6 * 1024) {
         override fun sizeOf(key: String, value: android.graphics.Bitmap) = value.byteCount / 1024
     }
     private val pintaImagen = Paint(Paint.FILTER_BITMAP_FLAG)
@@ -464,7 +473,8 @@ class PanelEmoji(context: Context) : View(context) {
         hiloEmojis.execute {
             val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; textSize = tam.toFloat() }
             val lado = (tam * 1.18f).toInt()
-            for (k in orden) for (e in cats[k].emojis) {
+            // Ahorro: solo la categoría que estás viendo y sus dos vecinas (no las ~9 categorías)
+            for (k in orden.take(3)) for (e in cats[k].emojis) {
                 if (vuelta != vueltaPrecalentar || tamPrecalentado != tam) return@execute
                 if (imagenes.get("$tam:$e") != null) continue
                 try {
