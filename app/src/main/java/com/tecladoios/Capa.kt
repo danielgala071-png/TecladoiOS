@@ -262,7 +262,8 @@ class Capa(context: Context) : View(context) {
             c.scale(escX, escY, tecla.centerX(), tecla.bottom)
             globoDirecto.color = tema.tecla
             globoDirecto.alpha = (alfa * 255).toInt().coerceIn(0, 255)
-            globoDirecto.setShadowLayer(4f * d, 0f, 1.5f * d, if (tema.claro) 0x38000000 else 0x66000000)
+            // Sin sombra: la sombra difuminada crea texturas en la GPU (RAM de gráficos)
+            globoDirecto.clearShadowLayer()
             c.drawPath(forma, globoDirecto)
             c.restore()
             // La letra (fuera de la escala del globo, para que no se deforme)

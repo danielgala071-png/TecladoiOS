@@ -78,10 +78,10 @@ class Config(p: SharedPreferences) {
     val puntoDobleEspacio = p.getBoolean(Ajustes.PUNTO_DOBLE_ESPACIO, true)
     val sugerencias = p.getBoolean(Ajustes.SUGERENCIAS, true)
     val prediccion = p.getBoolean(Ajustes.PREDICCION, true)
-    val zonaCaliente = p.getBoolean(Ajustes.ZONA_CALIENTE, true)
+    val zonaCaliente = false   // quitado
     val aprender = p.getBoolean(Ajustes.APRENDER, true)
-    val contactos = p.getBoolean(Ajustes.CONTACTOS, false)
-    val separarPegadas = p.getBoolean(Ajustes.SEPARAR_PEGADAS, true)
+    val contactos = false   // quitado
+    val separarPegadas = false   // quitado
     val espacioAuto = p.getBoolean(Ajustes.ESPACIO_AUTO, true)
 
     // Escribir deslizando quitado (ahorro de RAM y batería)
@@ -90,8 +90,8 @@ class Config(p: SharedPreferences) {
     val borrarDeslizando = false   // quitado (consumo mínimo)
     val cursorEspacio = p.getBoolean(Ajustes.CURSOR_ESPACIO, true)
 
-    val filaNumeros = p.getBoolean(Ajustes.FILA_NUMEROS, false)
-    val pistas = p.getBoolean(Ajustes.PISTAS, false)
+    val filaNumeros = false   // quitado
+    val pistas = false   // quitado
     val vistaPrevia = p.getBoolean(Ajustes.VISTA_PREVIA, true)
     val unaMano = 0   // teclado a una mano quitado
     val altura = p.getInt(Ajustes.ALTURA, 100).coerceIn(75, 135)
@@ -101,9 +101,9 @@ class Config(p: SharedPreferences) {
     val alTocar = p.getBoolean(Ajustes.AL_TOCAR, true)
     val signosInicio = p.getBoolean(Ajustes.SIGNOS_INICIO, true)
     val bloqueoMayus = p.getBoolean(Ajustes.BLOQUEO_MAYUS, true)
-    val codigos = p.getBoolean(Ajustes.CODIGOS, false)
-    val dividido = p.getBoolean(Ajustes.DIVIDIDO, true)
-    val temaSistema = p.getBoolean(Ajustes.TEMA_SISTEMA, false)
+    val codigos = false   // quitado
+    val dividido = false   // quitado
+    val temaSistema = false   // siempre negro AMOLED
     val cierre = p.getBoolean(Ajustes.CIERRE, true)
     val contrasenas = false   // gestor de contraseñas en la barra quitado
     // "Mis datos" quitado
@@ -122,7 +122,7 @@ class Config(p: SharedPreferences) {
 
     val fuerza = p.getInt(Ajustes.FUERZA, 5).coerceIn(1, 5)
 
-    val portapapeles = p.getBoolean(Ajustes.PORTAPAPELES, true)
+    val portapapeles = true   // solo lo último copiado en la barra (sin historial)
     val capturas = p.getBoolean(Ajustes.CAPTURAS, false)
 
     val atajos: Map<String, String> = emptyMap()   // "Mis atajos" quitado

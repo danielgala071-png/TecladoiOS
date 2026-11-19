@@ -421,7 +421,7 @@ class PanelEmoji(context: Context) : View(context) {
     private val imagenes = object : android.util.LruCache<String, android.graphics.Bitmap>(
         // Tope medio de memoria (antes hasta 72 MB): ahorra RAM y el celular se calienta menos
         // Ahorro de RAM: tope fijo de 6 MB (antes hasta 24 MB) y se vacía al cerrar el teclado
-        6 * 1024) {
+        4 * 1024) {
         override fun sizeOf(key: String, value: android.graphics.Bitmap) = value.byteCount / 1024
     }
     private val pintaImagen = Paint(Paint.FILTER_BITMAP_FLAG)

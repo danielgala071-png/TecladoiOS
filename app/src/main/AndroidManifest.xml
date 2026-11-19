@@ -5,7 +5,6 @@
     <!-- Cargar el cerebro al prender el celular (arranque instantáneo del teclado) -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Solo si lo activas en Ajustes: los nombres de tus contactos (nunca salen del celular) -->
-    <uses-permission android:name="android.permission.READ_CONTACTS" />
     <!-- Solo si lo activas en Ajustes: ver tus capturas de pantalla recientes para enviarlas
          desde la barra (solo las de los últimos minutos) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
@@ -58,15 +57,6 @@
             </intent-filter>
         </receiver>
 
-        <service
-            android:name=".CodigosService"
-            android:label="Códigos de TecladoiOS"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
-        </service>
 
         <service
             android:name=".TecladoService"

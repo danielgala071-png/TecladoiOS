@@ -138,7 +138,6 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         (getSystemService(CLIPBOARD_SERVICE) as? ClipboardManager)?.addPrimaryClipChangedListener(alCopiar)
         // Un código de SMS que llega con el teclado abierto aparece al instante en la barra
         Codigos.alLlegar = { principal.post { if (palabra.isEmpty() && cfg.codigos) actualizarBarra() } }
-        Estadisticas.cargar(prefs)
         // Ahorro de batería: ya no se fuerza la pantalla a 90/120 Hz (Android sube la
         // frecuencia solo al tocar y la baja al quedar quieto) ni se despierta el cerebro en
         // cada desbloqueo; se prepara recién cuando abres el teclado.
@@ -328,7 +327,6 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         revision = null
         barra?.revision = null
         ocultarLlaves()
-        Estadisticas.guardar(prefs)
         teclado?.cancelarTodo()
         principal.removeCallbacks(reabrirTrasBorrar)
         if (ajusteTamano?.visibility == View.VISIBLE) cerrarTamano()
@@ -743,7 +741,6 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     private fun teclaReal(texto: String, x: Float, y: Float, esLetra: Boolean) {
         if (buscandoEmoji) { consultaEmoji.append(texto.lowercase()); buscarEmoji(); return }
-        if (aprender) Estadisticas.letra(if (esLetra) texto.firstOrNull() else null)
         val ic = ic() ?: return
         var t = texto
         if (texto.length == 1 && texto[0].isLetter() && shift > 0) t = texto.uppercase()
@@ -946,7 +943,6 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         }
         ic.endBatchEdit()
         if (atajo == null) aprenderPalabra(resultado, ctx)
-        Estadisticas.palabra(resultado != escrito && atajo == null)
         ultimaCorreccion = if (resultado != escrito || anteriorNueva != null) {
             val puesta = if (anteriorNueva != null) "$anteriorNueva $resultado" else resultado
             val original = if (anteriorVieja != null) "$anteriorVieja $escrito" else escrito
@@ -976,7 +972,6 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     }
 
     private fun borrarTexto() {
-        if (aprender) Estadisticas.borrado()
         if (buscandoEmoji) {
             if (consultaEmoji.isNotEmpty()) consultaEmoji.setLength(consultaEmoji.length - 1)
             buscarEmoji(); return
@@ -1837,7 +1832,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             val sensible = clip.description?.extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE) == true
             val t = clip.getItemAt(0).coerceToText(this)?.toString() ?: return@OnPrimaryClipChangedListener
             if (t.isBlank()) return@OnPrimaryClipChangedListener
-            if (!sensible && !esClave()) portapapeles.agregar(t)
+            // Sin historial: solo se muestra lo último copiado en la barra
             chipTexto = if (sensible) "••••••" else t
             chipSensible = if (sensible) t else null
             chipMs = SystemClock.uptimeMillis()

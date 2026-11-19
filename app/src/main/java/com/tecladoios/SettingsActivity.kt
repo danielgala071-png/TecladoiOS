@@ -271,23 +271,12 @@ class SettingsActivity : Activity() {
         interruptor(corr, "Espacio después de signos", Ajustes.ESPACIO_AUTO, true, "Después de , . ? ! al usar una sugerencia")
         interruptor(corr, "Barra de sugerencias", Ajustes.SUGERENCIAS, true)
         interruptor(corr, "Predecir la siguiente palabra", Ajustes.PREDICCION, true)
-        interruptor(corr, "Ayudar a acertar la siguiente letra", Ajustes.ZONA_CALIENTE, true)
-        interruptor(corr, "Separar palabras pegadas", Ajustes.SEPARAR_PEGADAS, true, "«Yanpodemos» → «Ya podemos»")
         interruptor(corr, "Aprender mis palabras", Ajustes.APRENDER, true)
-        interruptor(corr, "Sugerir nombres de contactos", Ajustes.CONTACTOS, false, "Los nombres nunca salen del celular") { si ->
-            if (si && checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), 11); true
-            } else true
-        }
 
         val des = seccion("Gestos")
         interruptor(des, "Mover el cursor con el espacio", Ajustes.CURSOR_ESPACIO, true, "Desliza el espacio; mantenlo para usarlo como trackpad")
 
         val tec = seccion("Teclado")
-        interruptor(tec, "Fila de números", Ajustes.FILA_NUMEROS, false)
-        interruptor(tec, "Seguir el modo del celular", Ajustes.TEMA_SISTEMA, false, "Apagado: siempre negro AMOLED. Encendido: claro de día si tu celular está en modo claro")
-        interruptor(tec, "Teclado dividido en horizontal", Ajustes.DIVIDIDO, true, "Con el celular echado, las letras se separan a los lados para escribir con los pulgares")
-        interruptor(tec, "Símbolos en las teclas", Ajustes.PISTAS, false, "Mantén una letra para escribir su símbolo o tilde")
         interruptor(tec, "Vista previa al tocar", Ajustes.VISTA_PREVIA, true)
         interruptor(tec, "Barra de herramientas", Ajustes.BARRA_HERRAMIENTAS, true, "Emojis, portapapeles, edición, tamaño y ajustes")
         deslizador(tec, "Altura", Ajustes.ALTURA, 75, 135, 100) { "$it %" }
@@ -301,8 +290,7 @@ class SettingsActivity : Activity() {
         val son = seccion("Vibración")
         interruptor(son, "Vibración al tocar", Ajustes.VIBRACION, true, "Sutil, distinta en letras, palabras, espacio, borrar, intro y demás teclas")
 
-        val por = seccion("Portapapeles y capturas", "Lo copiado se guarda una hora (lo fijado, siempre). Las contraseñas copiadas no se guardan.")
-        interruptor(por, "Historial del portapapeles", Ajustes.PORTAPAPELES, true)
+        val por = seccion("Capturas", "Lo último que copias aparece en la barra un minuto para pegarlo.")
         interruptor(por, "Ofrecer captura reciente", Ajustes.CAPTURAS, false, "Tu última captura aparece en la barra para enviarla") { si ->
             if (si && !Capturas.tienePermiso(this)) { requestPermissions(arrayOf(Capturas.permiso()), 12) }
             true
@@ -319,17 +307,8 @@ class SettingsActivity : Activity() {
                 .setNegativeButton("Cancelar", null).show()
         }
 
-        val auto = seccion("Autocompletar", "Como en iPhone: la barra te ofrece códigos, contraseñas y tus datos con un toque.")
-        interruptor(auto, "Códigos de SMS en la barra", Ajustes.CODIGOS, false,
-            "Cuando llega un código por mensaje, aparece en la barra unos minutos. Necesita acceso a las notificaciones; nada sale del celular") { si ->
-            if (si && !accesoNotificaciones()) {
-                try { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) } catch (e: Exception) { }
-            }
-            true
-        }
 
-        val est = seccion("Mis estadísticas", "Solo números: nunca se guarda lo que escribes.")
-        boton(est, "Ver mis estadísticas") { verEstadisticas() }
+        val est = seccion("Diagnóstico")
         boton(est, "Compartir mi uso con Claude", sub = "Solo números: dónde tocas cada tecla, qué letras borras y confundes, y tus ajustes") { compartirUso() }
 
         val otros = seccion("Otros")

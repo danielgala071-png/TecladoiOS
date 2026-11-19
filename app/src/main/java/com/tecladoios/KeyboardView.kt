@@ -1775,7 +1775,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
             l0 == null || l0.isRecycled || l0.width != width || l0.height < height) {
             // Con margen de alto: al ajustar el tamaño no se crea una imagen nueva en cada
             // movimiento del dedo (eso llenaba la memoria y podía dejar el teclado en negro)
-            val alto = (height * 1.3f).toInt()
+            // Solo mientras ajustas el tamaño se deja margen; normal, la imagen mide justo el teclado
+            val alto = if (alturaForzada != null) (height * 1.3f).toInt() else height
             cacheFondo = imagen(alto, Bitmap.Config.ARGB_8888); cacheLetras = imagen(alto, Bitmap.Config.ALPHA_8)
             sucio = true
         }

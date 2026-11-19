@@ -181,7 +181,7 @@ class Barra(context: Context) : View(context) {
     private val zonas = ArrayList<Pair<RectF, () -> Any?>>()
     private val zonasLargas = ArrayList<Pair<RectF, () -> Any?>>()
 
-    private val HERRAMIENTAS = intArrayOf(H_EMOJI, H_PORTAPAPELES, H_EDITAR, H_TAMANO, H_AJUSTES)
+    private val HERRAMIENTAS = intArrayOf(H_EMOJI, H_EDITAR, H_TAMANO, H_AJUSTES)
 
     // Un error al dibujar se anota y no cierra el teclado
     override fun onDraw(c: Canvas) {
