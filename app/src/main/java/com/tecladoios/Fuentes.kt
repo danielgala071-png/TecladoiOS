@@ -13,7 +13,8 @@ import android.widget.TextView
 object Fuentes {
     private var app: Context? = null
     private val cache = HashMap<Int, Typeface>()
-    private val PESOS = intArrayOf(400, 500, 600, 700)
+    // Solo 2 grosores (menos memoria): 500 usa el normal y 700 el semi-negrita
+    private val PESOS = intArrayOf(400, 600)
 
     fun iniciar(c: Context) {
         if (app == null) app = c.applicationContext

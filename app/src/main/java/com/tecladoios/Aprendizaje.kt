@@ -155,7 +155,9 @@ class Aprendizaje(private val archivo: File) {
      */
     @Volatile var app: String = ""
 
-    private fun claveApp(a: String): String? = app.takeIf { it.isNotEmpty() }?.let { "@" + it.substringAfterLast('.') + " " + a }
+    // Aprender por app (formal en el correo, informal en WhatsApp) quitado: un solo estilo
+    @Suppress("UNUSED_PARAMETER")
+    private fun claveApp(a: String): String? = null
 
     @Synchronized
     fun siguiente(contexto: List<String>, palabra: String) {

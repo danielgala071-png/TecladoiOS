@@ -87,13 +87,13 @@ class Config(p: SharedPreferences) {
     // Escribir deslizando quitado (ahorro de RAM y batería)
     val deslizar = false
     val estela = p.getBoolean(Ajustes.ESTELA, true)
-    val borrarDeslizando = p.getBoolean(Ajustes.BORRAR_DESLIZANDO, true)
+    val borrarDeslizando = false   // quitado (consumo mínimo)
     val cursorEspacio = p.getBoolean(Ajustes.CURSOR_ESPACIO, true)
 
     val filaNumeros = p.getBoolean(Ajustes.FILA_NUMEROS, false)
     val pistas = p.getBoolean(Ajustes.PISTAS, false)
     val vistaPrevia = p.getBoolean(Ajustes.VISTA_PREVIA, true)
-    val unaMano = p.getInt(Ajustes.UNA_MANO, 0)
+    val unaMano = 0   // teclado a una mano quitado
     val altura = p.getInt(Ajustes.ALTURA, 100).coerceIn(75, 135)
     val margenAbajo = p.getInt(Ajustes.MARGEN_ABAJO, 0).coerceIn(0, 120)
     val ancho = p.getInt(Ajustes.ANCHO, 100).coerceIn(70, 100)
@@ -105,11 +105,12 @@ class Config(p: SharedPreferences) {
     val dividido = p.getBoolean(Ajustes.DIVIDIDO, true)
     val temaSistema = p.getBoolean(Ajustes.TEMA_SISTEMA, false)
     val cierre = p.getBoolean(Ajustes.CIERRE, true)
-    val contrasenas = p.getBoolean(Ajustes.CONTRASENAS, true)
-    val datoNombre = p.getString(Ajustes.DATO_NOMBRE, "")?.trim().orEmpty()
-    val datoCorreo = p.getString(Ajustes.DATO_CORREO, "")?.trim().orEmpty()
-    val datoTelefono = p.getString(Ajustes.DATO_TELEFONO, "")?.trim().orEmpty()
-    val datoDireccion = p.getString(Ajustes.DATO_DIRECCION, "")?.trim().orEmpty()
+    val contrasenas = false   // gestor de contraseñas en la barra quitado
+    // "Mis datos" quitado
+    val datoNombre = ""
+    val datoCorreo = ""
+    val datoTelefono = ""
+    val datoDireccion = ""
     val puntuacion = p.getBoolean(Ajustes.PUNTUACION, true)
     val retardoLarga = p.getInt(Ajustes.RETARDO_LARGA, 320).coerceIn(150, 800)
     val bordesApp = p.getBoolean(Ajustes.BORDES_APP, true)
@@ -124,5 +125,5 @@ class Config(p: SharedPreferences) {
     val portapapeles = p.getBoolean(Ajustes.PORTAPAPELES, true)
     val capturas = p.getBoolean(Ajustes.CAPTURAS, false)
 
-    val atajos: Map<String, String> = Atajos.leer(p)
+    val atajos: Map<String, String> = emptyMap()   // "Mis atajos" quitado
 }

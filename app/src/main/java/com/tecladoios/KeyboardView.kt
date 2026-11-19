@@ -124,7 +124,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         val filas = distribucion.filas.size
         val escala = (alturaForzada ?: config?.altura ?: 100) / 100f
         // Filas un poco menos altas (antes 62 dp): teclas más anchas que altas, cómodas a dos dedos
-        var base = if (filas >= 5) 52f else 56f
+        // Más compacto: filas de 52 dp (antes 56)
+        var base = if (filas >= 5) 48f else 52f
         // En horizontal: altura cómoda según la pantalla (ni aplastadas ni tapando todo)
         if (resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
             val altoPantalla = resources.configuration.screenHeightDp.toFloat()
@@ -132,7 +133,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         }
         // (+3 dp que antes eran margen debajo del teclado: ahora son de la fila de abajo)
         // +6 dp para la fila de abajo más alta (123, emoji, espacio, intro): las letras no cambian
-        val masAbajo = if (distribucion.filas.lastOrNull()?.teclas?.any { it.tipo == K.ESPACIO } == true) dp(6f) else 0f
+        val masAbajo = if (distribucion.filas.lastOrNull()?.teclas?.any { it.tipo == K.ESPACIO } == true) dp(3f) else 0f
         val h = (dp(base) * filas * escala + dp(8f) + dp(6f) + dp(3f) + masAbajo).toInt()
         setMeasuredDimension(w, h)
     }
@@ -165,7 +166,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         // Los 7 dp que eran margen (abajo y debajo del teclado) van enteros a la fila de abajo;
         // las demás filas quedan del mismo alto que antes
         // La fila de abajo (123, emoji, espacio, intro) es más alta: se lleva 12 dp extra
-        val extraAbajo = if (filas.size >= 2 && filas.last().teclas.any { it.tipo == K.ESPACIO }) dp(18f) else 0f
+        val extraAbajo = if (filas.size >= 2 && filas.last().teclas.any { it.tipo == K.ESPACIO }) dp(10f) else 0f
         altoFila = (h - arriba - abajo - extraAbajo) / filas.size
         // Teclado dividido (celular echado): las letras se separan a los lados para los pulgares,
         // como en el iPad. La fila de abajo (espacio) queda entera.
@@ -942,7 +943,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
     }
 
     private companion object {
-        val MENU_TECLADO = listOf("Ajustes", "Teclados", "◀ Mano", "Completo", "Mano ▶")
+        val MENU_TECLADO = listOf("Ajustes", "Teclados")
         val LETRAS_TEL = mapOf("1" to "", "2" to "ABC", "3" to "DEF", "4" to "GHI", "5" to "JKL",
             "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ", "0" to "+")
         // Mayúscula activa más sutil, como el iPhone oscuro: grafito claro con flecha blanca

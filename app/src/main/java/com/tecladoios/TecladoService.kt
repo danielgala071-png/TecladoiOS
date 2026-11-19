@@ -325,7 +325,6 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
-        Medidor.guardar(this)
         revision = null
         barra?.revision = null
         ocultarLlaves()
@@ -700,7 +699,6 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         try {
             val inicio = System.nanoTime()
             teclaReal(texto, x, y, esLetra)
-            Medidor.tecla(System.nanoTime() - inicio)
             if ((texto == "?" || texto == "!") && sugerir && cfg.signosInicio) signoDeApertura(texto[0])
             // Como en iOS: el apóstrofo en 123 te devuelve a las letras
             if ((texto == "'" || texto == "’") && (modo == Distribuciones.SIMBOLOS || modo == Distribuciones.SIMBOLOS2)) volverLetras()
@@ -1140,8 +1138,6 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 if (turno.get() == t && palabra.toString() == escrito) {
                     propuesta = p; propuestaDe = escrito
                     actualizarBarra()
-                    Medidor.sugerencia(System.nanoTime() - pedidoNs)
-                    Medidor.guardarSiToca(this)
                 }
             }
             if (zona && turno.get() == t) {

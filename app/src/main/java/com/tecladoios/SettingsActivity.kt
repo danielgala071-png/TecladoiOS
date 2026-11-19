@@ -281,7 +281,6 @@ class SettingsActivity : Activity() {
         }
 
         val des = seccion("Gestos")
-        interruptor(des, "Borrar palabras deslizando", Ajustes.BORRAR_DESLIZANDO, true, "Desde borrar hacia la izquierda")
         interruptor(des, "Mover el cursor con el espacio", Ajustes.CURSOR_ESPACIO, true, "Desliza el espacio; mantenlo para usarlo como trackpad")
 
         val tec = seccion("Teclado")
@@ -290,8 +289,7 @@ class SettingsActivity : Activity() {
         interruptor(tec, "Teclado dividido en horizontal", Ajustes.DIVIDIDO, true, "Con el celular echado, las letras se separan a los lados para escribir con los pulgares")
         interruptor(tec, "Símbolos en las teclas", Ajustes.PISTAS, false, "Mantén una letra para escribir su símbolo o tilde")
         interruptor(tec, "Vista previa al tocar", Ajustes.VISTA_PREVIA, true)
-        interruptor(tec, "Barra de herramientas", Ajustes.BARRA_HERRAMIENTAS, true, "Emojis, portapapeles, edición, una mano, tamaño y ajustes")
-        opciones(tec, "Modo una mano", Ajustes.UNA_MANO, listOf("Apagado", "Izquierda", "Derecha"), 0)
+        interruptor(tec, "Barra de herramientas", Ajustes.BARRA_HERRAMIENTAS, true, "Emojis, portapapeles, edición, tamaño y ajustes")
         deslizador(tec, "Altura", Ajustes.ALTURA, 75, 135, 100) { "$it %" }
         deslizador(tec, "Espacio debajo del teclado", Ajustes.MARGEN_ABAJO, 0, 120, 0) { "$it" }
         deslizador(tec, "Ancho", Ajustes.ANCHO, 70, 100, 100) { "$it %" }
@@ -329,17 +327,6 @@ class SettingsActivity : Activity() {
             }
             true
         }
-        interruptor(auto, "Contraseñas en la barra", Ajustes.CONTRASENAS, true,
-            "En campos de usuario y contraseña aparecen las guardadas en tu gestor de contraseñas (Google u otro)")
-        boton(auto, "Elegir gestor de contraseñas", sub = "Ajustes de Android → Autocompletar") {
-            try { startActivity(Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE, Uri.parse("package:com.google.android.gms"))) }
-            catch (e: Exception) { try { startActivity(Intent(Settings.ACTION_SETTINGS)) } catch (_: Exception) { } }
-        }
-        boton(auto, "Mis datos", sub = "Nombre, correo, teléfono y dirección para llenar formularios") { misDatos() }
-
-        val ata = seccion("Sustitución de texto", "Escribe el atajo y toca espacio: se pone la frase completa. Si borras justo después, vuelve lo que escribiste.")
-        boton(ata, "Mis atajos", sub = "Toca uno para cambiarlo o borrarlo") { verAtajos() }
-        boton(ata, "Agregar un atajo") { editarAtajo(null) }
 
         val est = seccion("Mis estadísticas", "Solo números: nunca se guarda lo que escribes.")
         boton(est, "Ver mis estadísticas") { verEstadisticas() }
@@ -360,7 +347,6 @@ class SettingsActivity : Activity() {
                 startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
             } catch (_: Exception) { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
         }
-        boton(otros, "Medidor de velocidad", sub = "Milisegundos por tecla y por sugerencia") { verMedidor() }
         boton(otros, "Registro de errores") { verRegistro() }
         val version = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "" }
         lista.addView(TextView(this).apply {
