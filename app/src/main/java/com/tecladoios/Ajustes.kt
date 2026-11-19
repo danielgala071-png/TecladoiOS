@@ -84,7 +84,8 @@ class Config(p: SharedPreferences) {
     val separarPegadas = p.getBoolean(Ajustes.SEPARAR_PEGADAS, true)
     val espacioAuto = p.getBoolean(Ajustes.ESPACIO_AUTO, true)
 
-    val deslizar = p.getBoolean(Ajustes.DESLIZAR, true)
+    // Escribir deslizando quitado (ahorro de RAM y batería)
+    val deslizar = false
     val estela = p.getBoolean(Ajustes.ESTELA, true)
     val borrarDeslizando = p.getBoolean(Ajustes.BORRAR_DESLIZANDO, true)
     val cursorEspacio = p.getBoolean(Ajustes.CURSOR_ESPACIO, true)

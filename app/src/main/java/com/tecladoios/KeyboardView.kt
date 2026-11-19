@@ -1044,7 +1044,8 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         p.suelta != 0L && (if (Ahorro.activo) ahora - p.suelta >= GBOARD_APAGA else ahora - p.suelta >= maxOf(VOLVER, APAGAR))
 
     /** Efecto Gboard: la tecla se aclara al instante al tocarla y se apaga en 110 ms al soltar */
-    private val GBOARD_APAGA = 110f
+    // Sin animación: la tecla se apaga al instante al soltar
+    private val GBOARD_APAGA = 1f
 
     private fun ensuciar() { sucio = true; invalidate() }
 
@@ -1667,10 +1668,7 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
 
     /** En iOS el teclado solo sube con la ventana: sin cascada */
     fun animarEntrada() {
-        // Como el iPhone: al abrir, el espacio dice el idioma un momento y luego "espacio"
-        mostrarIdioma = true; letrasSucias = true; invalidate()
-        removeCallbacks(quitarIdioma)
-        postDelayed(quitarIdioma, 1300L)
+        // Un solo idioma: el espacio siempre dice "espacio" (sin cambio ni redibujo extra)
     }
     private var mostrarIdioma = false
     private val quitarIdioma = Runnable { mostrarIdioma = false; letrasSucias = true; invalidate() }

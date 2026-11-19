@@ -9,6 +9,13 @@ object ArmarDiccionario {
 
     const val ARCHIVO_LISTO = "diccionario_listo.bin"
 
+    /**
+     * Ahorro de RAM: solo las palabras más usadas del diccionario general (antes entraban
+     * ~260 000 más 100 000 de inglés y portugués). Las listas del Perú, los nombres de apps y
+     * las palabras de las frases entran siempre, aparte de este tope.
+     */
+    const val MAX_PALABRAS = 80_000
+
     private fun palabrasDeFrases(lineas: (String) -> List<String>): List<String> {
         val res = LinkedHashSet<String>()
         for (l in lineas("bigramas.txt")) {
@@ -33,8 +40,11 @@ object ArmarDiccionario {
         var conFijas = false
         var conMedio = false
         var conApps = false
+        var generales = 0
         for (w in lineas("diccionario.txt")) {
             if (w == "@fijas") { principal.addAll(fijas); conFijas = true; continue }
+            if (generales >= MAX_PALABRAS) break
+            generales++
             principal.add(w)
             // Nombres de apps: entre las palabras de uso medio (se corrigen bien sin ganarle
             // a las palabras comunes)
@@ -47,9 +57,8 @@ object ArmarDiccionario {
         // Toda palabra que el teclado puede predecir es válida (nunca se toma como error). Van
         // al final: si ya estaban, no cambian su frecuencia; si faltaban, solo dejan de corregirse
         principal.addAll(palabrasDeFrases(lineas))
-        val ingles = lineas("ingles.txt")
-        val portugues = lineas("portugues.txt")
-        return Diccionario.armar(principal, listOf(ingles to 1.4f, portugues to 1.9f))
+        // Solo español (Perú): sin inglés ni portugués
+        return Diccionario.armar(principal, emptyList())
     }
 
     /** Líneas útiles de un texto (sin vacías ni comentarios #) */

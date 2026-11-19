@@ -281,8 +281,6 @@ class SettingsActivity : Activity() {
         }
 
         val des = seccion("Gestos")
-        interruptor(des, "Escribir deslizando", Ajustes.DESLIZAR, true, "Pasa el dedo por las letras sin levantarlo")
-        interruptor(des, "Mostrar el trazo", Ajustes.ESTELA, true)
         interruptor(des, "Borrar palabras deslizando", Ajustes.BORRAR_DESLIZANDO, true, "Desde borrar hacia la izquierda")
         interruptor(des, "Mover el cursor con el espacio", Ajustes.CURSOR_ESPACIO, true, "Desliza el espacio; mantenlo para usarlo como trackpad")
 

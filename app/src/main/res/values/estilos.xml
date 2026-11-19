@@ -2,7 +2,8 @@
 <resources>
     <!-- Animación de la ventana del teclado al abrir y cerrar (como en iOS) -->
     <style name="AnimacionTeclado">
-        <item name="android:windowEnterAnimation">@anim/teclado_entra</item>
-        <item name="android:windowExitAnimation">@anim/teclado_sale</item>
+        <!-- Sin animación: el teclado aparece y se va al instante -->
+        <item name="android:windowEnterAnimation">@null</item>
+        <item name="android:windowExitAnimation">@null</item>
     </style>
 </resources>
