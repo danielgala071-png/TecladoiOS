@@ -346,6 +346,19 @@ class KeyboardView(context: Context, private val capa: Capa) : View(context) {
         }
     }
 
+    /**
+     * ¿El teclado te queda alto (-1), bajo (+1) o justo (0)? Se mira dónde tocas la primera y la
+     * última fila de letras: si los toques se juntan hacia el centro, sobra altura.
+     */
+    fun sugerenciaAltura(): Int {
+        if (altoFila <= 1f || desvio.size < 15) return 0
+        val m = mediasFilas()
+        val filas = m.indices.filter { filaLetras.getOrElse(it) { false } }
+        if (filas.size < 3) return 0
+        val apertura = (m[filas.first()] - m[filas.last()]) / altoFila
+        return when { apertura > 0.12f -> -1; apertura < -0.12f -> 1; else -> 0 }
+    }
+
     /** Desvío vertical medio de cada fila con letras (0 en las demás) */
     private fun mediasFilas(): FloatArray {
         if (!mediasSucias && mediaFila.size == filaArriba.size) return mediaFila

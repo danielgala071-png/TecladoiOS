@@ -217,7 +217,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     }
 
     override fun onSharedPreferenceChanged(p: SharedPreferences?, clave: String?) {
-        if (clave == "emojis_recientes" || clave == "desvios" || clave == "ultima_captura") return
+        if (clave == "emojis_recientes" || clave == "desvios" || clave == "ultima_captura" || clave == "altura_auto_dia") return
         cfg = Config(prefs)
         respuesta.config = cfg
         teclado?.config = cfg
@@ -370,6 +370,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         // Ahorro: dónde tocas se guarda cada 15 cierres del teclado (no en cada uno)
         cierres++
         if (cierres % 15 == 0) teclado?.let { prefs.edit().putString("desvios", it.desviosTexto()).apply() }
+        if (cierres % 25 == 0) ajustarAlturaSola()
         Cerebro.guardarSiToca()
     }
 
@@ -1292,7 +1293,10 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                     while (i > 0 && (al.antes[i - 1].isLetter() || al.antes[i - 1] == '\'')) i--
                     var j = 0
                     while (j < al.despues.length && (al.despues[j].isLetter() || al.despues[j] == '\'')) j++
-                    if (al.antes.substring(i) + al.despues.substring(0, j) == rv.original) { izq = al.antes.length - i; der = j }
+                    // Se cambia la palabra ENTERA donde está el cursor (lo de antes y lo de después),
+                    // aunque hayas movido un poco el cursor dentro de ella
+                    val actual = al.antes.substring(i) + al.despues.substring(0, j)
+                    if (actual == rv.original || (actual.isNotEmpty() && Texto.normal(actual) == Texto.normal(rv.original))) { izq = al.antes.length - i; der = j }
                 }
                 if (izq + der > 0) {
                     ic.beginBatchEdit()
@@ -1497,6 +1501,23 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         }
         borrarFin = -1; borrarAntes = ""
         refrescar()
+    }
+
+    /**
+     * Tamaño a tu manera de escribir: si tocas la fila de arriba más abajo de su centro y la de
+     * abajo más arriba (los dedos se juntan hacia el medio), el teclado te queda alto y se baja
+     * 1 %; si es al revés, se sube 1 %. Como mucho una vez al día y entre 90 % y 115 %.
+     */
+    private fun ajustarAlturaSola() {
+        val kb = teclado ?: return
+        val paso = kb.sugerenciaAltura()
+        if (paso == 0) return
+        val hoy = System.currentTimeMillis() / 86_400_000L
+        if (prefs.getLong("altura_auto_dia", -1L) == hoy) return
+        val actual = prefs.getInt(Ajustes.ALTURA, 100)
+        val nueva = (actual + paso).coerceIn(90, 115)
+        if (nueva == actual) return
+        prefs.edit().putInt(Ajustes.ALTURA, nueva).putLong("altura_auto_dia", hoy).apply()
     }
 
     /** Estando en emojis, tocar el cuadro de texto devuelve las letras */
