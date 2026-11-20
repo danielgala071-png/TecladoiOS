@@ -105,6 +105,17 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
 
     private var modo = Distribuciones.LETRAS
     private var campo = Distribuciones.CAMPO_TEXTO
+    /** Buscador o barra de direcciones: corrige búsquedas, nunca direcciones web */
+    private var campoWeb = false
+
+    /** ¿Lo que se está escribiendo es una dirección (google.com, www…, http:/…)? */
+    private fun pareceDireccion(separador: String, escrito: String): Boolean {
+        if (separador.isNotEmpty() && separador[0] in ".:/@") return true
+        val trozo = antes(60).substringAfterLast(' ') + escrito
+        if (trozo.any { it in "./:@" }) return true
+        val e = escrito.lowercase()
+        return e.startsWith("www") || e.startsWith("http")
+    }
     private var sugerir = true
     private var corregir = true
     private var aprender = true
@@ -366,7 +377,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         val t = info.inputType
         val clase = t and InputType.TYPE_MASK_CLASS
         val variacion = t and InputType.TYPE_MASK_VARIATION
-        modo = Distribuciones.LETRAS; campo = Distribuciones.CAMPO_TEXTO
+        modo = Distribuciones.LETRAS; campo = Distribuciones.CAMPO_TEXTO; campoWeb = false
         sugerir = cfg.sugerencias; corregir = cfg.autocorreccion
         aprender = cfg.aprender && (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) == 0
         mayusCampo = false
@@ -380,11 +391,15 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 when (variacion) {
                     InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
                     InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD -> { sugerir = false; corregir = false; aprender = false }
-                    // Correo y web: el teclado normal (sin teclas @ / .com); solo no corrige
-                    InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
-                    InputType.TYPE_TEXT_VARIATION_URI -> { corregir = false }
+                    // Correo: teclado normal, sin corregir. Buscador/web (Google, Chrome): sí
+                    // corrige lo que buscas, pero no las direcciones (google.com, www…, /)
+                    InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS -> { corregir = false }
+                    InputType.TYPE_TEXT_VARIATION_URI -> { campoWeb = true }
                 }
-                if ((t and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0) corregir = false
+                // Los buscadores (como Google) suelen pedir "sin sugerencias": ahí sí se corrige
+                val busqueda = campoWeb || (info.imeOptions and EditorInfo.IME_MASK_ACTION) == EditorInfo.IME_ACTION_SEARCH
+                if (busqueda) campoWeb = true
+                if ((t and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0 && !busqueda) corregir = false
                 val caps = t and (InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_CAP_WORDS or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS)
                 mayusCampo = caps != 0 || variacion == InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE ||
                     variacion == InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE || variacion == InputType.TYPE_TEXT_VARIATION_EMAIL_SUBJECT ||
@@ -901,6 +916,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
     private fun terminarPalabra(separador: String) {
         val ic = ic() ?: return
         val escrito = palabra.toString()
+        // En el buscador, las direcciones web nunca se corrigen
+        @Suppress("NAME_SHADOWING") val corregir = corregir && !(campoWeb && pareceDireccion(separador, escrito))
         var resultado = escrito
         val ctx = contextoPalabra()
         // Una palabra que ya estaba escrita y solo reabriste al borrar se respeta tal cual
