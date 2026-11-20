@@ -51,6 +51,7 @@ class PanelEmoji(context: Context) : View(context) {
     companion object {
         private const val RECIENTES = "emojis_recientes"
         private var base: List<Categoria>? = null
+        fun soltarCache() { base = null }
         private val NOMBRES = mapOf(
             "CARAS" to "EMOTICONOS Y PERSONAS", "CORAZONES" to "EMOTICONOS Y PERSONAS",
             "MANOS Y CUERPO" to "EMOTICONOS Y PERSONAS", "PERSONAS" to "EMOTICONOS Y PERSONAS",

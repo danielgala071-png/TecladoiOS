@@ -198,7 +198,7 @@ class KeyboardView(context: Context) : View(context) {
 
     private fun bajar(id: Int, x: Float, y: Float) {
         // Como en el iPhone, al apoyar otro dedo la letra del dedo anterior se escribe ya
-        for (otro in dedos.values.toList()) {
+        for (otro in dedos.values) {
             if (otro.modo == Modo.NORMAL && otro.c?.tecla?.tipo == K.TEXTO) {
                 escribir(otro)
                 otro.modo = Modo.HECHO
@@ -388,8 +388,10 @@ class KeyboardView(context: Context) : View(context) {
     private val trazo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; style = Paint.Style.STROKE; strokeWidth = dp(1.5f); strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND }
     private val lleno = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; style = Paint.Style.FILL }
     private val globoP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = LETRA }
-    private val sombra = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x80000000.toInt() }
+    // Borde fino en vez de sombra difuminada (la sombra se recalcula en cada cuadro y gasta)
+    private val bordeGlobo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1f); color = 0xFF48484A.toInt() }
     private val camino = Path()
+    private val ovalo = RectF()
 
     override fun onDraw(cv: Canvas) {
         relleno.color = FONDO
@@ -463,11 +465,8 @@ class KeyboardView(context: Context) : View(context) {
         camino.lineTo(k.left, inicioTallo)
         camino.cubicTo(k.left, medio, izq, medio, izq, finAncho)
         camino.close()
-        cv.save(); cv.translate(0f, dp(1f))
-        sombra.setShadowLayer(dp(4f), 0f, dp(1f), 0x99000000.toInt())
-        cv.drawPath(camino, sombra)
-        cv.restore()
         cv.drawPath(camino, globoP)
+        cv.drawPath(camino, bordeGlobo)
         val t = c.tecla
         val s = if (shift > 0 && t.esLetra) t.texto.uppercase() else t.texto
         letras.textSize = if (s.length > 1) dp(30f) else dp(40f)
@@ -478,10 +477,9 @@ class KeyboardView(context: Context) : View(context) {
 
     private fun dibujarOpciones(cv: Canvas) {
         val r = opcionesRect
-        sombra.setShadowLayer(dp(5f), 0f, dp(1f), 0x99000000.toInt())
-        cv.drawRoundRect(r, dp(9f), dp(9f), sombra)
         relleno.color = LETRA
         cv.drawRoundRect(r, dp(9f), dp(9f), relleno)
+        cv.drawRoundRect(r, dp(9f), dp(9f), bordeGlobo)
         val ancho = r.width() / opciones.size
         letras.textSize = dp(26f)
         for ((k, s) in opciones.withIndex()) {
@@ -531,8 +529,8 @@ class KeyboardView(context: Context) : View(context) {
         cv.drawCircle(cx, cy, r, trazo)
         cv.drawCircle(cx - r * 0.35f, cy - r * 0.25f, dp(1.4f), lleno)
         cv.drawCircle(cx + r * 0.35f, cy - r * 0.25f, dp(1.4f), lleno)
-        val o = RectF(cx - r * 0.5f, cy - r * 0.15f, cx + r * 0.5f, cy + r * 0.55f)
-        cv.drawArc(o, 20f, 140f, false, trazo)
+        ovalo.set(cx - r * 0.5f, cy - r * 0.15f, cx + r * 0.5f, cy + r * 0.55f)
+        cv.drawArc(ovalo, 20f, 140f, false, trazo)
     }
 
     private fun dibujarIntro(cv: Canvas, cx: Float, cy: Float) {

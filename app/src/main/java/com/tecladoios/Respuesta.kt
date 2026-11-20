@@ -80,6 +80,9 @@ class Respuesta(c: Context) {
         }
     }
 
+    /** Libera los sonidos (si están apagados no ocupan memoria) */
+    fun soltarSonidos() { manejador.post { sonidos?.release(); sonidos = null } }
+
     fun soltar() {
         manejador.post { sonidos?.release(); sonidos = null }
         hilo.quitSafely()

@@ -32,6 +32,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     private var info: EditorInfo? = null
     private var ultimoEspacioMs = 0L
     private var selIni = 0; private var selFin = 0
+    private val letrasBI: BreakIterator = BreakIterator.getCharacterInstance()
 
     override fun onCreate() {
         super.onCreate()
@@ -48,13 +49,23 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     }
 
     override fun onSharedPreferenceChanged(p: SharedPreferences?, clave: String?) {
+        if (clave == null || clave.startsWith("emojis")) return   // los emojis usados no cambian ajustes
         cfg = Config(prefs)
         respuesta.config = cfg
+        if (!cfg.sonido) respuesta.soltarSonidos()
         teclado?.config = cfg
         teclado?.invalidate()
     }
 
     override fun onEvaluateFullscreenMode() = false
+
+    /** Android pide memoria: se suelta todo lo que se puede volver a armar */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        respuesta.soltarSonidos()
+        PanelEmoji.soltarCache()
+        if (!isInputViewShown) cerrarEmojis()
+    }
 
     override fun onCreateInputView(): View {
         try { window?.window?.setWindowAnimations(R.style.AnimacionTeclado) } catch (_: Throwable) { }
@@ -191,7 +202,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
             (antes.length - i).coerceAtLeast(1)
         } else {
             // Un carácter completo (un emoji con todas sus partes cuenta como uno)
-            val bi = BreakIterator.getCharacterInstance()
+            val bi = letrasBI
             bi.setText(antes.toString())
             val ini = bi.preceding(antes.length)
             if (ini == BreakIterator.DONE) 1 else antes.length - ini
