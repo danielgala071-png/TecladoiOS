@@ -17,12 +17,6 @@ android {
         versionName = "7.$compilacion"
     }
 
-    // Los errores de fábrica van sin comprimir dentro del APK: el teclado los usa directo
-    // desde ahí (mapeados), sin copiarlos a su memoria ni procesarlos al arrancar
-    androidResources {
-        noCompress += "bin"
-    }
-
     // Firma fija: antes cada compilación de GitHub usaba una llave nueva y Android no dejaba
     // instalar la versión nueva encima (había que desinstalar y se perdía lo aprendido).
     // Con esta llave siempre igual, cada APK nuevo se instala como actualización.
@@ -65,17 +59,7 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
-
-    testOptions {
-        // Las pruebas corren en la computadora de GitHub (sin Android): lo de Android devuelve vacío
-        unitTests.isReturnDefaultValues = true
-        // Armar el diccionario completo al compilar necesita más memoria
-        unitTests.all { it.maxHeapSize = "2g" }
-    }
 }
 
 dependencies {
-    // Estilo de las sugerencias de contraseñas (la llave en la barra, como en iPhone)
-    implementation("androidx.autofill:autofill:1.1.0")
-    testImplementation("junit:junit:4.13.2")
 }

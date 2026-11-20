@@ -2,13 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.VIBRATE" />
-    <!-- Cargar el cerebro al prender el celular (arranque instantáneo del teclado) -->
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- Solo si lo activas en Ajustes: los nombres de tus contactos (nunca salen del celular) -->
-    <!-- Solo si lo activas en Ajustes: ver tus capturas de pantalla recientes para enviarlas
-         desde la barra (solo las de los últimos minutos) -->
-    <!-- Para pedirte (en Ajustes) que el ahorro de batería no cierre el teclado -->
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:name=".App"
@@ -17,14 +10,13 @@
         android:label="TecladoiOS"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
         <activity
             android:name=".SettingsActivity"
             android:exported="true"
             android:label="TecladoiOS" />
 
-        <!-- Ícono de la app en el menú: se puede ocultar desde los ajustes -->
         <activity-alias
             android:name=".Lanzador"
             android:targetActivity=".SettingsActivity"
@@ -36,25 +28,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
-
-        <!-- Entrega la captura que tocas en la barra a la app donde escribes -->
-        <provider
-            android:name=".CapturaProvider"
-            android:authorities="com.tecladoios.capturas"
-            android:exported="false"
-            android:grantUriPermissions="true" />
-
-        <!-- Solo si lo activas en Ajustes: lee los avisos de mensajes para encontrar códigos de
-             verificación y ofrecerlos en la barra. Nada sale del celular ni se guarda. -->
-        <receiver
-            android:name=".AlEncender"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-            </intent-filter>
-        </receiver>
-
 
         <service
             android:name=".TecladoService"

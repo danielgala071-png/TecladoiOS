@@ -35,30 +35,6 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Ampliar el diccionario con el español que se usa de verdad
-        run: |
-          # Lista completa de palabras del español conversado con su frecuencia (subtítulos).
-          # Entran las que faltan (también las formales y del trabajo), en el lugar que les toca,
-          # sin los errores de tipeo. Sin internet el diccionario queda como está.
-          BASE=https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/es
-          if curl -fsSL -o frecuencias.txt "$BASE/es_full.txt"; then
-            python3 herramientas/ampliar_diccionario.py app/src/main/assets/diccionario.txt frecuencias.txt 260000 app/src/main/assets/errores.txt 12 app/src/main/assets/juntas.txt
-          elif curl -fsSL -o frecuencias.txt "$BASE/es_50k.txt"; then
-            python3 herramientas/ampliar_diccionario.py app/src/main/assets/diccionario.txt frecuencias.txt 50000 app/src/main/assets/errores.txt 1 app/src/main/assets/juntas.txt
-          else
-            echo "::warning::No se pudo descargar la lista de palabras: se usa el diccionario sin ampliar"
-          fi
-          rm -f frecuencias.txt
-
-      - name: Recortar el diccionario a las palabras más usadas (menos RAM)
-        run: python3 herramientas/recortar_diccionario.py app/src/main/assets 50000
-
-      - name: Compilar los errores de fábrica (arranque instantáneo y casi sin memoria)
-        run: |
-          # El teclado usa errores.bin directo desde el APK; el .txt queda solo en el repositorio
-          python3 herramientas/compilar_errores.py app/src/main/assets/errores.txt app/src/main/assets/errores.bin
-          rm -f app/src/main/assets/errores.txt
-
       - name: Poner la llave de firma (desde los secretos de GitHub)
         env:
           FIRMA_BASE64: ${{ secrets.FIRMA_BASE64 }}
@@ -73,31 +49,10 @@ jobs:
             exit 1
           fi
 
-      - name: Precompilar el diccionario (arranque instantáneo al instalar o actualizar)
-        # Si falla, el teclado lo arma él mismo la primera vez (como antes)
-        continue-on-error: true
-        env:
-          GENERAR_DICCIONARIO: "1"
-        run: |
-          gradle testDebugUnitTest --tests com.tecladoios.GenerarDiccionarioTest --stacktrace
-          ls -la app/src/main/assets/diccionario_listo.bin || true
-
-      - name: Probar el cerebro y la autocorrección
-        # Si una prueba falla, el APK se compila igual y el resultado queda para revisarlo
-        continue-on-error: true
-        run: gradle testDebugUnitTest --stacktrace
-
       - name: Compilar el APK
         env:
           FIRMA_CLAVE: ${{ secrets.FIRMA_CLAVE }}
         run: gradle assembleDebug --stacktrace
-
-      - name: Subir el resultado de las pruebas
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: resultado-pruebas
-          path: app/build/reports/tests/
 
       - name: Subir el APK
         uses: actions/upload-artifact@v4
