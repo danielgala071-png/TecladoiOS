@@ -8,7 +8,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 
-/** Vibración firme y sonido al tocar cada tecla */
+/** Vibración como la del iPhone (un tic seco igual en todas las teclas) y sonido al tocar */
 class Respuesta(c: Context) {
 
     enum class Tipo { LETRA, ESPACIO, BORRAR, MAYUS, INTRO, FUNCION, SUAVE, PALABRA }
@@ -54,8 +54,7 @@ class Respuesta(c: Context) {
         val vib = cfg.vibracion; val son = cfg.sonido && !Ahorro.activo; val vol = cfg.volumen
         if (!vib && !son) return
         manejador.post {
-            // Vibración con textura: letras un «tic» seco; mayúscula, 123, emoji, espacio,
-            // intro y borrar cada una con su propio golpe
+            // Vibración como el iPhone: el mismo tic seco en todas las teclas
             if (vib) vibrar(t)
             if (son) {
                 cargarSonidos()
@@ -66,67 +65,64 @@ class Respuesta(c: Context) {
         }
     }
 
-    // Efectos ya hechos por el fabricante (golpe seco y corto, como el motor del iPhone)
+    /*
+     * Vibración como la del iPhone (iOS 16 en adelante): un «tic» seco, cortísimo y nítido,
+     * IGUAL en todas las teclas (letras, espacio, borrar, mayúscula, 123, intro). No zumba ni
+     * se alarga: es un golpecito del motor lineal, como un clic físico muy pequeño.
+     *
+     * Orden de preferencia (lo más parecido al Taptic Engine que tenga el celular):
+     * 1. Primitiva CLICK del motor (Xiaomi 15T Pro la tiene): el golpe más limpio.
+     * 2. Efecto CLICK ya hecho por el fabricante.
+     * 3. Un pulso de 8 ms (celulares sin motor lineal).
+     * Las palabras de la barra y el cursor con el espacio usan un «tic» aún más leve.
+     */
+    private val conTick = try {
+        vibrador?.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_TICK) == true
+    } catch (_: Throwable) { false }
     private val conEfectos = try {
-        vibrador?.areAllEffectsSupported(VibrationEffect.EFFECT_CLICK, VibrationEffect.EFFECT_HEAVY_CLICK) ==
+        vibrador?.areAllEffectsSupported(VibrationEffect.EFFECT_CLICK, VibrationEffect.EFFECT_TICK) ==
             Vibrator.VIBRATION_EFFECT_SUPPORT_YES
     } catch (_: Throwable) { false }
     private val conAmplitud = try { vibrador?.hasAmplitudeControl() == true } catch (_: Throwable) { false }
 
-    // Los efectos se arman una sola vez (nada de objetos nuevos en cada tecla)
-    private var efLetra: VibrationEffect? = null
-    private var efFuerte: VibrationEffect? = null
-    private var efSuave: VibrationEffect? = null
-
-    private var efEspacio: VibrationEffect? = null
-    private var efBorrar: VibrationEffect? = null
-    private var efIntro: VibrationEffect? = null
-
-    /**
-     * Vibración sutil pero con diferencia clara entre teclas (cortita: no se encima al
-     * escribir rápido y casi no gasta):
-     * - Letras: un golpe largo y firme de 80 ms a fuerza máxima.
-     * - Palabra de la barra: un «tic» un poco más firme (18 ms).
-     * - Espacio: doble tic («tic-tic»).
-     * - Borrar: tic con un eco muy suave.
-     * - Intro: doble tic más marcado.
-     * - Mayúscula, 123, emoji: crece de suave a firme.
-     */
-    private var efPalabra: VibrationEffect? = null
+    // Se arman una sola vez (nada de objetos nuevos en cada tecla)
+    private var efTecla: VibrationEffect? = null
+    private var efLeve: VibrationEffect? = null
 
     private fun armar() {
-        if (efLetra != null) return
+        if (efTecla != null) return
         try {
-            val max = if (conAmplitud) 255 else VibrationEffect.DEFAULT_AMPLITUDE
-            fun f(x: Int) = if (conAmplitud) x else max
-            // Letras con la misma fuerza que espacio, intro y borrar (un solo golpe firme)
-            efLetra = VibrationEffect.createOneShot(80L, f(255))   // más larga y firme: 80 ms a fuerza máxima
-            efPalabra = VibrationEffect.createOneShot(18L, f(190))
-            efFuerte = onda(longArrayOf(0, 10, 18), intArrayOf(0, 90, 200))
-            efSuave = VibrationEffect.createOneShot(10L, f(120))
-            efEspacio = onda(longArrayOf(0, 12, 30, 12), intArrayOf(0, 180, 0, 160))
-            efBorrar = onda(longArrayOf(0, 14, 22, 10), intArrayOf(0, 190, 0, 90))
-            efIntro = onda(longArrayOf(0, 20, 32, 24), intArrayOf(0, 220, 0, 220))
-        } catch (_: Throwable) { }
+            when {
+                conPrimitivas -> {
+                    efTecla = VibrationEffect.startComposition()
+                        .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.7f).compose()
+                    efLeve = if (conTick) VibrationEffect.startComposition()
+                        .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 0.6f).compose()
+                    else VibrationEffect.startComposition()
+                        .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.4f).compose()
+                }
+                conEfectos -> {
+                    efTecla = VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
+                    efLeve = VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
+                }
+                else -> {
+                    efTecla = VibrationEffect.createOneShot(8L, if (conAmplitud) 170 else VibrationEffect.DEFAULT_AMPLITUDE)
+                    efLeve = VibrationEffect.createOneShot(5L, if (conAmplitud) 110 else VibrationEffect.DEFAULT_AMPLITUDE)
+                }
+            }
+        } catch (_: Throwable) {
+            efTecla = VibrationEffect.createOneShot(8L, VibrationEffect.DEFAULT_AMPLITUDE)
+            efLeve = efTecla
+        }
     }
-
-    /** Patrón con fuerzas; si el motor no regula la fuerza, solo los tiempos (prendido/apagado) */
-    private fun onda(tiempos: LongArray, fuerzas: IntArray): VibrationEffect =
-        if (conAmplitud) VibrationEffect.createWaveform(tiempos, fuerzas, -1)
-        else VibrationEffect.createWaveform(tiempos, -1)
 
     private fun vibrar(t: Tipo) {
         val v = vibrador ?: return
         try {
             armar()
             val ef = when (t) {
-                Tipo.ESPACIO -> efEspacio
-                Tipo.BORRAR -> efBorrar
-                Tipo.INTRO -> efIntro
-                Tipo.MAYUS, Tipo.FUNCION -> efFuerte
-                Tipo.SUAVE -> efSuave
-                Tipo.PALABRA -> efPalabra
-                else -> efLetra
+                Tipo.SUAVE, Tipo.PALABRA -> efLeve
+                else -> efTecla   // todas las teclas iguales, como el iPhone
             } ?: return
             v.vibrate(ef)
         } catch (_: Throwable) { }
