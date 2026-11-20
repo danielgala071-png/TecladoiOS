@@ -637,7 +637,8 @@ class Barra(context: Context) : View(context) {
         }
         val chip = chipTexto
         val anchoHerr = dp(42f)
-        val herrs = if (herramientasActivas) HERRAMIENTAS else intArrayOf(H_AJUSTES)
+        // Como iPhone: sin botones en la barra (Ajustes: mantén la tecla de emojis)
+        val herrs = if (herramientasActivas) HERRAMIENTAS else intArrayOf()
         val espacioHerr = herrs.size * anchoHerr
         if (chip != null) {
             texto.textSize = dp(14f)

@@ -34,6 +34,13 @@ class Geometria {
 /** Una sugerencia: la palabra y qué tan buena es (menos es mejor) */
 class Opcion(val texto: String, val puntaje: Float, val esCorreccion: Boolean, val completa: Boolean)
 
+/**
+ * Corrección como iPhone: solo cambia palabras que NO existen y con buena seguridad; las
+ * tildes sí ("cancion" → "canción"); nunca toca una palabra que existe ni las tuyas, y lo
+ * que deshaces no se vuelve a corregir. Lo dudoso queda en la barra para elegirlo.
+ */
+const val MODO_IPHONE = true
+
 /** Lo que el motor propone para la palabra que estás escribiendo */
 class Propuesta(
     val opciones: List<Opcion>,
@@ -326,7 +333,9 @@ class Motor(
         // Error de dedo que el cerebro "aprendió" por repetirlo (se escapó dos o tres veces sin
         // corregir): si está a un toque de una palabra común, no cuenta como palabra tuya y se
         // corrige. Las que fijaste (o deshiciste una corrección) y las que usas mucho se respetan.
-        if (valida && formasExactas.isEmpty() && contacto == null && propia != null && !propia.fija && propia.veces < DUDOSA) {
+        // Como iPhone: lo que tú ya escribiste y quedó como palabra tuya se respeta (no se
+        // vuelve a corregir por parecerse a otra)
+        if (!MODO_IPHONE && valida && formasExactas.isEmpty() && contacto == null && propia != null && !propia.fija && propia.veces < DUDOSA) {
             val rival = lista.filter { it.esCorreccion && !it.completa }.minByOrNull { it.puntaje }
             if (rival != null) {
                 val id = dic.id(rival.texto)
@@ -380,7 +389,8 @@ class Motor(
                 }
                 // Palabra larga muy mal tecleada (dos dedos rápido): si una opción le saca mucha
                 // ventaja a todas las demás, es esa (así decide Gboard: la más probable por lejos)
-                if (auto == null && clave.length >= 5 && penal < 9f && !aprendido.rechazada(escrito, mejor.texto)) {
+                // (como iPhone: no se adivinan palabras muy mal escritas; quedan en la barra)
+                if (!MODO_IPHONE && auto == null && clave.length >= 5 && penal < 9f && !aprendido.rechazada(escrito, mejor.texto)) {
                     val segunda = lista.firstOrNull { it !== mejor && !it.completa && !bloqueada(it) }
                     val ventaja = (segunda?.puntaje ?: (mejor.puntaje + 9f)) - mejor.puntaje
                     if (ventaja >= 1.4f && mejor.puntaje < umbral + 2.5f && costo <= 2.4f + 0.12f * (clave.length - 6)) porVentaja = mejor.texto
@@ -394,7 +404,8 @@ class Motor(
                 // Existe tal cual, pero la frase pide la otra forma con claridad ("cómo estas" →
                 // "cómo estás", "ya esta" → "ya está"): solo si el contexto apoya mucho a la otra
                 // y nada a la escrita
-                if (auto == null && sinTilde && contexto.isNotEmpty() && formasExactas.size > 1) {
+                // (como iPhone: una palabra que existe tal cual no se cambia por el contexto)
+                if (!MODO_IPHONE && auto == null && sinTilde && contexto.isNotEmpty() && formasExactas.size > 1) {
                     val e = escrito.lowercase()
                     val bonoEscrita = ctxBono[e] ?: 0f
                     val otra = formasExactas.map { dic.palabras[it] }.filter { it.lowercase() != e }

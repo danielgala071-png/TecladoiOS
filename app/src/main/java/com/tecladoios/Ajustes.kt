@@ -104,7 +104,7 @@ class Config(p: SharedPreferences) {
     val codigos = false   // quitado
     val dividido = false   // quitado
     val temaSistema = false   // siempre negro AMOLED
-    val cierre = p.getBoolean(Ajustes.CIERRE, true)
+    val cierre = false   // como iPhone: la barra no ofrece cerrar ( « ¿
     val contrasenas = false   // gestor de contraseñas en la barra quitado
     // "Mis datos" quitado
     val datoNombre = ""
@@ -114,7 +114,7 @@ class Config(p: SharedPreferences) {
     val puntuacion = p.getBoolean(Ajustes.PUNTUACION, true)
     val retardoLarga = p.getInt(Ajustes.RETARDO_LARGA, 320).coerceIn(150, 800)
     val bordesApp = p.getBoolean(Ajustes.BORDES_APP, true)
-    val barraHerramientas = p.getBoolean(Ajustes.BARRA_HERRAMIENTAS, true)
+    val barraHerramientas = false   // como iPhone: la barra solo muestra palabras
 
     val sonido = p.getBoolean(Ajustes.SONIDO, false)
     val volumen = p.getInt(Ajustes.VOLUMEN, 40).coerceIn(0, 100)

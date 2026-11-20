@@ -265,7 +265,6 @@ class SettingsActivity : Activity() {
         interruptor(corr, "Corrección automática", Ajustes.AUTOCORRECCION, true)
         interruptor(corr, "Mayúsculas automáticas", Ajustes.MAYUS_AUTO, true)
         interruptor(corr, "Bloqueo de mayúsculas", Ajustes.BLOQUEO_MAYUS, true, "Toca dos veces la mayúscula para dejarla fija")
-        interruptor(corr, "Cierre automático", Ajustes.CIERRE, true, "Si abriste ( « ¿ ¡ la barra te ofrece cerrarlo")
         interruptor(corr, "Puntuación inteligente", Ajustes.PUNTUACION, true, "Dos guiones seguidos se vuelven una raya (—)")
         interruptor(corr, "Punto con doble espacio", Ajustes.PUNTO_DOBLE_ESPACIO, true)
         interruptor(corr, "Espacio después de signos", Ajustes.ESPACIO_AUTO, true, "Después de , . ? ! al usar una sugerencia")
@@ -278,7 +277,6 @@ class SettingsActivity : Activity() {
 
         val tec = seccion("Teclado")
         interruptor(tec, "Vista previa al tocar", Ajustes.VISTA_PREVIA, true)
-        interruptor(tec, "Barra de herramientas", Ajustes.BARRA_HERRAMIENTAS, true, "Emojis, portapapeles, edición, tamaño y ajustes")
         deslizador(tec, "Altura", Ajustes.ALTURA, 75, 135, 100) { "$it %" }
         deslizador(tec, "Espacio debajo del teclado", Ajustes.MARGEN_ABAJO, 0, 120, 0) { "$it" }
         deslizador(tec, "Ancho", Ajustes.ANCHO, 70, 100, 100) { "$it %" }

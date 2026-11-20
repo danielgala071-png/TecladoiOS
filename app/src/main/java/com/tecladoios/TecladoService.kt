@@ -1246,9 +1246,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
             if (pred.isNotEmpty()) {
                 // Frase adelantada: si el cerebro está seguro de las dos siguientes palabras,
                 // la tercera casilla las ofrece juntas («mañana temprano»)
-                val frase = Cerebro.motor?.frase(contexto(t), inicioDeFrase(t))
-                val lista = if (frase != null && pred.size >= 2) pred.take(2) + frase else pred
-                b.mostrarSugerencias(lista, null, false); return
+                // Como iPhone: tres palabras sueltas (sin frases de dos palabras)
+                b.mostrarSugerencias(pred.take(3), null, false); return
             }
         }
         b.limpiar()
