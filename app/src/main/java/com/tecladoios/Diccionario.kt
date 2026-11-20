@@ -167,7 +167,7 @@ class Diccionario private constructor(
         var correccion: String? = null
         val mejor = orden.firstOrNull()
         if (!valida && mejor != null && t.length >= 2 && t.all { it.isLetter() }) {
-            val limite = when { t.length <= 3 -> 0.6f; t.length <= 5 -> 1.0f; else -> 1.65f }
+            val limite = when { t.length <= 4 -> 0.6f; t.length <= 5 -> 1.0f; else -> 1.65f }
             val segunda = orden.getOrNull(1)
             // Si dos opciones empatan (y no es solo la tilde), no adivina
             val dudosa = segunda != null && mejor.costo > 0.2f && segunda.puntaje - mejor.puntaje < 0.12f && segunda.costo <= mejor.costo
