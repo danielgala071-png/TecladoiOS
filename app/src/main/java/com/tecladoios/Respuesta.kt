@@ -67,20 +67,20 @@ class Respuesta(c: Context) {
 
     /*
      * Vibración como la del iPhone (iOS 16 en adelante): un «tic» seco, cortísimo y nítido,
-     * IGUAL en todas las teclas (letras, espacio, borrar, mayúscula, 123, intro). No zumba ni
+     * a fuerza máxima (pero igual de corto), IGUAL en todas las teclas (letras, espacio, borrar, mayúscula, 123, intro). No zumba ni
      * se alarga: es un golpecito del motor lineal, como un clic físico muy pequeño.
      *
      * Orden de preferencia (lo más parecido al Taptic Engine que tenga el celular):
      * 1. Primitiva CLICK del motor (Xiaomi 15T Pro la tiene): el golpe más limpio.
      * 2. Efecto CLICK ya hecho por el fabricante.
-     * 3. Un pulso de 8 ms (celulares sin motor lineal).
+     * 3. Un pulso de 10 ms a fuerza máxima (celulares sin motor lineal).
      * Las palabras de la barra y el cursor con el espacio usan un «tic» aún más leve.
      */
     private val conTick = try {
         vibrador?.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_TICK) == true
     } catch (_: Throwable) { false }
     private val conEfectos = try {
-        vibrador?.areAllEffectsSupported(VibrationEffect.EFFECT_CLICK, VibrationEffect.EFFECT_TICK) ==
+        vibrador?.areAllEffectsSupported(VibrationEffect.EFFECT_HEAVY_CLICK, VibrationEffect.EFFECT_CLICK) ==
             Vibrator.VIBRATION_EFFECT_SUPPORT_YES
     } catch (_: Throwable) { false }
     private val conAmplitud = try { vibrador?.hasAmplitudeControl() == true } catch (_: Throwable) { false }
@@ -95,19 +95,19 @@ class Respuesta(c: Context) {
             when {
                 conPrimitivas -> {
                     efTecla = VibrationEffect.startComposition()
-                        .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.7f).compose()
+                        .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1.0f).compose()
                     efLeve = if (conTick) VibrationEffect.startComposition()
-                        .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 0.6f).compose()
+                        .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 1.0f).compose()
                     else VibrationEffect.startComposition()
-                        .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.4f).compose()
+                        .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.6f).compose()
                 }
                 conEfectos -> {
-                    efTecla = VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
-                    efLeve = VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
+                    efTecla = VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK)
+                    efLeve = VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
                 }
                 else -> {
-                    efTecla = VibrationEffect.createOneShot(8L, if (conAmplitud) 170 else VibrationEffect.DEFAULT_AMPLITUDE)
-                    efLeve = VibrationEffect.createOneShot(5L, if (conAmplitud) 110 else VibrationEffect.DEFAULT_AMPLITUDE)
+                    efTecla = VibrationEffect.createOneShot(10L, if (conAmplitud) 255 else VibrationEffect.DEFAULT_AMPLITUDE)
+                    efLeve = VibrationEffect.createOneShot(6L, if (conAmplitud) 170 else VibrationEffect.DEFAULT_AMPLITUDE)
                 }
             }
         } catch (_: Throwable) {
