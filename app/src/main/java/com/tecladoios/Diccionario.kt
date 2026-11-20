@@ -124,7 +124,7 @@ class Diccionario private constructor(
     }
 
     // ---------- Propuesta ----------
-    private class Cand(val palabra: String, val costo: Float, val puesto: Int) {
+    private class Cand(val palabra: String, val costo: Float, val puesto: Int, val soloTilde: Boolean = false) {
         val puntaje = costo * 2.2f + ln(1f + puesto) * 0.25f
     }
 
@@ -138,14 +138,14 @@ class Diccionario private constructor(
         }
         val valida = existe(t)
         val cands = HashMap<String, Cand>()
-        fun agregar(w: String, costo: Float, puesto: Int) {
+        fun agregar(w: String, costo: Float, puesto: Int, soloTilde: Boolean = false) {
             if (w == t) return
-            val c = Cand(w, costo, puesto)
+            val c = Cand(w, costo, puesto, soloTilde)
             val prev = cands[w]
             if (prev == null || prev.puntaje > c.puntaje) cands[w] = c
         }
         // 1. Tildes (misma palabra sin tilde)
-        conClave(k) { agregar(palabras[it], if (valida) 0.6f else 0.1f, it) }
+        conClave(k) { agregar(palabras[it], if (valida) 0.6f else 0.1f, it, soloTilde = true) }
         propias[k]?.let { agregar(it, 0.1f, 500) }
         // 2. Un error (letra vecina, de más, de menos, cambiada de lugar)
         if (k.length in 2..24 && k.all { it in ALFABETO }) {
@@ -171,12 +171,16 @@ class Diccionario private constructor(
             val segunda = orden.getOrNull(1)
             // Si dos opciones empatan (y no es solo la tilde), no adivina
             val dudosa = segunda != null && mejor.costo > 0.2f && segunda.puntaje - mejor.puntaje < 0.12f && segunda.costo <= mejor.costo
-            if (mejor.costo <= limite && (mejor.puesto < 45000 || mejor.costo <= 0.2f) && !dudosa) correccion = conForma(mejor.palabra, escrito)
+            // La palabra escrita sin tilde no se cambia sola: la versión con tilde queda en la barra
+            if (mejor.costo <= limite && (mejor.puesto < 45000 || mejor.costo <= 0.2f) && !dudosa && !mejor.soloTilde)
+                correccion = conForma(mejor.palabra, escrito)
         }
         // Opciones de la barra: completar la palabra y las mejores correcciones
         val opciones = ArrayList<String>(3)
         val usadas = HashSet<String>().apply { add(t); correccion?.let { add(it.lowercase()) } }
         fun poner(w: String) { if (opciones.size < 2 && usadas.add(w.lowercase())) opciones.add(conForma(w, escrito)) }
+        // La misma palabra con tilde va primero en la barra
+        orden.firstOrNull { it.soloTilde }?.let { poner(it.palabra) }
         if (correccion != null) orden.drop(1).take(2).forEach { if (it.costo <= 1.2f) poner(it.palabra) }
         completar(k, 3).forEach { poner(it) }
         if (correccion == null) orden.take(3).forEach { if (it.costo <= 0.8f) poner(it.palabra) }

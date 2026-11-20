@@ -331,6 +331,28 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         actualizarBarra()
     }
 
+    /** Barra de herramientas: pegar, copiar, cortar, seleccionar todo, deshacer, ajustes */
+    override fun herramienta(i: Int) {
+        val ic = currentInputConnection ?: return
+        esperado = -1; pendientes = 0; olvidarDeshacer()
+        when (i) {
+            0 -> ic.performContextMenuAction(android.R.id.paste)
+            1 -> ic.performContextMenuAction(android.R.id.copy)
+            2 -> ic.performContextMenuAction(android.R.id.cut)
+            3 -> ic.performContextMenuAction(android.R.id.selectAll)
+            4 -> {
+                val t = SystemClock.uptimeMillis()
+                ic.sendKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_Z, 0, KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON))
+                ic.sendKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_Z, 0, KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON))
+            }
+            else -> try {
+                startActivity(android.content.Intent(this, SettingsActivity::class.java)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                requestHideSelf(0)
+            } catch (_: Throwable) { }
+        }
+    }
+
     override fun sugerencia(i: Int) {
         val sg = casillas.getOrNull(i) ?: return
         val ic = currentInputConnection ?: return

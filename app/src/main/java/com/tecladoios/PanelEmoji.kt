@@ -105,7 +105,7 @@ class PanelEmoji(context: Context) : View(context) {
         val rec = recientes()
         val lista = ArrayList<Categoria>()
         // Sin emojis usados todavía, la sección no aparece (antes dejaba un hueco y un texto encima)
-        if (rec.isNotEmpty()) lista.add(Categoria("USADOS FRECUENTEMENTE", "🕘", rec))
+        if (rec.isNotEmpty()) lista.add(Categoria("USADOS RECIENTEMENTE", "🕘", rec))
         lista.addAll(leerBase())
         categorias = lista
         rearmar()
@@ -123,7 +123,7 @@ class PanelEmoji(context: Context) : View(context) {
     private fun rearmar() {
         val altoGrilla = height - abajoSistema - ALTO_TITULO - ALTO_BARRA
         if (altoGrilla <= 0 || width <= 0) return
-        filas = if (altoGrilla / 5 >= dp(40f)) 5 else 4
+        filas = 4   // 4 filas: emojis más grandes
         celdaH = altoGrilla / filas
         // Columnas que entran enteras en la pantalla (como el iPhone, ~9 en vertical)
         val porPantalla = max(6, (width / (celdaH * 1.05f)).toInt())
@@ -135,7 +135,7 @@ class PanelEmoji(context: Context) : View(context) {
             col += ceil(c.emojis.size / filas.toFloat()).toInt()
         }
         columnas = col
-        emoji.textSize = celdaH * 0.74f
+        emoji.textSize = celdaH * 0.7f
     }
 
     private val maxDesplazado get() = max(0f, columnas * celdaW + dp(8f) - width)
