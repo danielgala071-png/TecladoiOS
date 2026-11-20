@@ -31,7 +31,8 @@ object ArmarDiccionario {
 
     fun armar(lineas: (String) -> List<String>): Diccionario {
         val frecuentes = lineas("frecuentes.txt")
-        val peru = lineas("peruano.txt")
+        // Solo español latinoamericano general: sin la lista peruana (jerga y palabras del Perú)
+        val peru = emptyList<String>()
         val corte = peru.indexOf("@medio")
         val fijas = if (corte >= 0) peru.subList(0, corte) else peru
         val medio = if (corte >= 0) peru.subList(corte + 1, peru.size) else emptyList()
@@ -57,7 +58,7 @@ object ArmarDiccionario {
         // Toda palabra que el teclado puede predecir es válida (nunca se toma como error). Van
         // al final: si ya estaban, no cambian su frecuencia; si faltaban, solo dejan de corregirse
         principal.addAll(palabrasDeFrases(lineas))
-        // Solo español (Perú): sin inglés ni portugués
+        // Un solo idioma: español latinoamericano (sin inglés, portugués ni lista peruana)
         return Diccionario.armar(principal, emptyList())
     }
 

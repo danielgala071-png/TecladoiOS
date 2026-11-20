@@ -7,8 +7,6 @@
     <!-- Solo si lo activas en Ajustes: los nombres de tus contactos (nunca salen del celular) -->
     <!-- Solo si lo activas en Ajustes: ver tus capturas de pantalla recientes para enviarlas
          desde la barra (solo las de los últimos minutos) -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <!-- Para pedirte (en Ajustes) que el ahorro de batería no cierre el teclado -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 

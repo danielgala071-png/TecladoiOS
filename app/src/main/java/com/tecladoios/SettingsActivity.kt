@@ -290,11 +290,6 @@ class SettingsActivity : Activity() {
         val son = seccion("Vibración")
         interruptor(son, "Vibración al tocar", Ajustes.VIBRACION, true, "Sutil, distinta en letras, palabras, espacio, borrar, intro y demás teclas")
 
-        val por = seccion("Capturas", "Lo último que copias aparece en la barra un minuto para pegarlo.")
-        interruptor(por, "Ofrecer captura reciente", Ajustes.CAPTURAS, false, "Tu última captura aparece en la barra para enviarla") { si ->
-            if (si && !Capturas.tienePermiso(this)) { requestPermissions(arrayOf(Capturas.permiso()), 12) }
-            true
-        }
 
         val dic = seccion("Diccionario personal")
         boton(dic, "Ver mis palabras") { verPalabras() }

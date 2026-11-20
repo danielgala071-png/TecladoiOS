@@ -123,7 +123,7 @@ class Config(p: SharedPreferences) {
     val fuerza = p.getInt(Ajustes.FUERZA, 5).coerceIn(1, 5)
 
     val portapapeles = true   // solo lo último copiado en la barra (sin historial)
-    val capturas = p.getBoolean(Ajustes.CAPTURAS, false)
+    val capturas = false   // quitado: revisaba la galería cada vez que se abría el teclado
 
     val atajos: Map<String, String> = emptyMap()   // "Mis atajos" quitado
 }
