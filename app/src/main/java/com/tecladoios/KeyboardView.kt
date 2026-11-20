@@ -108,12 +108,15 @@ class KeyboardView(context: Context) : View(context) {
     private var anchoUnidad = 1f
 
     /** Alto del teclado sin la franja de arriba (lo que se ve) */
-    fun altoVisible(): Int = (BARRA + ARRIBA + ALTO_FILA * max(4, distribucion.filas.size) + ABAJO + abajoSistema).toInt()
+    /** La fila de abajo (123, emoji, espacio, intro) es más alta que las de letras */
+    private val EXTRA_ABAJO get() = if (distribucion.filas.last().teclas.any { it.tipo == K.ESPACIO }) dp(9f) else 0f
+
+    fun altoVisible(): Int = (BARRA + ARRIBA + ALTO_FILA * max(4, distribucion.filas.size) + EXTRA_ABAJO + ABAJO + abajoSistema).toInt()
 
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         // El alto no cambia entre letras, símbolos y números: el de 4 filas de letras
         val filas = max(4, distribucion.filas.size)
-        val h = zona + BARRA + ARRIBA + ALTO_FILA * filas + ABAJO + abajoSistema
+        val h = zona + BARRA + ARRIBA + ALTO_FILA * filas + EXTRA_ABAJO + ABAJO + abajoSistema
         setMeasuredDimension(MeasureSpec.getSize(wSpec), h.toInt())
     }
 
@@ -123,7 +126,8 @@ class KeyboardView(context: Context) : View(context) {
         val w = width.toFloat()
         if (w <= 0f) return
         val filas = distribucion.filas
-        val altoFila = (height - zona - BARRA - ARRIBA - ABAJO - abajoSistema) / filas.size
+        val extra = EXTRA_ABAJO
+        val altoFila = (height - zona - BARRA - ARRIBA - ABAJO - abajoSistema - extra) / filas.size
         val u = (w - 2 * LADO) / distribucion.unidades
         anchoUnidad = u
         val lista = ArrayList<Colocada>(40)
@@ -133,8 +137,12 @@ class KeyboardView(context: Context) : View(context) {
             for (t in fila.teclas) {
                 val ancho = t.ancho * u
                 if (t.tipo != K.VACIA) {
-                    val dib = RectF(x + SEP_X / 2, y0 + SEP_Y / 2, x + ancho - SEP_X / 2, y0 + altoFila - SEP_Y / 2)
-                    val toque = RectF(x, y0, x + ancho, y0 + altoFila)
+                    // Mayúscula, borrar, 123, emoji, espacio e intro: menos separación a los
+                    // lados (se ven más anchas); la fila de abajo, además, más alta
+                    val alto = if (fi == filas.size - 1) altoFila + extra else altoFila
+                    val sx = if (t.funcion) SEP_X * 0.25f else SEP_X / 2
+                    val dib = RectF(x + sx, y0 + SEP_Y / 2, x + ancho - sx, y0 + alto - SEP_Y / 2)
+                    val toque = RectF(x, y0, x + ancho, y0 + alto)
                     if (fi == 0) toque.top = zona + BARRA
                     if (fi == filas.size - 1) toque.bottom = height.toFloat()
                     lista.add(Colocada(t, dib, toque))

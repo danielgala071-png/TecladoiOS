@@ -69,9 +69,9 @@ object Distribuciones {
     private fun hueco(ancho: Float) = Tecla(K.VACIA, "", ancho, funcion = false)
 
     private fun filaAbajo(modo: Int) = Fila(listOf(
-        if (modo == LETRAS) Tecla(K.NUM, "123", 1.25f) else Tecla(K.ABC, "ABC", 1.25f),
-        Tecla(K.EMOJI, "", 1.25f),
-        Tecla(K.ESPACIO, "espacio", 5f),
+        if (modo == LETRAS) Tecla(K.NUM, "123", 1.4f) else Tecla(K.ABC, "ABC", 1.4f),
+        Tecla(K.EMOJI, "", 1.4f),
+        Tecla(K.ESPACIO, "espacio", 4.7f),
         Tecla(K.INTRO, "", 2.5f),
     ))
 
@@ -89,10 +89,10 @@ object Distribuciones {
                 t("\"", 1f, listOf("„", "“", "”", "«", "»")),
             )),
             Fila(listOf(
-                Tecla(K.SIMB2, "#+=", 1.3f), hueco(0.2f),
+                Tecla(K.SIMB2, "#+=", 1.5f),
                 t(".", 1.4f, listOf("…")), t(",", 1.4f), t("?", 1.4f, listOf("¿")), t("!", 1.4f, listOf("¡")),
                 t("'", 1.4f, listOf("‘", "’", "`")),
-                hueco(0.2f), Tecla(K.BORRAR, "", 1.3f),
+                Tecla(K.BORRAR, "", 1.5f),
             )),
             filaAbajo(modo),
         ), SIMBOLOS)
@@ -102,10 +102,10 @@ object Distribuciones {
             }),
             Fila(listOf("_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•").map { t(it) }),
             Fila(listOf(
-                Tecla(K.NUM, "123", 1.3f), hueco(0.2f),
+                Tecla(K.NUM, "123", 1.5f),
                 t(".", 1.4f, listOf("…")), t(",", 1.4f), t("?", 1.4f, listOf("¿")), t("!", 1.4f, listOf("¡")),
                 t("'", 1.4f, listOf("‘", "’", "`")),
-                hueco(0.2f), Tecla(K.BORRAR, "", 1.3f),
+                Tecla(K.BORRAR, "", 1.5f),
             )),
             filaAbajo(modo),
         ), SIMBOLOS2)
@@ -128,8 +128,7 @@ object Distribuciones {
         else -> Distribucion(listOf(
             Fila("qwertyuiop".map { letra(it) }),
             Fila("asdfghjklñ".map { letra(it) }),
-            Fila(listOf(Tecla(K.SHIFT, "", 1.3f), hueco(0.2f)) + "zxcvbnm".map { letra(it) } +
-                listOf(hueco(0.2f), Tecla(K.BORRAR, "", 1.3f))),
+            Fila(listOf(Tecla(K.SHIFT, "", 1.5f)) + "zxcvbnm".map { letra(it) } + listOf(Tecla(K.BORRAR, "", 1.5f))),
             filaAbajo(LETRAS),
         ), LETRAS)
     }
