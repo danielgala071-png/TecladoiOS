@@ -32,7 +32,11 @@ class KeyboardView(context: Context) : View(context) {
         fun emojis()
         fun cursor(dx: Int, dy: Int)
         fun respuesta(t: Respuesta.Tipo)
+        fun sugerencia(i: Int)
     }
+
+    /** Una casilla de la barra: [tipo] 0 = normal, 1 = lo escrito (entre comillas), 2 = corrección */
+    class Sug(val texto: String, val tipo: Int)
 
     var oyente: Oyente? = null
     var config: Config? = null
@@ -76,8 +80,19 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     // ---------- Medidas ----------
-    /** Franja transparente de arriba para los globos */
-    val zona get() = dp(58f)
+    /** Barra de sugerencias arriba de las teclas (solo al escribir texto) */
+    var conBarra = false; set(v) { if (field != v) { field = v; requestLayout(); acomodar(); invalidate() } }
+    private val BARRA get() = if (conBarra) dp(44f) else 0f
+    private val sugerencias = arrayOfNulls<Sug>(3)
+    fun ponerSugerencias(a: Sug?, b: Sug?, c: Sug?) {
+        if (sugerencias[0] === a && sugerencias[1] === b && sugerencias[2] === c) return
+        sugerencias[0] = a; sugerencias[1] = b; sugerencias[2] = c
+        invalidate()
+    }
+    private var casillaApretada = -1
+
+    /** Franja transparente de arriba para los globos (con la barra, el globo pasa por encima de ella) */
+    val zona get() = if (conBarra) dp(14f) else dp(58f)
     private val ARRIBA get() = dp(6f)
     private val ABAJO get() = dp(4f)
     private val ALTO_FILA get() = dp(57f)
@@ -93,12 +108,12 @@ class KeyboardView(context: Context) : View(context) {
     private var anchoUnidad = 1f
 
     /** Alto del teclado sin la franja de arriba (lo que se ve) */
-    fun altoVisible(): Int = (ARRIBA + ALTO_FILA * distribucion.filas.size + ABAJO + abajoSistema).toInt()
+    fun altoVisible(): Int = (BARRA + ARRIBA + ALTO_FILA * max(4, distribucion.filas.size) + ABAJO + abajoSistema).toInt()
 
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         // El alto no cambia entre letras, símbolos y números: el de 4 filas de letras
         val filas = max(4, distribucion.filas.size)
-        val h = zona + ARRIBA + ALTO_FILA * filas + ABAJO + abajoSistema
+        val h = zona + BARRA + ARRIBA + ALTO_FILA * filas + ABAJO + abajoSistema
         setMeasuredDimension(MeasureSpec.getSize(wSpec), h.toInt())
     }
 
@@ -108,19 +123,19 @@ class KeyboardView(context: Context) : View(context) {
         val w = width.toFloat()
         if (w <= 0f) return
         val filas = distribucion.filas
-        val altoFila = (height - zona - ARRIBA - ABAJO - abajoSistema) / filas.size
+        val altoFila = (height - zona - BARRA - ARRIBA - ABAJO - abajoSistema) / filas.size
         val u = (w - 2 * LADO) / distribucion.unidades
         anchoUnidad = u
         val lista = ArrayList<Colocada>(40)
         for ((fi, fila) in filas.withIndex()) {
             var x = LADO + (distribucion.unidades - fila.unidades) / 2 * u
-            val y0 = zona + ARRIBA + fi * altoFila
+            val y0 = zona + BARRA + ARRIBA + fi * altoFila
             for (t in fila.teclas) {
                 val ancho = t.ancho * u
                 if (t.tipo != K.VACIA) {
                     val dib = RectF(x + SEP_X / 2, y0 + SEP_Y / 2, x + ancho - SEP_X / 2, y0 + altoFila - SEP_Y / 2)
                     val toque = RectF(x, y0, x + ancho, y0 + altoFila)
-                    if (fi == 0) toque.top = zona
+                    if (fi == 0) toque.top = zona + BARRA
                     if (fi == filas.size - 1) toque.bottom = height.toFloat()
                     lista.add(Colocada(t, dib, toque))
                 }
@@ -136,7 +151,7 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     private fun buscar(x: Float, y: Float): Colocada? {
-        if (y < zona) return null
+        if (y < zona + BARRA) return null
         for (c in colocadas) if (c.toque.contains(x, y)) return c
         // En un hueco (al lado de mayúscula o borrar): la tecla más cercana de esa fila
         var mejor: Colocada? = null; var md = Float.MAX_VALUE
@@ -149,7 +164,7 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     // ---------- Dedos ----------
-    private object Modo { const val NORMAL = 0; const val OPCIONES = 1; const val CURSOR = 2; const val HECHO = 3 }
+    private object Modo { const val NORMAL = 0; const val OPCIONES = 1; const val CURSOR = 2; const val HECHO = 3; const val BARRA = 4 }
 
     private inner class Dedo(val id: Int) {
         var c: Colocada? = null
@@ -204,6 +219,16 @@ class KeyboardView(context: Context) : View(context) {
                 otro.modo = Modo.HECHO
             }
         }
+        // Barra de sugerencias
+        if (conBarra && y >= zona && y < zona + BARRA) {
+            val k = (x / (width / 3f)).toInt().coerceIn(0, 2)
+            if (sugerencias[k] == null) return
+            dedos[id] = Dedo(id).apply { modo = Modo.BARRA; x0 = x; y0 = y; repeticiones = k }
+            casillaApretada = k
+            oyente?.respuesta(Respuesta.Tipo.LETRA)
+            invalidate()
+            return
+        }
         val c = buscar(x, y) ?: return
         val dd = Dedo(id).apply { this.c = c; x0 = x; y0 = y }
         dedos[id] = dd
@@ -233,6 +258,12 @@ class KeyboardView(context: Context) : View(context) {
 
     private fun mover(dd: Dedo, x: Float, y: Float) {
         when (dd.modo) {
+            Modo.BARRA -> {
+                val k = (x / (width / 3f)).toInt()
+                val dentro = k == dd.repeticiones && y >= zona - dp(30f) && y < zona + BARRA + dp(30f)
+                val nueva = if (dentro) dd.repeticiones else -1
+                if (nueva != casillaApretada) { casillaApretada = nueva; invalidate() }
+            }
             Modo.OPCIONES -> {
                 if (opciones.isEmpty()) return
                 val anchoOp = opcionesRect.width() / opciones.size
@@ -298,6 +329,10 @@ class KeyboardView(context: Context) : View(context) {
                 opciones = emptyList(); opcionElegida = -1; dedoOpciones = null
             }
             Modo.CURSOR -> trackpad = false
+            Modo.BARRA -> {
+                if (casillaApretada == dd.repeticiones) oyente?.sugerencia(dd.repeticiones)
+                casillaApretada = -1
+            }
         }
         if (c != null) presionadas.remove(c)
         if (presionada === c) presionada = null
@@ -377,6 +412,7 @@ class KeyboardView(context: Context) : View(context) {
         dedos.clear(); presionadas.clear(); presionada = null
         opciones = emptyList(); opcionElegida = -1; dedoOpciones = null
         trackpad = false
+        casillaApretada = -1
         invalidate()
     }
 
@@ -398,6 +434,7 @@ class KeyboardView(context: Context) : View(context) {
         cv.drawRect(0f, zona, width.toFloat(), height.toFloat(), relleno)
         letras.textSize = dp(25f)
         etiquetas.textSize = dp(16f)
+        if (conBarra) dibujarBarra(cv)
         for (c in colocadas) dibujarTecla(cv, c)
         if (!trackpad) presionada?.let { if (config?.vistaPrevia != false && !distribucion.numerico) dibujarGlobo(cv, it) }
         if (opciones.isNotEmpty()) dibujarOpciones(cv)
@@ -435,6 +472,37 @@ class KeyboardView(context: Context) : View(context) {
             K.SHIFT -> dibujarShift(cv, cx, cy)
             K.BORRAR -> dibujarBorrar(cv, cx, cy)
             K.EMOJI -> dibujarEmoji(cv, cx, cy)
+        }
+    }
+
+    private val textoBarra = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; textAlign = Paint.Align.CENTER; typeface = Typeface.create("sans-serif", Typeface.NORMAL) }
+    private val divisor = Paint().apply { color = CONTORNO }
+    private val casilla = RectF()
+
+    /** Barra como la del iPhone: tres casillas; la corrección que se pondrá va resaltada */
+    private fun dibujarBarra(cv: Canvas) {
+        val y0 = zona; val y1 = zona + BARRA
+        val ancho = width / 3f
+        textoBarra.textSize = dp(17f)
+        for (k in 0 until 3) {
+            val sg = sugerencias[k]
+            val x0 = k * ancho
+            if (k > 0 && sugerencias[k] != null && sugerencias[k - 1] != null &&
+                sg?.tipo != 2 && sugerencias[k - 1]?.tipo != 2 && casillaApretada != k && casillaApretada != k - 1)
+                cv.drawRect(x0, y0 + BARRA * 0.28f, x0 + dp(1f), y1 - BARRA * 0.28f, divisor)
+            if (sg == null) continue
+            casilla.set(x0 + dp(4f), y0 + dp(5f), x0 + ancho - dp(4f), y1 - dp(5f))
+            if (sg.tipo == 2 || casillaApretada == k) {
+                relleno.color = if (casillaApretada == k) LETRA_PRESIONADA else LETRA
+                cv.drawRoundRect(casilla, dp(7f), dp(7f), relleno)
+            }
+            var s = if (sg.tipo == 1) "“${sg.texto}”" else sg.texto
+            val max = ancho - dp(14f)
+            if (textoBarra.measureText(s) > max) {
+                val n = textoBarra.breakText(s, true, max - textoBarra.measureText("…"), null)
+                s = s.substring(0, n.coerceAtLeast(1)) + "…"
+            }
+            cv.drawText(s, x0 + ancho / 2, (y0 + y1) / 2 - (textoBarra.ascent() + textoBarra.descent()) / 2, textoBarra)
         }
     }
 

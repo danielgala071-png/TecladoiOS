@@ -59,6 +59,8 @@ class SettingsActivity : Activity() {
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         opcion("Mayúsculas automáticas", Ajustes.MAYUS_AUTO, true)
+        opcion("Corrección automática", Ajustes.AUTOCORRECCION, true)
+        opcion("Predicción", Ajustes.PREDICTIVO, true)
         opcion("Bloqueo de mayúsculas", Ajustes.BLOQ_MAYUS, true)
         opcion("Vista previa de caracteres", Ajustes.VISTA_PREVIA, true)
         opcion("Atajo \".\"", Ajustes.ATAJO_PUNTO, true)
