@@ -95,7 +95,7 @@ class KeyboardView(context: Context) : View(context) {
     val zona get() = if (conBarra) dp(14f) else dp(58f)
     private val ARRIBA get() = dp(6f)
     private val ABAJO get() = dp(4f)
-    private val ALTO_FILA get() = dp(57f)
+    private val ALTO_FILA get() = dp(57f) * (config?.tamano ?: 100) / 100f
     private val SEP_X get() = dp(6f)
     private val SEP_Y get() = dp(11f)
     private val LADO get() = dp(3f)

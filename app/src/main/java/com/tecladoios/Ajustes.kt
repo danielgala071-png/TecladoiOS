@@ -15,6 +15,8 @@ object Ajustes {
     const val ATAJO_PUNTO = "atajo_punto"
     const val VIBRACION = "vibracion"
     const val SONIDO = "sonido"
+    /** Tamaño del teclado en % (alto de las teclas) */
+    const val TAMANO = "tamano"
 
     fun prefs(c: Context): SharedPreferences =
         c.applicationContext.getSharedPreferences(ARCHIVO, Context.MODE_PRIVATE)
@@ -29,4 +31,5 @@ class Config(p: SharedPreferences) {
     val atajoPunto = p.getBoolean(Ajustes.ATAJO_PUNTO, true)
     val vibracion = p.getBoolean(Ajustes.VIBRACION, true)
     val sonido = p.getBoolean(Ajustes.SONIDO, false)
+    val tamano = p.getInt(Ajustes.TAMANO, 100).coerceIn(80, 130)
 }

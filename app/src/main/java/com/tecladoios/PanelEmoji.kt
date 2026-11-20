@@ -104,12 +104,13 @@ class PanelEmoji(context: Context) : View(context) {
     fun abrir() {
         val rec = recientes()
         val lista = ArrayList<Categoria>()
-        lista.add(Categoria("USADOS FRECUENTEMENTE", "🕘", rec))
+        // Sin emojis usados todavía, la sección no aparece (antes dejaba un hueco y un texto encima)
+        if (rec.isNotEmpty()) lista.add(Categoria("USADOS FRECUENTEMENTE", "🕘", rec))
         lista.addAll(leerBase())
         categorias = lista
         rearmar()
         scroller.forceFinished(true)
-        desplazado = if (rec.isEmpty() && inicio.size > 1) inicio[1] * celdaW else 0f
+        desplazado = 0f
         invalidate()
     }
 
@@ -131,7 +132,7 @@ class PanelEmoji(context: Context) : View(context) {
         var col = 0
         for ((i, c) in categorias.withIndex()) {
             inicio[i] = col
-            col += ceil(c.emojis.size / filas.toFloat()).toInt().coerceAtLeast(if (i == 0) 1 else 0)
+            col += ceil(c.emojis.size / filas.toFloat()).toInt()
         }
         columnas = col
         emoji.textSize = celdaH * 0.74f
@@ -306,11 +307,6 @@ class PanelEmoji(context: Context) : View(context) {
                 if (tocado == i * 10000 + k) cv.drawRoundRect(cx - celdaW / 2 + dp(2f), cy - celdaH / 2 + dp(2f), cx + celdaW / 2 - dp(2f), cy + celdaH / 2 - dp(2f), dp(8f), dp(8f), marca)
                 cv.drawText(em, cx, cy + ajusteY, emoji)
             }
-        }
-        if (categorias[0].emojis.isEmpty() && actual == 0) {
-            titulo.textAlign = Paint.Align.CENTER
-            cv.drawText("Los emojis que uses aparecerán aquí", width / 2f, ALTO_TITULO + celdaH * filas / 2, titulo)
-            titulo.textAlign = Paint.Align.LEFT
         }
         dibujarBarra(cv, actual)
     }

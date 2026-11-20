@@ -66,6 +66,27 @@ class SettingsActivity : Activity() {
         opcion("Atajo \".\"", Ajustes.ATAJO_PUNTO, true)
         col.addView(titulo("Al pulsar dos veces la barra espaciadora se insertará un punto seguido de un espacio.", 13f, 0xFF8E8E93.toInt()).apply { setPadding(0, 0, 0, dp(8)) })
 
+        col.addView(titulo("TAMAÑO DEL TECLADO", 13f, 0xFF8E8E93.toInt()))
+        val etiquetaTam = TextView(this).apply { textSize = 17f; setTextColor(Color.WHITE) }
+        fun mostrarTam(v: Int) { etiquetaTam.text = "Alto de las teclas: $v %" }
+        val actual = p.getInt(Ajustes.TAMANO, 100).coerceIn(80, 130)
+        mostrarTam(actual)
+        col.addView(etiquetaTam)
+        col.addView(android.widget.SeekBar(this).apply {
+            max = 10                      // de 80 % a 130 %, de 5 en 5
+            progress = (actual - 80) / 5
+            setPadding(dp(8), dp(14), dp(8), dp(14))
+            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(b: android.widget.SeekBar?, v: Int, deUsuario: Boolean) {
+                    mostrarTam(80 + v * 5)
+                    if (deUsuario) p.edit().putInt(Ajustes.TAMANO, 80 + v * 5).apply()
+                }
+                override fun onStartTrackingTouch(b: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(b: android.widget.SeekBar?) {}
+            })
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        col.addView(titulo("Pruébalo en la casilla de abajo: el teclado cambia al momento.", 13f, 0xFF8E8E93.toInt()).apply { setPadding(0, 0, 0, dp(8)) })
+
         col.addView(titulo("RESPUESTA DEL TECLADO", 13f, 0xFF8E8E93.toInt()))
         opcion("Vibración", Ajustes.VIBRACION, true)
         opcion("Sonido", Ajustes.SONIDO, false)

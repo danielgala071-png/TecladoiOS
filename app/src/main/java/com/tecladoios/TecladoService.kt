@@ -81,6 +81,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         respuesta.config = cfg
         if (!cfg.sonido) respuesta.soltarSonidos()
         teclado?.config = cfg
+        if (clave == Ajustes.TAMANO) { cerrarEmojis(); teclado?.requestLayout() }
         teclado?.invalidate()
     }
 
