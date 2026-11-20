@@ -1483,6 +1483,18 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         refrescar()
     }
 
+    /** Estando en emojis, tocar el cuadro de texto devuelve las letras */
+    private fun volverDeEmojis() {
+        if (panel == Panel.EMOJI && !buscandoEmoji) mostrarPanel(Panel.TECLADO, false)
+    }
+
+    /** La app avisa que tocaste el cuadro de texto (aunque el cursor no se mueva) */
+    @Deprecated("Android lo sigue llamando en muchas apps")
+    override fun onViewClicked(focusChanged: Boolean) {
+        @Suppress("DEPRECATION") super.onViewClicked(focusChanged)
+        try { volverDeEmojis() } catch (e: Throwable) { Registro.anotar("tocar cuadro", e) }
+    }
+
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         try { seleccionCambio(newSelStart, newSelEnd, candidatesStart, candidatesEnd) } catch (e: Throwable) { Registro.anotar("seleccion", e) }
@@ -1492,6 +1504,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
         selIni = newSelStart; selFin = newSelEnd
         if (borrarFin >= 0) return
         val nuestra = SystemClock.uptimeMillis() - ultimaEdicionMs < 250
+        // Tocaste el cuadro de texto estando en emojis: vuelve el teclado de letras (como iPhone)
+        if (!nuestra) volverDeEmojis()
         // Escribiste o moviste el cursor: la revisión anterior ya no vale
         revision?.let { rv -> if (nuestra || newSelStart != newSelEnd || newSelStart < rv.ini || newSelStart > rv.fin) revision = null }
         if (palabra.isNotEmpty()) {
