@@ -666,15 +666,14 @@ class PanelEmoji(context: Context) : View(context) {
         relleno.color = tema.velo(0x1F)
         c.drawRect(0f, yAbajo, w, yAbajo + d * 0.6f, relleno)
 
-        // Abajo: ABC, buscar, categorías, borrar
+        // Abajo: ABC, categorías, borrar
         boton.textSize = dp(17f); boton.color = tema.texto
         r.set(dp(6f), yAbajo + dp(7f), dp(60f), h - dp(6f))
         relleno.color = tema.teclaFuncion
         c.drawRoundRect(r, dp(8f), dp(8f), relleno)
         c.drawText("ABC", r.centerX(), r.centerY() + boton.textSize * 0.36f, boton)
-        icono.color = tema.textoSuave
-        Iconos.lupa(c, dp(81f), yAbajo + altoAbajo() / 2, dp(36f), icono)
-        val izq = dp(100f); val der = w - dp(60f)
+        // Sin búsqueda de emojis: las secciones empiezan junto al botón ABC
+        val izq = dp(68f); val der = w - dp(60f)
         val paradas = paradasX.size.coerceAtLeast(1)
         val paso = (der - izq) / paradas
         val actual = categoriaActual()
@@ -763,7 +762,7 @@ class PanelEmoji(context: Context) : View(context) {
     private val filoIndicador = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
 
     private fun categoriaEnBarra(x: Float): Int {
-        val izq = dp(100f); val der = width - dp(60f)
+        val izq = dp(68f); val der = width - dp(60f)
         val n = paradasX.size.coerceAtLeast(1)
         return ((x - izq) / ((der - izq) / n)).toInt().coerceIn(0, n - 1)
     }
@@ -804,7 +803,7 @@ class PanelEmoji(context: Context) : View(context) {
                 x0 = e.x; y0 = e.y; ultX = e.x; arrastrando = false
                 velocidad?.recycle(); velocidad = android.view.VelocityTracker.obtain(); velocidad?.addMovement(e)
                 deslizandoCat = false; movioCat = false
-                if (e.y > h - altoAbajo() && e.x >= dp(100f) && e.x <= width - dp(60f) && categorias.isNotEmpty()) {
+                if (e.y > h - altoAbajo() && e.x >= dp(68f) && e.x <= width - dp(60f) && categorias.isNotEmpty()) {
                     deslizandoCat = true; ultimaCat = categoriaEnBarra(e.x); invalidate()
                 } else if (e.y > h - altoAbajo() && e.x > width - dp(60f)) {
                     borrando = true; oyente?.borrar(); oyente?.respuesta(Respuesta.Tipo.BORRAR)
@@ -884,9 +883,8 @@ class PanelEmoji(context: Context) : View(context) {
         if (y > h - altoAbajo()) {
             when {
                 x < dp(62f) -> { oyente?.respuesta(Respuesta.Tipo.FUNCION); oyente?.abc() }
-                x < dp(98f) -> { oyente?.respuesta(Respuesta.Tipo.FUNCION); oyente?.buscar() }
                 x < width - dp(60f) -> {
-                    val izq = dp(100f); val der = width - dp(60f)
+                    val izq = dp(68f); val der = width - dp(60f)
                     val k = categoriaEnBarra(x)
                     // Se preparan primero los emojis de ese grupo, así el deslizamiento va fluido
                     if (tamPrecalentado > 0) precalentar(tamPrecalentado, k)

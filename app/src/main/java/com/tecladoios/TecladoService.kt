@@ -380,10 +380,9 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, Barra.Oyente, 
                 when (variacion) {
                     InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
                     InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD -> { sugerir = false; corregir = false; aprender = false }
-                    InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS -> {
-                        campo = Distribuciones.CAMPO_CORREO; corregir = false
-                    }
-                    InputType.TYPE_TEXT_VARIATION_URI -> { campo = Distribuciones.CAMPO_WEB; corregir = false }
+                    // Correo y web: el teclado normal (sin teclas @ / .com); solo no corrige
+                    InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
+                    InputType.TYPE_TEXT_VARIATION_URI -> { corregir = false }
                 }
                 if ((t and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0) corregir = false
                 val caps = t and (InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_CAP_WORDS or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS)
