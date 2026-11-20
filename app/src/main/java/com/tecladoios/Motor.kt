@@ -333,9 +333,9 @@ class Motor(
         // Error de dedo que el cerebro "aprendió" por repetirlo (se escapó dos o tres veces sin
         // corregir): si está a un toque de una palabra común, no cuenta como palabra tuya y se
         // corrige. Las que fijaste (o deshiciste una corrección) y las que usas mucho se respetan.
-        // Como iPhone: lo que tú ya escribiste y quedó como palabra tuya se respeta (no se
-        // vuelve a corregir por parecerse a otra)
-        if (!MODO_IPHONE && valida && formasExactas.isEmpty() && contacto == null && propia != null && !propia.fija && propia.veces < DUDOSA) {
+        // Como iPhone: un error de dedo que se escapó un par de veces NO se vuelve palabra
+        // tuya (el iPhone solo aprende lo que dejas a propósito, deshaciendo la corrección)
+        if (valida && formasExactas.isEmpty() && contacto == null && propia != null && !propia.fija && propia.veces < DUDOSA) {
             val rival = lista.filter { it.esCorreccion && !it.completa }.minByOrNull { it.puntaje }
             if (rival != null) {
                 val id = dic.id(rival.texto)
