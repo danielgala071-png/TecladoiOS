@@ -21,11 +21,13 @@ android {
     // instalar la versión nueva encima (había que desinstalar y se perdía lo aprendido).
     // Con esta llave siempre igual, cada APK nuevo se instala como actualización.
     // La llave ya no vive en el repositorio: GitHub la pone en firma.jks al compilar, desde
-    // el secreto FIRMA_BASE64 (y la clave desde FIRMA_CLAVE). Es la misma llave de siempre,
-    // así que cada APK se sigue instalando encima sin perder lo aprendido.
+    // el secreto FIRMA_BASE64 (y la clave desde FIRMA_CLAVE).
+    // Llave nueva desde el 21/11/2026: la anterior quedó pública, así que hubo que cambiarla
+    // (una sola vez se desinstala la versión vieja); desde ahí cada APK se instala encima.
     signingConfigs {
         create("fija") {
-            val clave = System.getenv("FIRMA_CLAVE").takeUnless { it.isNullOrBlank() } ?: "tecladoios"
+            // Sin clave por defecto: la llave y su clave solo existen en los secretos de GitHub
+            val clave = System.getenv("FIRMA_CLAVE").orEmpty()
             storeFile = file("firma.jks")
             storePassword = clave
             keyAlias = "tecladoios"

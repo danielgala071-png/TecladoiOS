@@ -311,7 +311,11 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         val p = propuesta?.takeIf { it.escrito == w } ?: try {
             dic?.proponer(w, anterior, anterior != null && w.first().isUpperCase(), toquesDe(w), rapido = true)
         } catch (_: Throwable) { null }
-        return p?.correccion?.takeIf { it != w }
+        p?.correccion?.takeIf { it != w }?.let { return it }
+        // Dos mayúsculas al empezar por dejar la mayúscula un instante de más: «HOla» → «Hola»
+        if (w.length >= 3 && w[0].isUpperCase() && w[1].isUpperCase() && w.substring(2).all { it.isLowerCase() })
+            return w[0] + w.substring(1).lowercase()
+        return null
     }
 
     /** Cambia la palabra que estás escribiendo por [nueva] (sin tocar nada más) */
@@ -437,7 +441,15 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         var modos = TextUtils.CAP_MODE_SENTENCES
         if (ei.inputType and InputType.TYPE_TEXT_FLAG_CAP_WORDS != 0) modos = modos or TextUtils.CAP_MODE_WORDS
         if (ei.inputType and InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS != 0) modos = modos or TextUtils.CAP_MODE_CHARACTERS
-        val si = try { ic.getCursorCapsMode(modos) != 0 } catch (_: Throwable) { false }
+        var si = try { ic.getCursorCapsMode(modos) != 0 } catch (_: Throwable) { false }
+        // «¿Cómo…», «¡Hola…»: después del signo de apertura al empezar la oración también va mayúscula
+        if (!si) try {
+            val antes = ic.getTextBeforeCursor(40, 0)?.toString()
+            if (!antes.isNullOrEmpty() && antes.last() in "¿¡") {
+                val previo = antes.dropLast(1).trimEnd(' ')
+                si = if (previo.isEmpty()) antes.length < 40 else previo.last() in ".!?:\n"
+            }
+        } catch (_: Throwable) { }
         kb.mayusculaAutomatica(si)
     }
 
@@ -454,10 +466,26 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     }
 
     // ---------- Teclas ----------
+    /** «hola ,» → «hola,»: en español el signo va pegado a la palabra (como hace el iPhone) */
+    private fun pegarSigno(s: String) {
+        if (!corregir || palabra.isNotEmpty() || s.length != 1 || s[0] !in ".,;:!?)") return
+        val ic = currentInputConnection ?: return
+        if (selIni != selFin) return
+        val antes = ic.getTextBeforeCursor(2, 0) ?: return
+        if (antes.length == 2 && antes[1] == ' ' && (antes[0].isLetterOrDigit() || antes[0] in ".,;:!?)»\"”")) {
+            ic.deleteSurroundingText(1, 0)
+            movido(-1)
+        }
+    }
+
     override fun texto(s: String, costos: FloatArray?) {
         val ic = currentInputConnection ?: return
         olvidarDeshacer()
         tocada = null
+        // Recién se terminó una palabra con espacio y ahora va un signo: se pega a la palabra
+        if (s.length == 1 && s[0] in ".,;:!?)" && palabra.isEmpty() && SystemClock.uptimeMillis() - ultimoEspacioMs < 4000L) {
+            ic.beginBatchEdit(); pegarSigno(s); ic.endBatchEdit()
+        }
         if (s.isNotEmpty() && s.all { it.isLetter() }) {
             ic.commitText(s, 1); movido(s.length)
             if (seguir && !enMedio) {

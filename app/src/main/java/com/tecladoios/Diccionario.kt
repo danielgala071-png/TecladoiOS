@@ -212,6 +212,17 @@ class Diccionario private constructor(
             else -> 1f
         }
 
+        /** Abreviaturas de chat: la palabra completa aparece primero en la barra (no se cambia sola) */
+        private val ABREVIATURAS = mapOf(
+            "q" to "que", "k" to "que", "xq" to "porque", "pq" to "porque", "porq" to "porque",
+            "tb" to "también", "tmb" to "también", "tbn" to "también", "x" to "por", "xfa" to "por favor",
+            "pls" to "por favor", "dnd" to "dónde", "ntp" to "no te preocupes", "bn" to "bien", "msj" to "mensaje",
+            "mñn" to "mañana", "mñna" to "mañana", "tqm" to "te quiero mucho", "ps" to "pues", "d" to "de",
+            "toy" to "estoy", "tas" to "estás", "ta" to "está", "nd" to "nada", "dps" to "después",
+            "grax" to "gracias", "salu" to "saludos", "cel" to "celular",
+            "aprox" to "aproximadamente", "porfa" to "por favor", "hno" to "hermano", "hna" to "hermana", "qtal" to "qué tal", "qhaces" to "qué haces",
+        )
+
         /** Palabras que se escriben juntas pero van separadas (como corrige el iPhone) */
         private val JUNTAS = mapOf(
             "aver" to "a ver", "osea" to "o sea", "talvez" to "tal vez", "enserio" to "en serio",
@@ -429,7 +440,8 @@ class Diccionario private constructor(
             // La palabra escrita sin tilde no se cambia sola: la versión con tilde queda en la barra
             // Bien escrita pero sin tilde (hagamoslo, haria): se deja pasar, nunca se cambia por otra
             val sinTilde = orden.any { it.soloTilde }
-            if (mejor.costo <= limite && !dudosa && !rara && !sinTilde && !risa && !nombrePropio)
+            val abreviatura = t in ABREVIATURAS
+            if (mejor.costo <= limite && !dudosa && !rara && !sinTilde && !risa && !nombrePropio && !abreviatura)
                 correccion = conForma(mejor.palabra, escrito)
         }
         // Palabras pegadas: holacomo → hola como (también con la n en lugar del espacio)
@@ -444,6 +456,8 @@ class Diccionario private constructor(
         val opciones = ArrayList<String>(3)
         val usadas = HashSet<String>().apply { add(t); correccion?.let { add(it.lowercase()) } }
         fun poner(w: String) { if (opciones.size < 2 && usadas.add(w.lowercase())) opciones.add(conForma(w, escrito)) }
+        // Abreviatura de chat (q, xq, tb, ntp…): la palabra completa va primero en la barra
+        ABREVIATURAS[t]?.let { poner(it) }
         // La misma palabra con tilde va primero en la barra
         orden.firstOrNull { it.soloTilde }?.let { poner(it.palabra) }
         if (correccion != null) orden.drop(1).take(2).forEach { if (it.costo <= 1.2f) poner(it.palabra) }

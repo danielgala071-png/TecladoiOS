@@ -1,0 +1,7 @@
+# La llave de firma nunca va al repositorio (vive en los secretos de GitHub)
+*.jks
+*.keystore
+.gradle/
+build/
+app/build/
+local.properties

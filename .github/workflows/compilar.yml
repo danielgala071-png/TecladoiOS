@@ -40,16 +40,14 @@ jobs:
       - name: Poner la llave de firma (desde los secretos de GitHub)
         env:
           FIRMA_BASE64: ${{ secrets.FIRMA_BASE64 }}
+          FIRMA_CLAVE: ${{ secrets.FIRMA_CLAVE }}
         run: |
-          if [ -n "$FIRMA_BASE64" ]; then
-            echo "$FIRMA_BASE64" | tr -d " \r\n" | base64 -d > app/firma.jks
-            echo "Llave puesta desde los secretos"
-          elif [ -f app/firma.jks ]; then
-            echo "::warning::La llave sigue dentro del repositorio. Pásala a los secretos (FIRMA_BASE64) y borra app/firma.jks"
-          else
-            echo "::error::Falta la llave: crea el secreto FIRMA_BASE64 en Settings > Secrets and variables > Actions"
+          if [ -z "$FIRMA_BASE64" ] || [ -z "$FIRMA_CLAVE" ]; then
+            echo "::error::Faltan los secretos FIRMA_BASE64 y FIRMA_CLAVE (Settings > Secrets and variables > Actions)"
             exit 1
           fi
+          echo "$FIRMA_BASE64" | tr -d " \r\n" | base64 -d > app/firma.jks
+          echo "Llave puesta desde los secretos"
 
       - name: Compilar el APK
         env:
