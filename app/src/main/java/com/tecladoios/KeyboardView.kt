@@ -235,7 +235,7 @@ class KeyboardView(context: Context) : View(context) {
         }
         // Barra de sugerencias
         if (conBarra && y >= zona && y < zona + BARRA) {
-            val herr = sugerencias.all { it == null }
+            val herr = false   // sin barra de herramientas
             val k = if (herr) (x / (width / HERRAMIENTAS.toFloat())).toInt().coerceIn(0, HERRAMIENTAS - 1) + 10
                 else (x / (width / 3f)).toInt().coerceIn(0, 2)
             if (!herr && sugerencias[k] == null) return
@@ -500,7 +500,7 @@ class KeyboardView(context: Context) : View(context) {
     /** Barra como la del iPhone: tres casillas; la corrección que se pondrá va resaltada */
     private fun dibujarBarra(cv: Canvas) {
         val y0 = zona; val y1 = zona + BARRA
-        if (sugerencias.all { it == null }) { dibujarHerramientas(cv); return }
+
         val ancho = width / 3f
         textoBarra.textSize = dp(17f)
         for (k in 0 until 3) {

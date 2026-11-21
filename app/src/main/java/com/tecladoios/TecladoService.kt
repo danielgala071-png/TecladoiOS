@@ -207,7 +207,9 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         hilo.execute {
             if (t != turno) return@execute
             val ant = anterior
-            val p = try { d.proponer(w, ant) } catch (_: Throwable) { null }
+            // Con mayúscula en medio de una oración probablemente es un nombre: no se corrige
+            val nombre = ant != null && w.first().isUpperCase()
+            val p = try { d.proponer(w, ant, nombre) } catch (_: Throwable) { null }
             principal.post { if (t == turno && palabra.toString() == w) { propuesta = p; actualizarBarra() } }
         }
         // La barra no se vacía mientras se calcula (no parpadea): solo cambia lo escrito
@@ -247,7 +249,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     private fun correccionAhora(): String? {
         if (!corregir || palabra.isEmpty()) return null
         val w = palabra.toString()
-        val p = propuesta?.takeIf { it.escrito == w } ?: try { dic?.proponer(w, anterior) } catch (_: Throwable) { null }
+        val p = propuesta?.takeIf { it.escrito == w } ?: try { dic?.proponer(w, anterior, anterior != null && w.first().isUpperCase()) } catch (_: Throwable) { null }
         return p?.correccion?.takeIf { it != w }
     }
 

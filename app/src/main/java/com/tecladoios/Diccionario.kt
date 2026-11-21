@@ -258,7 +258,7 @@ class Diccionario private constructor(
         val puntaje = costo * 2.2f + ln(1f + puesto) * 0.25f
     }
 
-    fun proponer(escrito: String, anterior: String? = null): Propuesta {
+    fun proponer(escrito: String, anterior: String? = null, nombrePropio: Boolean = false): Propuesta {
         val ant = anterior?.lowercase()
         if (escrito.isEmpty()) return Propuesta(escrito, null, emptyList())
         val t = escrito.lowercase()
@@ -267,7 +267,10 @@ class Diccionario private constructor(
             val j2 = conForma(j, escrito)
             return Propuesta(escrito, j2, completar(k, 2).filter { it != t })
         }
-        val valida = existe(t)
+        // Las palabras que ya usaste antes no se corrigen
+        val valida = existe(t) || usos.containsKey(t)
+        // Risas y onomatopeyas (jajaja, jsjsjs, jejeje) se dejan tal cual
+        val risa = t.length >= 4 && t.count { it == 'j' } >= 2 && t.all { it in "jaeiosxdhk" }
         val cands = HashMap<String, Cand>()
         fun agregar(w: String, costo: Float, puesto0: Int, soloTilde: Boolean = false) {
             if (w == t) return
@@ -306,9 +309,14 @@ class Diccionario private constructor(
             val limite = when { t.length <= 4 -> 0.6f; t.length <= 5 -> 1.0f; else -> 1.65f }
             val segunda = orden.getOrNull(1)
             // Si dos opciones empatan (y no es solo la tilde), no adivina
-            val dudosa = segunda != null && mejor.costo > 0.2f && segunda.puntaje - mejor.puntaje < 0.12f && segunda.costo <= mejor.costo
+            // Si otra opción está casi igual de cerca (y no es la misma palabra con o sin tilde),
+            // no adivina: deja la palabra y muestra las opciones en la barra
+            val dudosa = segunda != null && mejor.costo > 0.45f && segunda.costo <= limite &&
+                segunda.puntaje - mejor.puntaje < 0.3f && normal(segunda.palabra) != normal(mejor.palabra)
+            // Una palabra muy rara solo se pone si el error es clarísimo
+            val rara = mejor.puesto > 40000 && mejor.costo > 0.5f
             // La palabra escrita sin tilde no se cambia sola: la versión con tilde queda en la barra
-            if (mejor.costo <= limite && (mejor.puesto < 45000 || mejor.costo <= 0.2f) && !dudosa && !mejor.soloTilde)
+            if (mejor.costo <= limite && !dudosa && !rara && !mejor.soloTilde && !risa && !nombrePropio)
                 correccion = conForma(mejor.palabra, escrito)
         }
         // Opciones de la barra: completar la palabra y las mejores correcciones
@@ -379,6 +387,11 @@ class Diccionario private constructor(
             if (i == 0 && k[i] != 'h') costo += 0.25f
             if (soloBaratas && costo > 0.8f) continue
             sb.setLength(0); sb.append(k, 0, i).append(k, i + 1, n); f(sb.toString(), costo)
+        }
+        // k en lugar de qu o c (kiero → quiero, kasa → casa)
+        if (!soloBaratas) for (i in 0 until n) if (k[i] == 'k') {
+            sb.setLength(0); sb.append(k, 0, i).append("qu").append(k, i + 1, n); f(sb.toString(), 0.5f)
+            sb.setLength(0); sb.append(k, 0, i).append('c').append(k, i + 1, n); f(sb.toString(), 0.5f)
         }
         // Dos letras cambiadas de lugar
         for (i in 0 until n - 1) {
