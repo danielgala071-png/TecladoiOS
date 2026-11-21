@@ -16,13 +16,58 @@ import kotlin.math.ln
  */
 class Diccionario private constructor(
     /** Palabras por frecuencia (el índice es el puesto: 0 = la más usada) */
-    private val palabras: Array<String>,
-    /** Las mismas palabras sin tildes y en minúscula, ordenadas alfabéticamente */
-    private val claves: Array<String>,
+    private val palabras: Lista,
+    /** Las mismas palabras sin tildes y en minúscula, ordenadas */
+    private val claves: Lista,
     /** Puesto de cada clave */
     private val puestos: IntArray,
     private val prefs: SharedPreferences,
 ) {
+
+    /**
+     * Muchas palabras guardadas juntas como bytes, en un solo bloque: ocupan unas 4 veces
+     * menos memoria que 87 000 textos sueltos, y Android no tiene que vigilarlos uno por uno.
+     */
+    class Lista(private val datos: ByteArray, private val ini: IntArray) {
+        val size get() = ini.size - 1
+        operator fun get(i: Int) = String(datos, ini[i], ini[i + 1] - ini[i], Charsets.UTF_8)
+        fun largo(i: Int) = ini[i + 1] - ini[i]
+        fun comparar(i: Int, k: ByteArray): Int {
+            val a = ini[i]; val n = ini[i + 1] - a
+            val m = minOf(n, k.size)
+            for (j in 0 until m) {
+                val x = datos[a + j].toInt() and 0xFF; val y = k[j].toInt() and 0xFF
+                if (x != y) return x - y
+            }
+            return n - k.size
+        }
+        fun empieza(i: Int, k: ByteArray): Boolean {
+            val a = ini[i]
+            if (ini[i + 1] - a < k.size) return false
+            for (j in k.indices) if (datos[a + j] != k[j]) return false
+            return true
+        }
+
+        companion object {
+            fun de(items: List<ByteArray>): Lista {
+                val ini = IntArray(items.size + 1)
+                var t = 0
+                for ((i, b) in items.withIndex()) { ini[i] = t; t += b.size }
+                ini[items.size] = t
+                val datos = ByteArray(t)
+                for ((i, b) in items.withIndex()) System.arraycopy(b, 0, datos, ini[i], b.size)
+                return Lista(datos, ini)
+            }
+            fun comparar(a: ByteArray, b: ByteArray): Int {
+                val m = minOf(a.size, b.size)
+                for (j in 0 until m) {
+                    val x = a[j].toInt() and 0xFF; val y = b[j].toInt() and 0xFF
+                    if (x != y) return x - y
+                }
+                return a.size - b.size
+            }
+        }
+    }
 
     /** Lo que el teclado propone para la palabra que escribes */
     class Propuesta(
@@ -58,14 +103,23 @@ class Diccionario private constructor(
         private const val ALFABETO = "abcdefghijklmnñopqrstuvwxyz"
 
         fun cargar(c: Context): Diccionario {
-            val lista = ArrayList<String>(90000)
-            c.assets.open("palabras.txt").bufferedReader().useLines { ls -> ls.forEach { if (it.isNotBlank()) lista.add(it.trim()) } }
-            val palabras = lista.toTypedArray()
-            val norm = Array(palabras.size) { val w = palabras[it]; val n = normal(w); if (n == w) w else n }
-            val orden = (palabras.indices).sortedWith { a, b -> val x = norm[a].compareTo(norm[b]); if (x != 0) x else a - b }
-            val claves = Array(orden.size) { norm[orden[it]] }
+            val bytes = ArrayList<ByteArray>(90000)
+            val norm = ArrayList<ByteArray>(90000)
+            c.assets.open("palabras.txt").bufferedReader().useLines { ls ->
+                ls.forEach { l ->
+                    val w = l.trim()
+                    if (w.isNotEmpty()) {
+                        val b = w.toByteArray(Charsets.UTF_8)
+                        bytes.add(b)
+                        val n = normal(w)
+                        norm.add(if (n == w) b else n.toByteArray(Charsets.UTF_8))
+                    }
+                }
+            }
+            val orden = bytes.indices.sortedWith { a, b -> val x = Lista.comparar(norm[a], norm[b]); if (x != 0) x else a - b }
+            val claves = Lista.de(orden.map { norm[it] })
             val puestos = IntArray(orden.size) { orden[it] }
-            return Diccionario(palabras, claves, puestos, Ajustes.prefs(c))
+            return Diccionario(Lista.de(bytes), claves, puestos, Ajustes.prefs(c))
         }
 
         /** Minúsculas y sin tildes (la ñ se queda) */
@@ -180,15 +234,16 @@ class Diccionario private constructor(
     }
 
     // ---------- Búsquedas ----------
-    private fun inferior(k: String): Int {
+    private fun inferior(k: ByteArray): Int {
         var lo = 0; var hi = claves.size
-        while (lo < hi) { val m = (lo + hi) ushr 1; if (claves[m] < k) lo = m + 1 else hi = m }
+        while (lo < hi) { val m = (lo + hi) ushr 1; if (claves.comparar(m, k) < 0) lo = m + 1 else hi = m }
         return lo
     }
 
     private inline fun conClave(k: String, f: (Int) -> Unit) {
-        var i = inferior(k)
-        while (i < claves.size && claves[i] == k) { f(puestos[i]); i++ }
+        val kb = k.toByteArray(Charsets.UTF_8)
+        var i = inferior(kb)
+        while (i < claves.size && claves.comparar(i, kb) == 0) { f(puestos[i]); i++ }
     }
 
     fun existe(w: String): Boolean {
@@ -270,21 +325,36 @@ class Diccionario private constructor(
 
     /** Palabras que empiezan con [k]: primero las que tú usas, luego las más usadas en general */
     private fun completar(k: String, n: Int): List<String> {
+        val kb = k.toByteArray(Charsets.UTF_8)
         val puntos = FloatArray(n) { Float.MAX_VALUE }
         val mejores = arrayOfNulls<String>(n)
-        var i = inferior(k); var vistos = 0
-        while (i < claves.size && claves[i].startsWith(k) && vistos < 6000) {
-            if (claves[i].length > k.length) {
-                val w = palabras[puestos[i]]
-                val u = usos[w] ?: 0
-                val pt = puestos[i].toFloat() / (1 + 4 * u)
-                if (pt < puntos[n - 1]) {
-                    var j = n - 1
-                    while (j > 0 && puntos[j - 1] > pt) { puntos[j] = puntos[j - 1]; mejores[j] = mejores[j - 1]; j-- }
-                    puntos[j] = pt; mejores[j] = w
-                }
+        fun meter(w: String, pt: Float) {
+            if (pt >= puntos[n - 1] || mejores.any { it == w }) return
+            var j = n - 1
+            while (j > 0 && puntos[j - 1] > pt) { puntos[j] = puntos[j - 1]; mejores[j] = mejores[j - 1]; j-- }
+            puntos[j] = pt; mejores[j] = w
+        }
+        // Las más usadas del diccionario (sin armar textos: se comparan los bytes)
+        val top = IntArray(n) { Int.MAX_VALUE }
+        var i = inferior(kb); var vistos = 0
+        while (i < claves.size && claves.empieza(i, kb) && vistos < 6000) {
+            val p = puestos[i]
+            if (claves.largo(i) > kb.size && p < top[n - 1]) {
+                var j = n - 1
+                while (j > 0 && top[j - 1] > p) { top[j] = top[j - 1]; j-- }
+                top[j] = p
             }
             i++; vistos++
+        }
+        for (p in top) if (p != Int.MAX_VALUE) meter(palabras[p], p.toFloat())
+        // Tus palabras más usadas que empiezan igual suben al frente
+        for ((w, u) in usos) {
+            val nw = normal(w)
+            if (nw.length > k.length && nw.startsWith(k)) {
+                var p = 60000
+                conClave(nw) { if (palabras[it] == w) p = it }
+                meter(w, p.toFloat() / (1 + 4 * u))
+            }
         }
         val r = mejores.filterNotNull().toMutableList()
         for ((clave, w) in propias) if (r.size < n && clave.startsWith(k) && clave.length > k.length && w !in r) r.add(w)
