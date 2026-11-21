@@ -123,7 +123,8 @@ class SettingsActivity : Activity() {
                 return
             }
             // Si tus toques caen dispersos arriba y abajo, teclas más altas te ayudan (y al revés)
-            val rec = (100 + (v[5] - 0.18f) * 150).let { (Math.round(it / 5f) * 5).coerceIn(90, 125) }
+            val dispX = v.getOrNull(7) ?: 0.2f
+            val rec = (100 + (v[5] - 0.18f) * 150 + (dispX - 0.2f) * 50).let { (Math.round(it / 5f) * 5).coerceIn(90, 125) }
             estado.text = "Ya aprendió de $n letras. Según cómo escribes con dos dedos, el tamaño que mejor te queda es $rec %."
             usar.visibility = android.view.View.VISIBLE
             usar.text = "Usar tamaño recomendado ($rec %)"

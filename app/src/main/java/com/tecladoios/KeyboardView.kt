@@ -208,31 +208,86 @@ class KeyboardView(context: Context) : View(context) {
     private var dispersion = 0.2f
     private var muestras = 0
 
+    // Lo aprendido de cada letra (como Gboard): dónde la tocas de verdad, en anchos/altos de tecla
+    private val N_LETRAS = Diccionario.ALFABETO.length
+    private val letraX = FloatArray(N_LETRAS)
+    private val letraY = FloatArray(N_LETRAS)
+    private val letraN = IntArray(N_LETRAS)
+    /** Dispersión a lo ancho (también cuenta para el tamaño recomendado) */
+    private var dispersionX = 0.2f
+
+    /** Letras con las que puede seguir la palabra que escribes (las pone el corrector) */
+    var probables: Set<Char>? = null
+
     fun cargarAjuste(s: String?) {
         val v = s?.split(',')?.mapNotNull { it.toFloatOrNull() } ?: return
         if (v.size < 7) return
         desvY[0] = v[0]; desvY[1] = v[1]; desvY[2] = v[2]
         desvX[0] = v[3]; desvX[1] = v[4]; dispersion = v[5]; muestras = v[6].toInt()
+        if (v.size >= 8) dispersionX = v[7]
+        if (v.size >= 8 + 3 * N_LETRAS) for (i in 0 until N_LETRAS) {
+            letraX[i] = v[8 + 3 * i]; letraY[i] = v[9 + 3 * i]; letraN[i] = v[10 + 3 * i].toInt()
+        }
         acomodar()
     }
 
     fun reiniciarAjuste() {
-        DESV_INICIAL.copyInto(desvY); desvX[0] = 0f; desvX[1] = 0f; dispersion = 0.2f; muestras = 0
+        DESV_INICIAL.copyInto(desvY); desvX[0] = 0f; desvX[1] = 0f; dispersion = 0.2f; dispersionX = 0.2f; muestras = 0
+        letraX.fill(0f); letraY.fill(0f); letraN.fill(0)
+        porConfirmar = -1
         acomodar()
     }
 
-    private fun ajusteTexto() = listOf(desvY[0], desvY[1], desvY[2], desvX[0], desvX[1], dispersion, muestras.toFloat()).joinToString(",")
+    private fun ajusteTexto(): String {
+        val sb = StringBuilder()
+        for (v in listOf(desvY[0], desvY[1], desvY[2], desvX[0], desvX[1], dispersion, muestras.toFloat(), dispersionX))
+            sb.append(String.format(java.util.Locale.US, "%.4f", v)).append(',')
+        for (i in 0 until N_LETRAS)
+            sb.append(String.format(java.util.Locale.US, "%.4f,%.4f,%d,", letraX[i], letraY[i], letraN[i]))
+        return sb.toString().trimEnd(',')
+    }
+
+    /** Dónde sueles tocar la letra [c] (desvío respecto al centro): suya si ya la aprendió, si no de su fila y mano */
+    private fun desvioDe(c: Colocada): Pair<Float, Float> {
+        val i = Diccionario.indiceLetra(c.tecla.texto[0])
+        val mano = if (c.dibujo.centerX() < width / 2f) 0 else 1
+        val fx = desvX[mano]; val fy = desvY.getOrElse(c.fila) { 0f }
+        if (i < 0 || letraN[i] == 0) return fx to fy
+        val p = (letraN[i] / 25f).coerceAtMost(1f)          // con 25 toques ya confía en la letra
+        return (fx * (1 - p) + letraX[i] * p) to (fy * (1 - p) + letraY[i] * p)
+    }
+
+    // El toque se aprende recién cuando escribes la letra siguiente: si la borraste enseguida
+    // (era un error), no se aprende. Así un toque equivocado no corre la tecla al lado malo.
+    private var porConfirmar = -1
+    private var pcFila = 0; private var pcMano = 0; private var pcDx = 0f; private var pcDy = 0f
 
     private fun aprenderToque(c: Colocada, x: Float, y: Float) {
+        confirmarToque()
         if (distribucion.modo != Distribuciones.LETRAS || !c.tecla.esLetra || c.fila > 2) return
         val dy = (y - c.dibujo.centerY()) / c.dibujo.height()
         val dx = (x - c.dibujo.centerX()) / c.dibujo.width()
         if (abs(dy) > 0.9f || abs(dx) > 0.9f) return        // muy lejos: seguramente era otra tecla
+        porConfirmar = Diccionario.indiceLetra(c.tecla.texto[0])
+        pcFila = c.fila; pcMano = if (c.dibujo.centerX() < width / 2f) 0 else 1; pcDx = dx; pcDy = dy
+    }
+
+    /** Borraste: el último toque no se aprende */
+    private fun descartarToque() { porConfirmar = -1 }
+
+    private fun confirmarToque() {
+        val i = porConfirmar
+        if (i < 0) return
+        porConfirmar = -1
         val a = 0.02f
-        desvY[c.fila] = desvY[c.fila] * (1 - a) + dy * a
-        val mano = if (c.dibujo.centerX() < width / 2f) 0 else 1
-        desvX[mano] = desvX[mano] * (1 - a) + dx * a
-        dispersion = dispersion * (1 - a) + abs(dy - desvY[c.fila]) * a
+        desvY[pcFila] = desvY[pcFila] * (1 - a) + pcDy * a
+        desvX[pcMano] = desvX[pcMano] * (1 - a) + pcDx * a
+        dispersion = dispersion * (1 - a) + abs(pcDy - desvY[pcFila]) * a
+        dispersionX = dispersionX * (1 - a) + abs(pcDx - desvX[pcMano]) * a
+        val b = if (letraN[i] < 10) 0.15f else 0.05f            // al principio aprende más rápido
+        letraX[i] = letraX[i] * (1 - b) + pcDx * b
+        letraY[i] = letraY[i] * (1 - b) + pcDy * b
+        if (letraN[i] < 1000) letraN[i]++
         muestras++
         if (muestras % 50 == 0) {
             if (config?.ajusteAuto != false) acomodar()
@@ -242,14 +297,36 @@ class KeyboardView(context: Context) : View(context) {
 
     private fun buscar(x: Float, y: Float): Colocada? {
         if (y < zona + BARRA) return null
-        for (c in colocadas) if (c.toque.contains(x, y)) return c
-        // En un hueco (al lado de mayúscula o borrar): la tecla más cercana de esa fila
-        var mejor: Colocada? = null; var md = Float.MAX_VALUE
-        for (c in colocadas) {
-            if (y < c.toque.top || y > c.toque.bottom) continue
-            val dx = max(max(c.toque.left - x, 0f), x - c.toque.right)
-            if (dx < md) { md = dx; mejor = c }
+        var dentro: Colocada? = null
+        for (c in colocadas) if (c.toque.contains(x, y)) { dentro = c; break }
+        if (dentro == null) {
+            // En un hueco (al lado de mayúscula o borrar): la tecla más cercana de esa fila
+            var md = Float.MAX_VALUE
+            for (c in colocadas) {
+                if (y < c.toque.top || y > c.toque.bottom) continue
+                val dx = max(max(c.toque.left - x, 0f), x - c.toque.right)
+                if (dx < md) { md = dx; dentro = c }
+            }
         }
+        val d = dentro ?: return null
+        if (!d.tecla.esLetra || distribucion.modo != Distribuciones.LETRAS || config?.ajusteAuto == false) return d
+        // Entre las letras vecinas gana la más cercana a donde TÚ sueles tocar cada una;
+        // si dos quedan casi igual, gana la que sigue formando una palabra (como Gboard)
+        var mejor = d; var mejorP = Float.MAX_VALUE; var segunda: Colocada? = null; var segundaP = Float.MAX_VALUE
+        for (c in colocadas) {
+            if (!c.tecla.esLetra || abs(c.fila - d.fila) > 1) continue
+            if (abs(c.dibujo.centerX() - d.dibujo.centerX()) > c.dibujo.width() * 1.6f) continue
+            val (ox, oy) = desvioDe(c)
+            val dx = (x - (c.dibujo.centerX() + ox * c.dibujo.width())) / c.dibujo.width()
+            val dy = (y - (c.dibujo.centerY() + oy * c.dibujo.height())) / c.dibujo.height()
+            val p = dx * dx + dy * dy * 1.3f
+            if (p < mejorP) { segunda = mejor; segundaP = mejorP; mejor = c; mejorP = p }
+            else if (p < segundaP) { segunda = c; segundaP = p }
+        }
+        val prob = probables
+        val seg = segunda
+        if (prob != null && seg != null && seg !== mejor && segundaP - mejorP < 0.12f &&
+            mejor.tecla.texto[0] !in prob && seg.tecla.texto[0] in prob) return seg
         return mejor
     }
 
@@ -341,6 +418,7 @@ class KeyboardView(context: Context) : View(context) {
                 if (t.variantes.isNotEmpty()) postDelayed(dd.larga, 380L)
             }
             K.BORRAR -> {
+                descartarToque()
                 oyente?.borrar(false)
                 postDelayed(dd.repetir, 450L)
             }

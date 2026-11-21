@@ -445,6 +445,27 @@ class Diccionario private constructor(
         return Propuesta(escrito, correccion, opciones)
     }
 
+    /** Letras con las que puede seguir lo que escribes (para acertar la tecla cuando el toque queda justo entre dos) */
+    fun siguientes(escrito: String): Set<Char> {
+        val kb = normal(escrito).toByteArray(Charsets.UTF_8)
+        val r = HashSet<Char>()
+        val buf = ByteArray(64)
+        var i = inferior(kb); var vistos = 0
+        while (i < claves.size && claves.empieza(i, kb) && vistos < 8000) {
+            if (claves.puesto(i) < 60000) {
+                val n = claves.normal(i, buf)
+                if (n > kb.size) {
+                    val b = buf[kb.size].toInt() and 0xFF
+                    val ch = if (b == 0xC3 && n > kb.size + 1 && (buf[kb.size + 1].toInt() and 0xFF) == 0xB1) 'ñ' else b.toChar()
+                    if (ch in 'a'..'z' || ch == 'ñ') r.add(ch)
+                }
+            }
+            i++; vistos++
+        }
+        for ((clave, _) in propias) if (clave.length > escrito.length && clave.startsWith(normal(escrito))) r.add(clave[escrito.length])
+        return r
+    }
+
     private fun termina(b: ByteArray, n: Int, suf: ByteArray): Boolean {
         if (n <= suf.size) return false
         for (j in suf.indices) if (b[n - suf.size + j] != suf[j]) return false

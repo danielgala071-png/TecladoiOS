@@ -73,7 +73,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     /** El cursor está en medio de una palabra: no se sigue lo que escribes (no se corrige a medias) */
     private var enMedio = false
 
-    private fun vaciar() { palabra.setLength(0); toques.clear() }
+    private fun vaciar() { palabra.setLength(0); toques.clear(); teclado?.probables = null }
 
     private fun toquesDe(w: String): List<FloatArray?>? = if (toques.size == w.length) ArrayList(toques) else null
     /** Palabras que suelen ir después (se muestran con la barra vacía) */
@@ -255,6 +255,9 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
             val nombre = ant != null && w.first().isUpperCase()
             val p = try { d.proponer(w, ant, nombre, tq0) } catch (_: Throwable) { null }
             principal.post { if (t == turno && palabra.toString() == w) { propuesta = p; actualizarBarra() } }
+            // Qué letras pueden seguir: ayuda a acertar la tecla cuando el toque cae justo entre dos
+            val sig = try { d.siguientes(w) } catch (_: Throwable) { null }
+            principal.post { if (palabra.toString() == w) teclado?.probables = sig?.takeIf { it.isNotEmpty() } }
         }
         // La barra no se vacía mientras se calcula (no parpadea): solo cambia lo escrito
         if (sugerir) teclado?.let { kb ->
