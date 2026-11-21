@@ -41,6 +41,14 @@ class Diccionario private constructor(
             }
             return n - k.size
         }
+        /** ¿La palabra [i] termina en [suf]? (sin armar el texto) */
+        fun termina(i: Int, suf: ByteArray): Boolean {
+            val n = ini[i + 1] - ini[i]
+            if (n <= suf.size) return false
+            val a = ini[i + 1] - suf.size
+            for (j in suf.indices) if (datos[a + j] != suf[j]) return false
+            return true
+        }
         fun empieza(i: Int, k: ByteArray): Boolean {
             val a = ini[i]
             if (ini[i + 1] - a < k.size) return false
@@ -265,11 +273,12 @@ class Diccionario private constructor(
         val k = normal(t)
         if (propias[k] != t) JUNTAS[k]?.let { j ->
             val j2 = conForma(j, escrito)
-            return Propuesta(escrito, j2, completar(k, 2).filter { it != t })
+            return Propuesta(escrito, j2, completar(k, 2, null).filter { it != t })
         }
         // Las palabras que ya usaste antes no se corrigen
         val valida = existe(t) || usos.containsKey(t)
         // Risas y onomatopeyas (jajaja, jsjsjs, jejeje) se dejan tal cual
+        val suf = sufijos(ant)
         val risa = t.length >= 4 && t.count { it == 'j' } >= 2 && t.all { it in "jaeiosxdhk" }
         val cands = HashMap<String, Cand>()
         fun agregar(w: String, costo: Float, puesto0: Int, soloTilde: Boolean = false) {
@@ -279,6 +288,7 @@ class Diccionario private constructor(
             val u = usos[w] ?: 0
             if (u > 0) puesto /= (1 + 4 * u)
             if (ant != null && (conteoPares["$ant $w"] ?: 0) > 0) puesto /= 10
+            if (concuerda(suf, normal(w))) puesto /= 3
             val c = Cand(w, costo, puesto, soloTilde)
             val prev = cands[w]
             if (prev == null || prev.puntaje > c.puntaje) cands[w] = c
@@ -316,7 +326,9 @@ class Diccionario private constructor(
             // Una palabra muy rara solo se pone si el error es clarísimo
             val rara = mejor.puesto > 40000 && mejor.costo > 0.5f
             // La palabra escrita sin tilde no se cambia sola: la versión con tilde queda en la barra
-            if (mejor.costo <= limite && !dudosa && !rara && !mejor.soloTilde && !risa && !nombrePropio)
+            // Bien escrita pero sin tilde (hagamoslo, haria): se deja pasar, nunca se cambia por otra
+            val sinTilde = orden.any { it.soloTilde }
+            if (mejor.costo <= limite && !dudosa && !rara && !sinTilde && !risa && !nombrePropio)
                 correccion = conForma(mejor.palabra, escrito)
         }
         // Opciones de la barra: completar la palabra y las mejores correcciones
@@ -326,13 +338,13 @@ class Diccionario private constructor(
         // La misma palabra con tilde va primero en la barra
         orden.firstOrNull { it.soloTilde }?.let { poner(it.palabra) }
         if (correccion != null) orden.drop(1).take(2).forEach { if (it.costo <= 1.2f) poner(it.palabra) }
-        completar(k, 3).forEach { poner(it) }
+        completar(k, 3, suf).forEach { poner(it) }
         if (correccion == null) orden.take(3).forEach { if (it.costo <= 0.8f) poner(it.palabra) }
         return Propuesta(escrito, correccion, opciones)
     }
 
     /** Palabras que empiezan con [k]: primero las que tú usas, luego las más usadas en general */
-    private fun completar(k: String, n: Int): List<String> {
+    private fun completar(k: String, n: Int, suf: Array<ByteArray>?): List<String> {
         val kb = k.toByteArray(Charsets.UTF_8)
         val puntos = FloatArray(n) { Float.MAX_VALUE }
         val mejores = arrayOfNulls<String>(n)
@@ -342,19 +354,24 @@ class Diccionario private constructor(
             while (j > 0 && puntos[j - 1] > pt) { puntos[j] = puntos[j - 1]; mejores[j] = mejores[j - 1]; j-- }
             puntos[j] = pt; mejores[j] = w
         }
-        // Las más usadas del diccionario (sin armar textos: se comparan los bytes)
-        val top = IntArray(n) { Int.MAX_VALUE }
+        // Las más usadas del diccionario (sin armar textos: se comparan los bytes); las que
+        // concuerdan con la palabra anterior (la casa, los perros, yo tengo) suben
+        val top = IntArray(n) { -1 }
+        val topP = FloatArray(n) { Float.MAX_VALUE }
         var i = inferior(kb); var vistos = 0
         while (i < claves.size && claves.empieza(i, kb) && vistos < 6000) {
-            val p = puestos[i]
-            if (claves.largo(i) > kb.size && p < top[n - 1]) {
-                var j = n - 1
-                while (j > 0 && top[j - 1] > p) { top[j] = top[j - 1]; j-- }
-                top[j] = p
+            if (claves.largo(i) > kb.size) {
+                var p = puestos[i].toFloat()
+                if (suf != null && suf.any { claves.termina(i, it) }) p /= 3f
+                if (p < topP[n - 1]) {
+                    var j = n - 1
+                    while (j > 0 && topP[j - 1] > p) { topP[j] = topP[j - 1]; top[j] = top[j - 1]; j-- }
+                    topP[j] = p; top[j] = puestos[i]
+                }
             }
             i++; vistos++
         }
-        for (p in top) if (p != Int.MAX_VALUE) meter(palabras[p], p.toFloat())
+        for (j in 0 until n) if (top[j] >= 0) meter(palabras[top[j]], topP[j])
         // Tus palabras más usadas que empiezan igual suben al frente
         for ((w, u) in usos) {
             val nw = normal(w)
@@ -367,6 +384,38 @@ class Diccionario private constructor(
         val r = mejores.filterNotNull().toMutableList()
         for ((clave, w) in propias) if (r.size < n && clave.startsWith(k) && clave.length > k.length && w !in r) r.add(w)
         return r
+    }
+
+    /**
+     * Concordancia simple: qué terminaciones van bien después de la palabra anterior
+     * (la → casa, los → perros, yo → tengo, nosotros → vamos, ellos → saben)
+     */
+    private fun sufijos(ant: String?): Array<ByteArray>? {
+        val a = ant?.let { normal(it) } ?: return null
+        val s = when (a) {
+            "la", "una", "esta", "esa", "aquella", "nuestra", "toda", "otra", "alguna", "ninguna", "mucha", "poca",
+            "cierta", "tanta", "cuanta", "misma", "primera", "ultima", "buena", "mala", "nueva", "vieja" ->
+                arrayOf("a", "ion", "dad", "tad", "tud", "umbre")
+            "el", "un", "este", "ese", "aquel", "nuestro", "todo", "otro", "algun", "ningun", "mucho", "poco",
+            "cierto", "tanto", "mismo", "primer", "ultimo", "buen", "mal", "nuevo", "viejo", "del", "al" ->
+                arrayOf("o", "or", "on", "en", "an", "el", "il", "al", "ar", "es")
+            "las", "unas", "estas", "esas", "nuestras", "todas", "otras", "algunas", "muchas", "pocas", "tantas", "mismas" ->
+                arrayOf("as", "es")
+            "los", "unos", "estos", "esos", "nuestros", "todos", "otros", "algunos", "muchos", "pocos", "tantos", "mismos" ->
+                arrayOf("os", "es")
+            "mis", "tus", "sus" -> arrayOf("s")
+            "yo" -> arrayOf("o", "e", "i", "ia", "aba")
+            "nosotros", "nosotras" -> arrayOf("mos")
+            "ellos", "ellas", "ustedes" -> arrayOf("n")
+            else -> return null
+        }
+        return Array(s.size) { s[it].toByteArray(Charsets.UTF_8) }
+    }
+
+    private fun concuerda(suf: Array<ByteArray>?, w: String): Boolean {
+        if (suf == null) return false
+        val b = w.toByteArray(Charsets.UTF_8)
+        return suf.any { s -> b.size > s.size && (0 until s.size).all { b[b.size - s.size + it] == s[it] } }
     }
 
     /** Mayúsculas como las escribiste: «Hola», «HOLA» */
