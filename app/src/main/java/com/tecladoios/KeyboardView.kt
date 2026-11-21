@@ -34,7 +34,8 @@ class KeyboardView(context: Context) : View(context) {
         fun cursor(dx: Int, dy: Int)
         fun respuesta(t: Respuesta.Tipo)
         fun sugerencia(i: Int)
-        fun herramienta(i: Int)
+        /** Mantener la tecla emoji: abre los Ajustes */
+        fun ajustes()
         /** Guarda lo aprendido sobre dónde tocas (cada 50 letras) */
         fun guardarAjuste(s: String)
     }
@@ -390,10 +391,8 @@ class KeyboardView(context: Context) : View(context) {
         }
         // Barra de sugerencias
         if (conBarra && y >= zona && y < zona + BARRA) {
-            val herr = false   // sin barra de herramientas
-            val k = if (herr) (x / (width / HERRAMIENTAS.toFloat())).toInt().coerceIn(0, HERRAMIENTAS - 1) + 10
-                else (x / (width / 3f)).toInt().coerceIn(0, 2)
-            if (!herr && sugerencias[k] == null) return
+            val k = (x / (width / 3f)).toInt().coerceIn(0, 2)
+            if (sugerencias[k] == null) return
             dedos[id] = Dedo(id).apply { modo = Modo.BARRA; x0 = x; y0 = y; repeticiones = k }
             casillaApretada = k
             oyente?.respuesta(Respuesta.Tipo.LETRA)
@@ -424,6 +423,7 @@ class KeyboardView(context: Context) : View(context) {
             }
             K.SHIFT -> tocarShift()
             K.ESPACIO -> postDelayed(dd.larga, 450L)
+            K.EMOJI -> postDelayed(dd.larga, 500L)
         }
         invalidate()
     }
@@ -431,7 +431,7 @@ class KeyboardView(context: Context) : View(context) {
     private fun mover(dd: Dedo, x: Float, y: Float) {
         when (dd.modo) {
             Modo.BARRA -> {
-                val k = if (dd.repeticiones >= 10) (x / (width / HERRAMIENTAS.toFloat())).toInt() + 10 else (x / (width / 3f)).toInt()
+                val k = (x / (width / 3f)).toInt()
                 val dentro = k == dd.repeticiones && y >= zona - dp(30f) && y < zona + BARRA + dp(30f)
                 val nueva = if (dentro) dd.repeticiones else -1
                 if (nueva != casillaApretada) { casillaApretada = nueva; invalidate() }
@@ -507,7 +507,7 @@ class KeyboardView(context: Context) : View(context) {
             Modo.CURSOR -> trackpad = false
             Modo.BARRA -> {
                 if (casillaApretada == dd.repeticiones) {
-                    if (dd.repeticiones >= 10) oyente?.herramienta(dd.repeticiones - 10) else oyente?.sugerencia(dd.repeticiones)
+                    oyente?.sugerencia(dd.repeticiones)
                 }
                 casillaApretada = -1
             }
@@ -594,6 +594,14 @@ class KeyboardView(context: Context) : View(context) {
                 invalidate()
             }
             K.ESPACIO -> empezarCursor(dd, dd.x0, dd.y0)
+            K.EMOJI -> {
+                // Al soltar ya no abre los emojis
+                dd.modo = Modo.HECHO
+                presionadas.remove(c)
+                oyente?.respuesta(Respuesta.Tipo.FUNCION)
+                invalidate()
+                oyente?.ajustes()
+            }
         }
     }
 
@@ -798,62 +806,6 @@ class KeyboardView(context: Context) : View(context) {
         cv.drawCircle(cx + r * 0.35f, cy - r * 0.25f, dp(1.4f), lleno)
         ovalo.set(cx - r * 0.5f, cy - r * 0.15f, cx + r * 0.5f, cy + r * 0.55f)
         cv.drawArc(ovalo, 20f, 140f, false, trazo)
-    }
-
-    // ---------- Barra de herramientas (cuando no escribes una palabra) ----------
-    private val HERRAMIENTAS = 6   // pegar, copiar, cortar, seleccionar todo, deshacer, ajustes
-
-    private fun dibujarHerramientas(cv: Canvas) {
-        val ancho = width / HERRAMIENTAS.toFloat()
-        val cy = zona + BARRA / 2
-        val s = dp(9f)
-        for (i in 0 until HERRAMIENTAS) {
-            val cx = ancho * i + ancho / 2
-            if (casillaApretada == i + 10) {
-                relleno.color = LETRA_PRESIONADA
-                cv.drawRoundRect(cx - ancho / 2 + dp(4f), zona + dp(5f), cx + ancho / 2 - dp(4f), zona + BARRA - dp(5f), dp(7f), dp(7f), relleno)
-            }
-            when (i) {
-                0 -> { // pegar: portapapeles
-                    cv.drawRoundRect(cx - s * 0.8f, cy - s * 0.85f, cx + s * 0.8f, cy + s, dp(2f), dp(2f), trazo)
-                    cv.drawRoundRect(cx - s * 0.4f, cy - s * 1.15f, cx + s * 0.4f, cy - s * 0.6f, dp(1.5f), dp(1.5f), lleno)
-                }
-                1 -> { // copiar: dos hojas
-                    cv.drawRoundRect(cx - s * 0.85f, cy - s * 0.85f, cx + s * 0.35f, cy + s * 0.55f, dp(2f), dp(2f), trazo)
-                    cv.drawRoundRect(cx - s * 0.35f, cy - s * 0.35f, cx + s * 0.85f, cy + s * 1.05f, dp(2f), dp(2f), trazo)
-                }
-                2 -> { // cortar: tijeras
-                    cv.drawCircle(cx - s * 0.5f, cy + s * 0.65f, s * 0.32f, trazo)
-                    cv.drawCircle(cx + s * 0.5f, cy + s * 0.65f, s * 0.32f, trazo)
-                    cv.drawLine(cx - s * 0.3f, cy + s * 0.4f, cx + s * 0.55f, cy - s, trazo)
-                    cv.drawLine(cx + s * 0.3f, cy + s * 0.4f, cx - s * 0.55f, cy - s, trazo)
-                }
-                3 -> { // seleccionar todo: recuadro con esquinas
-                    cv.drawRect(cx - s * 0.45f, cy - s * 0.45f, cx + s * 0.45f, cy + s * 0.45f, lleno)
-                    val e = s * 0.9f; val l = s * 0.4f
-                    cv.drawLine(cx - e, cy - e, cx - e + l, cy - e, trazo); cv.drawLine(cx - e, cy - e, cx - e, cy - e + l, trazo)
-                    cv.drawLine(cx + e, cy - e, cx + e - l, cy - e, trazo); cv.drawLine(cx + e, cy - e, cx + e, cy - e + l, trazo)
-                    cv.drawLine(cx - e, cy + e, cx - e + l, cy + e, trazo); cv.drawLine(cx - e, cy + e, cx - e, cy + e - l, trazo)
-                    cv.drawLine(cx + e, cy + e, cx + e - l, cy + e, trazo); cv.drawLine(cx + e, cy + e, cx + e, cy + e - l, trazo)
-                }
-                4 -> { // deshacer: flecha curva
-                    ovalo.set(cx - s * 0.75f, cy - s * 0.55f, cx + s * 0.9f, cy + s * 0.95f)
-                    cv.drawArc(ovalo, 180f, 250f, false, trazo)
-                    val ax = cx - s * 0.75f; val ay = cy + s * 0.2f
-                    cv.drawLine(ax, ay, ax - s * 0.35f, ay - s * 0.4f, trazo)
-                    cv.drawLine(ax, ay, ax + s * 0.4f, ay - s * 0.3f, trazo)
-                }
-                else -> { // ajustes: engranaje
-                    cv.drawCircle(cx, cy, s * 0.62f, trazo)
-                    cv.drawCircle(cx, cy, s * 0.22f, lleno)
-                    for (k in 0 until 8) {
-                        val a = Math.toRadians(k * 45.0)
-                        val c = Math.cos(a).toFloat(); val sn = Math.sin(a).toFloat()
-                        cv.drawLine(cx + c * s * 0.62f, cy + sn * s * 0.62f, cx + c * s * 0.95f, cy + sn * s * 0.95f, trazo)
-                    }
-                }
-            }
-        }
     }
 
     private fun dibujarIntro(cv: Canvas, cx: Float, cy: Float) {

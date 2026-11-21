@@ -7,6 +7,8 @@ on:
 
 jobs:
   compilar:
+    # Solo compila cuando se pide: a mano (Run workflow) o con la palabra «compilar» en el mensaje del cambio
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'compilar')
     runs-on: ubuntu-latest
     # Para publicar cada versión en "Releases"
     permissions:
@@ -25,7 +27,7 @@ jobs:
           rm -fv ../../../../test/java/com/tecladoios/PortapapelesYEmojisTest.kt
 
       - name: Instalar Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17

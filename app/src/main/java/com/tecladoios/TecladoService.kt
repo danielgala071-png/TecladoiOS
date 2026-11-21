@@ -281,7 +281,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
                 ops.getOrNull(1)?.let { casillas[2] = KeyboardView.Sug(it, 0) }
             }
         } else if (sugerir && w.isEmpty()) {
-            // Sin palabra a medias: lo que sueles escribir después (si no hay, la barra de herramientas)
+            // Sin palabra a medias: lo que sueles escribir después
             val may = kb.shift > 0
             for ((i, s) in predicciones.take(3).withIndex())
                 casillas[i] = KeyboardView.Sug(if (may) s.replaceFirstChar { it.uppercaseChar() } else s, 0)
@@ -306,7 +306,11 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     private fun correccionAhora(): String? {
         if (!corregir || palabra.isEmpty()) return null
         val w = palabra.toString()
-        val p = propuesta?.takeIf { it.escrito == w } ?: try { dic?.proponer(w, anterior, anterior != null && w.first().isUpperCase(), toquesDe(w)) } catch (_: Throwable) { null }
+        // Si la cuenta completa (en el otro hilo) aún no llegó, se hace una rápida aquí mismo:
+        // solo un error, sin buscar dos ni completar palabras, para que el espacio nunca se trabe
+        val p = propuesta?.takeIf { it.escrito == w } ?: try {
+            dic?.proponer(w, anterior, anterior != null && w.first().isUpperCase(), toquesDe(w), rapido = true)
+        } catch (_: Throwable) { null }
         return p?.correccion?.takeIf { it != w }
     }
 
@@ -341,7 +345,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         val ic = currentInputConnection ?: return w
         val lw = w.lowercase()
         val ant = anterior
-        if (lw == "el" && (ant == "a" || ant == "de")) {
+        // «a El Comercio» se deja: «El» con mayúscula es parte de un nombre
+        if (lw == "el" && w[0] == 'e' && (ant == "a" || ant == "de")) {
             val antes = ic.getTextBeforeCursor(ant.length + 3, 0)?.toString() ?: return w
             val esperadoTxt = "$ant $lw"
             if (antes.lowercase().endsWith(esperadoTxt) && antes.length >= esperadoTxt.length) {
@@ -502,26 +507,12 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         movido(1)
     }
 
-    /** Barra de herramientas: pegar, copiar, cortar, seleccionar todo, deshacer, ajustes */
-    override fun herramienta(i: Int) {
-        val ic = currentInputConnection ?: return
-        esperado = -1; pendientes = 0; olvidarDeshacer()
-        when (i) {
-            0 -> ic.performContextMenuAction(android.R.id.paste)
-            1 -> ic.performContextMenuAction(android.R.id.copy)
-            2 -> ic.performContextMenuAction(android.R.id.cut)
-            3 -> ic.performContextMenuAction(android.R.id.selectAll)
-            4 -> {
-                val t = SystemClock.uptimeMillis()
-                ic.sendKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_Z, 0, KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON))
-                ic.sendKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_Z, 0, KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON))
-            }
-            else -> try {
-                startActivity(android.content.Intent(this, SettingsActivity::class.java)
-                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-                requestHideSelf(0)
-            } catch (_: Throwable) { }
-        }
+    override fun ajustes() {
+        try {
+            startActivity(android.content.Intent(this, SettingsActivity::class.java)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            requestHideSelf(0)
+        } catch (_: Throwable) { }
     }
 
     override fun sugerencia(i: Int) {

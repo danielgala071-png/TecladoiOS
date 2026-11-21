@@ -217,6 +217,11 @@ class Diccionario private constructor(
             "aver" to "a ver", "osea" to "o sea", "talvez" to "tal vez", "enserio" to "en serio",
             "porfavor" to "por favor", "atravez" to "a través", "atraves" to "a través", "nose" to "no sé",
             "almenos" to "al menos", "sinembargo" to "sin embargo", "envez" to "en vez", "derepente" to "de repente",
+            "aveces" to "a veces", "apesar" to "a pesar", "enrealidad" to "en realidad", "deverdad" to "de verdad",
+            "porsupuesto" to "por supuesto", "alrato" to "al rato", "enfin" to "en fin", "deveras" to "de veras",
+            "porlomenos" to "por lo menos", "loque" to "lo que", "esque" to "es que",
+            "yaque" to "ya que", "asique" to "así que", "almismo" to "al mismo", "derrepente" to "de repente",
+            "atiempo" to "a tiempo", "alfinal" to "al final", "porahora" to "por ahora",
         )
     }
 
@@ -362,14 +367,14 @@ class Diccionario private constructor(
     }
 
     fun proponer(escrito: String, anterior: String? = null, nombrePropio: Boolean = false,
-                 toques: List<FloatArray?>? = null): Propuesta {
+                 toques: List<FloatArray?>? = null, rapido: Boolean = false): Propuesta {
         val ant = anterior?.lowercase()
         if (escrito.isEmpty()) return Propuesta(escrito, null, emptyList())
         val t = escrito.lowercase()
         val k = normal(t)
-        if (propias[k] != t) JUNTAS[k]?.let { j ->
+        if (propias[k] != t) JUNTAS[k]?.takeIf { it != t }?.let { j ->
             val j2 = conForma(j, escrito)
-            return Propuesta(escrito, j2, completar(k, 2, null).filter { it != t })
+            return Propuesta(escrito, j2, if (rapido) emptyList() else completar(k, 2, null).filter { it != t })
         }
         // Las palabras que ya usaste antes no se corrigen
         val valida = existe(t) || usos.containsKey(t)
@@ -401,7 +406,7 @@ class Diccionario private constructor(
                 if (costo <= 0.8f) primeras.add(e to costo)
             }
             // 3. Dos errores (solo en palabras de 5 letras o más, y solo errores típicos)
-            if (!valida && k.length >= 5 && cands.values.none { it.costo <= 0.8f }) {
+            if (!rapido && !valida && k.length >= 5 && cands.values.none { it.costo <= 0.8f }) {
                 for ((e, c1) in primeras) ediciones(e, soloBaratas = true) { e2, c2 ->
                     if (e2 != k) conClave(e2) { agregar(palabras[it], c1 + c2, it) }
                 }
@@ -433,6 +438,8 @@ class Diccionario private constructor(
         // Nombres que escribiste antes con mayúscula: maría → María
         val nombre = nombres[t]
         if (nombre != null && escrito == t && correccion == null) correccion = nombre
+        // La cuenta rápida solo decide la corrección (la barra no la necesita)
+        if (rapido) return Propuesta(escrito, correccion, emptyList())
         // Opciones de la barra: completar la palabra y las mejores correcciones
         val opciones = ArrayList<String>(3)
         val usadas = HashSet<String>().apply { add(t); correccion?.let { add(it.lowercase()) } }
