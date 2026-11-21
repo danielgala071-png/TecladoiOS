@@ -23,6 +23,8 @@ object Ajustes {
     const val DIC_VERSION = "dic_version"
     /** Tamaño del teclado en % (alto de las teclas) */
     const val TAMANO = "tamano"
+    /** Guardar el historial de lo que copias */
+    const val PORTAPAPELES = "portapapeles"
 
     fun prefs(c: Context): SharedPreferences =
         c.applicationContext.getSharedPreferences(ARCHIVO, Context.MODE_PRIVATE)
@@ -39,5 +41,6 @@ class Config(p: SharedPreferences) {
     val sonido = p.getBoolean(Ajustes.SONIDO, false)
     val signosApertura = p.getBoolean(Ajustes.SIGNOS, true)
     val ajusteAuto = p.getBoolean(Ajustes.AJUSTE_AUTO, true)
+    val portapapeles = p.getBoolean(Ajustes.PORTAPAPELES, true)
     val tamano = p.getInt(Ajustes.TAMANO, 100).coerceIn(80, 130)
 }

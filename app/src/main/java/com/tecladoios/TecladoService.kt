@@ -22,7 +22,7 @@ import java.text.BreakIterator
 /** Artículos y preposiciones que no van dos veces seguidas («el el» → «el») */
 private val REPETIBLES_NO = setOf("el", "la", "los", "las", "un", "una", "de", "del", "al", "en", "con", "por", "para", "a")
 
-class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oyente,
+class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oyente, PanelPortapapeles.Oyente,
     SharedPreferences.OnSharedPreferenceChangeListener {
 
     private lateinit var prefs: SharedPreferences
@@ -32,6 +32,28 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     private var raiz: FrameLayout? = null
     private var teclado: KeyboardView? = null
     private var panel: PanelEmoji? = null
+    private var panelClip: PanelPortapapeles? = null
+
+    // ---------- Portapapeles ----------
+    private lateinit var clip: Portapapeles
+    /** Lo recién copiado: aparece en la barra para pegarlo (como el iPhone) */
+    private var copiado: String? = null
+    private var copiadoMs = 0L
+    private val alCopiar = android.content.ClipboardManager.OnPrimaryClipChangedListener { revisarCopiado() }
+
+    private fun revisarCopiado() {
+        if (!cfg.portapapeles) return
+        if (!clip.leerSistema()) return
+        val r = clip.recortes().firstOrNull() ?: return
+        copiado = r.texto; copiadoMs = r.ms
+        if (palabra.isEmpty() && tocada == null) actualizarBarra()
+    }
+
+    private fun copiadoVigente(): String? {
+        val c = copiado ?: return null
+        if (System.currentTimeMillis() - copiadoMs > Portapapeles.EN_BARRA_MS) { copiado = null; return null }
+        return c
+    }
 
     private var info: EditorInfo? = null
     private var ultimoEspacioMs = 0L
@@ -86,10 +108,13 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         cfg = Config(prefs)
         respuesta = Respuesta(this).also { it.config = cfg }
         prefs.registerOnSharedPreferenceChangeListener(this)
+        clip = Portapapeles(this)
+        try { getSystemService(android.content.ClipboardManager::class.java)?.addPrimaryClipChangedListener(alCopiar) } catch (_: Throwable) { }
     }
 
     override fun onDestroy() {
         hilo.shutdown()
+        try { getSystemService(android.content.ClipboardManager::class.java)?.removePrimaryClipChangedListener(alCopiar) } catch (_: Throwable) { }
         prefs.unregisterOnSharedPreferenceChangeListener(this)
         respuesta.soltar()
         super.onDestroy()
@@ -102,6 +127,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         cfg = Config(prefs)
         respuesta.config = cfg
         if (!cfg.sonido) respuesta.soltarSonidos()
+        // Apagar el historial borra lo guardado
+        if (clave == Ajustes.PORTAPAPELES && !cfg.portapapeles) { clip.borrarTodo(); copiado = null; cerrarEmojis(); actualizarBarra() }
         teclado?.config = cfg
         if (clave == Ajustes.TAMANO || clave == Ajustes.AJUSTE_AUTO) { cerrarEmojis(); teclado?.requestLayout() }
         teclado?.invalidate()
@@ -114,6 +141,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         super.onTrimMemory(level)
         respuesta.soltarSonidos()
         PanelEmoji.soltarCache()
+        clip.soltar()
         if (!isInputViewShown) { cerrarEmojis(); dic = null }
     }
 
@@ -128,10 +156,11 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
                 val abajo = ins.getInsets(WindowInsets.Type.navigationBars()).bottom
                 kb.abajoSistema = abajo
                 panel?.abajoSistema = abajo
+                panelClip?.abajoSistema = abajo
                 ins
             }
         }
-        raiz = r; teclado = kb; panel = null
+        raiz = r; teclado = kb; panel = null; panelClip = null
         return r
     }
 
@@ -179,6 +208,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         }
         kb.etiquetaIntro = etiquetaIntro(ei)
         actualizarMayus()
+        // Lo copiado mientras el teclado estaba cerrado
+        if (texto) revisarCopiado()
         recapturar()
     }
 
@@ -281,10 +312,15 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
                 ops.getOrNull(1)?.let { casillas[2] = KeyboardView.Sug(it, 0) }
             }
         } else if (sugerir && w.isEmpty()) {
-            // Sin palabra a medias: lo que sueles escribir después
+            // Sin palabra a medias: lo recién copiado primero, luego lo que sueles escribir después
             val may = kb.shift > 0
-            for ((i, s) in predicciones.take(3).withIndex())
-                casillas[i] = KeyboardView.Sug(if (may) s.replaceFirstChar { it.uppercaseChar() } else s, 0)
+            val cp = copiadoVigente()
+            var k = 0
+            if (cp != null) casillas[k++] = KeyboardView.Sug(cp, 3)
+            for (s in predicciones) {
+                if (k >= 3) break
+                casillas[k++] = KeyboardView.Sug(if (may) s.replaceFirstChar { it.uppercaseChar() } else s, 0)
+            }
         } else if (sugerir && w.isNotEmpty()) {
             casillas[0] = KeyboardView.Sug(w, 1)
             val p = propuesta?.takeIf { it.escrito == w }
@@ -481,6 +517,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     override fun texto(s: String, costos: FloatArray?) {
         val ic = currentInputConnection ?: return
         olvidarDeshacer()
+        copiado = null      // al escribir, lo copiado deja la barra (sigue en el portapapeles)
         tocada = null
         // Recién se terminó una palabra con espacio y ahora va un signo: se pega a la palabra
         if (s.length == 1 && s[0] in ".,;:!?)" && palabra.isEmpty() && SystemClock.uptimeMillis() - ultimoEspacioMs < 4000L) {
@@ -546,6 +583,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     override fun sugerencia(i: Int) {
         val sg = casillas.getOrNull(i) ?: return
         val ic = currentInputConnection ?: return
+        if (sg.tipo == 3) { pegar(sg.texto); return }
         val tc = tocada
         if (palabra.isEmpty() && tc != null) {
             // Cambia la palabra tocada entera (sin agregar espacio)
@@ -703,7 +741,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         ic.endBatchEdit()
     }
 
-    override fun respuesta(t: Respuesta.Tipo) = respuesta.tocar(t, panel ?: teclado)
+    override fun respuesta(t: Respuesta.Tipo) = respuesta.tocar(t, panelClip ?: panel ?: teclado)
 
     override fun guardarAjuste(s: String) { prefs.edit().putString(Ajustes.AJUSTE, s).apply() }
 
@@ -721,12 +759,14 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
             panel = it
         }
         p.layoutParams = (p.layoutParams as FrameLayout.LayoutParams).also { it.height = kb.altoVisible() }
+        p.conPortapapeles = cfg.portapapeles
         p.abrir()
         p.visibility = View.VISIBLE
         kb.visibility = View.INVISIBLE
     }
 
     private fun cerrarEmojis() {
+        cerrarPortapapeles()
         val p = panel ?: return
         // El panel se suelta al cerrarlo (no ocupa memoria mientras no se usa)
         raiz?.removeView(p)
@@ -741,6 +781,54 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         ultimoEspacioMs = 0L
         anterior = null; anterior2 = null; predicciones = emptyList()
         vaciar(); propuesta = null; olvidarDeshacer(); actualizarBarra()
+    }
+
+    // ---------- Portapapeles ----------
+    override fun portapapeles() {
+        val r = raiz ?: return
+        val kb = teclado ?: return
+        val pc = panelClip ?: PanelPortapapeles(this).also {
+            it.oyente = this
+            it.abajoSistema = kb.abajoSistema
+            val lp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, kb.altoVisible())
+            lp.gravity = android.view.Gravity.BOTTOM
+            r.addView(it, lp)
+            panelClip = it
+        }
+        pc.layoutParams = (pc.layoutParams as FrameLayout.LayoutParams).also { it.height = kb.altoVisible() }
+        pc.abrir(clip.recortes().map { it.texto })
+        pc.visibility = View.VISIBLE
+        panel?.visibility = View.INVISIBLE
+        kb.visibility = View.INVISIBLE
+    }
+
+    private fun cerrarPortapapeles() {
+        val pc = panelClip ?: return
+        raiz?.removeView(pc)
+        panelClip = null
+    }
+
+    override fun pegar(t: String) {
+        val ic = currentInputConnection ?: return
+        ic.beginBatchEdit()
+        if (palabra.isNotEmpty() && seguir) terminarPalabra()
+        ic.commitText(t, 1); movido(t.length)
+        ic.endBatchEdit()
+        copiado = null
+        ultimoEspacioMs = 0L
+        anterior = null; anterior2 = null; predicciones = emptyList()
+        vaciar(); propuesta = null; olvidarDeshacer(); turno++
+        actualizarBarra()
+    }
+
+    override fun quitarRecorte(t: String) {
+        clip.quitar(t)
+        if (copiado == t) { copiado = null; actualizarBarra() }
+    }
+
+    override fun borrarPortapapeles() {
+        clip.borrarTodo()
+        copiado = null; actualizarBarra()
     }
 
     override fun abc() {

@@ -26,10 +26,13 @@ class PanelEmoji(context: Context) : View(context) {
         fun emoji(e: String)
         fun borrar(palabra: Boolean)
         fun abc()
+        fun portapapeles()
         fun respuesta(t: Respuesta.Tipo)
     }
 
     var oyente: Oyente? = null
+    /** Botón del portapapeles junto a ABC (si el historial está activado) */
+    var conPortapapeles = true
 
     private class Categoria(val nombre: String, val icono: String, val emojis: List<String>)
 
@@ -168,6 +171,7 @@ class PanelEmoji(context: Context) : View(context) {
 
     private val botonAbc = RectF()
     private val botonBorrar = RectF()
+    private val botonClip = RectF()
     private val botonesCat = ArrayList<RectF>()
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
@@ -185,7 +189,7 @@ class PanelEmoji(context: Context) : View(context) {
                             oyente?.respuesta(Respuesta.Tipo.BORRAR); oyente?.borrar(false)
                             postDelayed(repetir, 450L)
                         }
-                        botonAbc.contains(x, y) -> oyente?.respuesta(Respuesta.Tipo.FUNCION)
+                        botonAbc.contains(x, y) || botonClip.contains(x, y) -> oyente?.respuesta(Respuesta.Tipo.FUNCION)
                         else -> {
                             tocadoCat = botonesCat.indexOfFirst { it.contains(x, y) }
                             if (tocadoCat >= 0) oyente?.respuesta(Respuesta.Tipo.FUNCION)
@@ -215,6 +219,8 @@ class PanelEmoji(context: Context) : View(context) {
                     }
                 } else if (botonAbc.contains(x, y) && y >= height - abajoSistema - ALTO_BARRA) {
                     oyente?.abc()
+                } else if (botonClip.contains(x, y) && y >= height - abajoSistema - ALTO_BARRA) {
+                    oyente?.portapapeles()
                 } else if (tocadoCat >= 0 && botonesCat.getOrNull(tocadoCat)?.contains(x, y) == true) {
                     irA(tocadoCat)
                 } else if (tocado >= 0) {
@@ -342,12 +348,22 @@ class PanelEmoji(context: Context) : View(context) {
         cv.drawPath(camino, trazo)
         val x = dp(3.2f); val ox = bx + dp(1.5f)
         cv.drawLine(ox - x, cy - x, ox + x, cy + x, trazo); cv.drawLine(ox - x, cy + x, ox + x, cy - x, trazo)
+        // Portapapeles: una tablilla con su pinza, en el mismo trazo blanco
+        val clip = if (conPortapapeles) dp(44f) else 0f
+        botonClip.set(lado, y0, lado + clip, y0 + ALTO_BARRA)
+        if (conPortapapeles) {
+            val px = botonClip.centerX()
+            cv.drawRoundRect(px - dp(7f), cy - dp(8.5f), px + dp(7f), cy + dp(9f), dp(2.5f), dp(2.5f), trazo)
+            cv.drawRoundRect(px - dp(3.5f), cy - dp(11f), px + dp(3.5f), cy - dp(6.5f), dp(1.5f), dp(1.5f), trazo)
+            cv.drawLine(px - dp(3.5f), cy - dp(1f), px + dp(3.5f), cy - dp(1f), trazo)
+            cv.drawLine(px - dp(3.5f), cy + dp(3.5f), px + dp(1.5f), cy + dp(3.5f), trazo)
+        }
         // Categorías
-        val ancho = (width - 2 * lado) / categorias.size
+        val ancho = (width - 2 * lado - clip) / categorias.size
         icono.textSize = dp(19f)
         if (botonesCat.size != categorias.size) { botonesCat.clear(); repeat(categorias.size) { botonesCat.add(RectF()) } }
         for ((i, c) in categorias.withIndex()) {
-            val cx = lado + ancho * i + ancho / 2
+            val cx = lado + clip + ancho * i + ancho / 2
             botonesCat[i].set(cx - ancho / 2, y0, cx + ancho / 2, y0 + ALTO_BARRA)
             if (i == actual) cv.drawCircle(cx, cy, dp(15f), marca)
             cv.drawText(c.icono, cx, cy - (icono.ascent() + icono.descent()) / 2, icono)
