@@ -35,6 +35,26 @@ class Diccionario private constructor(
 
     companion object {
         private const val PROPIAS = "palabras_propias"
+        private const val USOS = "palabras_usos"
+        private const val PARES = "palabras_pares"
+
+        /** Lo que suele seguir a las palabras más comunes (cuando aún no aprendió tu forma de escribir) */
+        private val COMUNES = mapOf(
+            "buenos" to listOf("días"), "buenas" to listOf("noches", "tardes"), "muchas" to listOf("gracias"),
+            "por" to listOf("favor", "qué", "eso"), "hola" to listOf("cómo", "qué", "buenos"),
+            "cómo" to listOf("estás", "te", "así"), "qué" to listOf("tal", "haces", "pasó"), "estoy" to listOf("bien", "en", "llegando"),
+            "te" to listOf("quiero", "amo", "extraño"), "no" to listOf("sé", "hay", "puedo"), "lo" to listOf("que", "siento", "sé"),
+            "nos" to listOf("vemos", "vamos"), "hasta" to listOf("luego", "mañana", "pronto"), "a" to listOf("la", "ver", "qué"),
+            "ya" to listOf("voy", "llegué", "está"), "voy" to listOf("a", "en", "llegando"), "tengo" to listOf("que", "un", "una"),
+            "me" to listOf("voy", "gusta", "dijo"), "un" to listOf("momento", "poco", "rato"), "feliz" to listOf("cumpleaños", "día", "año"),
+            "gracias" to listOf("por", "a", "amor"), "de" to listOf("la", "nada", "verdad"), "que" to listOf("no", "te", "es"),
+            "en" to listOf("la", "casa", "el"), "para" to listOf("que", "el", "la"), "con" to listOf("el", "la", "mi"),
+            "todo" to listOf("bien", "el", "lo"), "está" to listOf("bien", "en", "muy"), "es" to listOf("que", "un", "muy"),
+            "mi" to listOf("amor", "casa", "mamá"), "dónde" to listOf("estás", "está", "vives"), "cuándo" to listOf("vienes", "llegas", "nos"),
+            "bien" to listOf("y", "gracias", "y tú"), "y" to listOf("tú", "que", "el"), "ok" to listOf("gracias", "listo", "dale"),
+            "sí" to listOf("claro", "ya", "señor"), "claro" to listOf("que", "sí", "no"), "vamos" to listOf("a", "al", "pues"),
+            "dale" to listOf("gracias", "nos", "ya"), "listo" to listOf("gracias", "ya", "nos"),
+        )
         private const val ALFABETO = "abcdefghijklmnñopqrstuvwxyz"
 
         fun cargar(c: Context): Diccionario {
@@ -94,6 +114,61 @@ class Diccionario private constructor(
         prefs.getString(PROPIAS, null)?.split('\n')?.forEach { if (it.isNotEmpty()) propias[normal(it)] = it }
     }
 
+    // ---------- Lo que aprende de cómo escribes (solo en el celular) ----------
+    /** Cuántas veces usaste cada palabra (las 3000 más usadas) */
+    private val usos = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    /** Qué palabra sueles poner después de cada palabra */
+    private val conteoPares = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private var sinGuardar = 0
+
+    init {
+        prefs.getString(USOS, null)?.split('\n')?.forEach { l ->
+            val i = l.lastIndexOf(':'); if (i > 0) l.substring(i + 1).toIntOrNull()?.let { usos[l.substring(0, i)] = it }
+        }
+        prefs.getString(PARES, null)?.split('\n')?.forEach { l ->
+            val i = l.lastIndexOf(':'); if (i > 0) l.substring(i + 1).toIntOrNull()?.let { conteoPares[l.substring(0, i)] = it }
+        }
+    }
+
+    /** Terminaste una palabra (después de [anterior]): se cuenta para sugerir mejor */
+    fun registrar(anterior: String?, palabra: String) {
+        val w = palabra.lowercase()
+        if (w.isEmpty() || !w.all { it.isLetter() }) return
+        usos[w] = (usos[w] ?: 0) + 1
+        if (anterior != null) {
+            val k = "${anterior.lowercase()} $w"
+            conteoPares[k] = (conteoPares[k] ?: 0) + 1
+        }
+        if (usos.size > 3500) recortar(usos, 3000)
+        if (conteoPares.size > 4500) recortar(conteoPares, 4000)
+        if (++sinGuardar >= 15) guardar()
+    }
+
+    private fun recortar(m: MutableMap<String, Int>, n: Int) {
+        val quedan = m.entries.sortedByDescending { it.value }.take(n).map { it.key }.toHashSet()
+        m.keys.retainAll(quedan)
+    }
+
+    fun guardar() {
+        if (sinGuardar == 0) return
+        sinGuardar = 0
+        prefs.edit()
+            .putString(USOS, usos.entries.joinToString("\n") { "${it.key}:${it.value}" })
+            .putString(PARES, conteoPares.entries.joinToString("\n") { "${it.key}:${it.value}" })
+            .apply()
+    }
+
+    /** Las palabras que suelen ir después de [anterior]: primero las tuyas, luego las comunes */
+    fun predecir(anterior: String?, n: Int = 3): List<String> {
+        val a = anterior?.lowercase() ?: return emptyList()
+        val r = ArrayList<String>(n)
+        val pref = "$a "
+        conteoPares.entries.filter { it.key.startsWith(pref) && it.value >= 2 }
+            .sortedByDescending { it.value }.forEach { if (r.size < n) r.add(it.key.substring(pref.length)) }
+        COMUNES[a]?.forEach { if (r.size < n && it !in r) r.add(it) }
+        return r
+    }
+
     fun aprender(palabra: String) {
         val w = palabra.lowercase()
         if (w.length < 2 || !w.all { it.isLetter() } || existe(w)) return
@@ -128,7 +203,8 @@ class Diccionario private constructor(
         val puntaje = costo * 2.2f + ln(1f + puesto) * 0.25f
     }
 
-    fun proponer(escrito: String): Propuesta {
+    fun proponer(escrito: String, anterior: String? = null): Propuesta {
+        val ant = anterior?.lowercase()
         if (escrito.isEmpty()) return Propuesta(escrito, null, emptyList())
         val t = escrito.lowercase()
         val k = normal(t)
@@ -138,8 +214,13 @@ class Diccionario private constructor(
         }
         val valida = existe(t)
         val cands = HashMap<String, Cand>()
-        fun agregar(w: String, costo: Float, puesto: Int, soloTilde: Boolean = false) {
+        fun agregar(w: String, costo: Float, puesto0: Int, soloTilde: Boolean = false) {
             if (w == t) return
+            // Tus palabras y las que sueles poner después de la anterior pesan más
+            var puesto = puesto0
+            val u = usos[w] ?: 0
+            if (u > 0) puesto /= (1 + 4 * u)
+            if (ant != null && (conteoPares["$ant $w"] ?: 0) > 0) puesto /= 10
             val c = Cand(w, costo, puesto, soloTilde)
             val prev = cands[w]
             if (prev == null || prev.puntaje > c.puntaje) cands[w] = c
@@ -187,23 +268,26 @@ class Diccionario private constructor(
         return Propuesta(escrito, correccion, opciones)
     }
 
-    /** Palabras que empiezan con [k], de la más usada a la menos usada */
+    /** Palabras que empiezan con [k]: primero las que tú usas, luego las más usadas en general */
     private fun completar(k: String, n: Int): List<String> {
-        val mejores = IntArray(n) { Int.MAX_VALUE }
+        val puntos = FloatArray(n) { Float.MAX_VALUE }
+        val mejores = arrayOfNulls<String>(n)
         var i = inferior(k); var vistos = 0
         while (i < claves.size && claves[i].startsWith(k) && vistos < 6000) {
-            val p = puestos[i]
             if (claves[i].length > k.length) {
-                var j = n - 1
-                if (p < mejores[j]) {
-                    while (j > 0 && mejores[j - 1] > p) { mejores[j] = mejores[j - 1]; j-- }
-                    mejores[j] = p
+                val w = palabras[puestos[i]]
+                val u = usos[w] ?: 0
+                val pt = puestos[i].toFloat() / (1 + 4 * u)
+                if (pt < puntos[n - 1]) {
+                    var j = n - 1
+                    while (j > 0 && puntos[j - 1] > pt) { puntos[j] = puntos[j - 1]; mejores[j] = mejores[j - 1]; j-- }
+                    puntos[j] = pt; mejores[j] = w
                 }
             }
             i++; vistos++
         }
-        val r = mejores.filter { it != Int.MAX_VALUE }.map { palabras[it] }.toMutableList()
-        for ((clave, w) in propias) if (r.size < n && clave.startsWith(k) && clave.length > k.length) r.add(w)
+        val r = mejores.filterNotNull().toMutableList()
+        for ((clave, w) in propias) if (r.size < n && clave.startsWith(k) && clave.length > k.length && w !in r) r.add(w)
         return r
     }
 

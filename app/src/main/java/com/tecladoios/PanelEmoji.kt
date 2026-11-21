@@ -38,8 +38,10 @@ class PanelEmoji(context: Context) : View(context) {
     private val prefs = Ajustes.prefs(context)
 
     private var categorias: List<Categoria> = emptyList()
-    /** Columna donde empieza cada categoría */
-    private var inicio = IntArray(0)
+    /** Dónde empieza (en px) cada sección y cuántas columnas tiene */
+    private var inicioX = FloatArray(0)
+    private var cols = IntArray(0)
+    private var anchoTotal = 0f
     private var columnas = 0
     private var filas = 5
     private var celdaW = 1f
@@ -97,15 +99,15 @@ class PanelEmoji(context: Context) : View(context) {
 
     private fun usar(e: String) {
         val l = ArrayList(recientes()); l.remove(e); l.add(0, e)
-        prefs.edit().putString(RECIENTES, l.take(30).joinToString("\n")).apply()
+        prefs.edit().putString(RECIENTES, l.take(32).joinToString("\n")).apply()
     }
 
     /** Al abrir: arma la lista (los usados se reordenan solo al volver a abrir, como en iOS) */
     fun abrir() {
         val rec = recientes()
         val lista = ArrayList<Categoria>()
-        // Sin emojis usados todavía, la sección no aparece (antes dejaba un hueco y un texto encima)
-        if (rec.isNotEmpty()) lista.add(Categoria("USADOS RECIENTEMENTE", "🕘", rec))
+        // Siempre primero: los recientes; después las demás secciones
+        lista.add(Categoria("RECIENTES", "🕘", rec))
         lista.addAll(leerBase())
         categorias = lista
         rearmar()
@@ -120,25 +122,29 @@ class PanelEmoji(context: Context) : View(context) {
 
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) { rearmar() }
 
+    private val SEP_SECCION get() = dp(18f)
+
     private fun rearmar() {
         val altoGrilla = height - abajoSistema - ALTO_TITULO - ALTO_BARRA
         if (altoGrilla <= 0 || width <= 0) return
-        filas = 4   // 4 filas: emojis más grandes
+        filas = 4
         celdaH = altoGrilla / filas
-        // Columnas que entran enteras en la pantalla (como el iPhone, ~9 en vertical)
-        val porPantalla = max(6, (width / (celdaH * 1.05f)).toInt())
+        // Unas 8 columnas por pantalla, como el iPhone
+        val porPantalla = max(7, (width / (celdaH * 0.92f)).toInt())
         celdaW = (width - dp(8f)) / porPantalla
-        inicio = IntArray(categorias.size)
-        var col = 0
+        inicioX = FloatArray(categorias.size); cols = IntArray(categorias.size)
+        var x = dp(4f)
         for ((i, c) in categorias.withIndex()) {
-            inicio[i] = col
-            col += ceil(c.emojis.size / filas.toFloat()).toInt()
+            inicioX[i] = x
+            // Los recientes vacíos dejan lugar para su aviso
+            cols[i] = if (c.emojis.isEmpty()) 3 else ceil(c.emojis.size / filas.toFloat()).toInt()
+            x += cols[i] * celdaW + SEP_SECCION
         }
-        columnas = col
-        emoji.textSize = celdaH * 0.7f
+        anchoTotal = x
+        emoji.textSize = celdaH * 0.66f
     }
 
-    private val maxDesplazado get() = max(0f, columnas * celdaW + dp(8f) - width)
+    private val maxDesplazado get() = max(0f, anchoTotal - width)
 
     // ---------- Toques ----------
     private val scroller = OverScroller(context)
@@ -232,7 +238,7 @@ class PanelEmoji(context: Context) : View(context) {
 
     private fun irA(cat: Int) {
         scroller.forceFinished(true)
-        val destino = (inicio.getOrElse(cat) { 0 } * celdaW).coerceIn(0f, maxDesplazado)
+        val destino = (inicioX.getOrElse(cat) { 0f } - dp(4f)).coerceIn(0f, maxDesplazado)
         scroller.startScroll(desplazado.toInt(), 0, (destino - desplazado).toInt(), 0, 250)
         postInvalidateOnAnimation()
     }
@@ -243,10 +249,12 @@ class PanelEmoji(context: Context) : View(context) {
         if (gy < 0) return -1
         val fila = (gy / celdaH).toInt()
         if (fila !in 0 until filas) return -1
-        val col = ((x - dp(4f) + desplazado) / celdaW).toInt()
+        val gx = x + desplazado
         for (i in categorias.indices.reversed()) {
-            if (col >= inicio[i]) {
-                val pos = (col - inicio[i]) * filas + fila
+            if (gx >= inicioX[i]) {
+                val col = ((gx - inicioX[i]) / celdaW).toInt()
+                if (col >= cols[i]) return -1
+                val pos = col * filas + fila
                 return if (pos < categorias[i].emojis.size) i * 10000 + pos else -1
             }
         }
@@ -278,9 +286,8 @@ class PanelEmoji(context: Context) : View(context) {
     private val camino = Path()
 
     private fun categoriaActual(): Int {
-        val col = ((desplazado + celdaW * 0.5f) / celdaW).toInt()
         var r = 0
-        for (i in inicio.indices) if (col >= inicio[i] && categorias[i].emojis.isNotEmpty()) r = i
+        for (i in inicioX.indices) if (desplazado + celdaW >= inicioX[i]) r = i
         if (desplazado >= maxDesplazado - 1f && maxDesplazado > 0f) r = categorias.size - 1
         return r
     }
@@ -289,21 +296,30 @@ class PanelEmoji(context: Context) : View(context) {
         cv.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fondo)
         if (categorias.isEmpty()) return
         val actual = categoriaActual()
-        cv.drawText(categorias[actual].nombre, dp(12f), ALTO_TITULO - dp(9f), titulo)
-        // Emojis visibles
-        val primera = max(0, (desplazado / celdaW).toInt() - 1)
-        val ultima = ((desplazado + width) / celdaW).toInt() + 1
         val ajusteY = -(emoji.ascent() + emoji.descent()) / 2
+        val tituloY = ALTO_TITULO - dp(9f)
         for ((i, c) in categorias.withIndex()) {
-            val col0 = inicio[i]
-            val cols = ceil(c.emojis.size / filas.toFloat()).toInt()
-            if (col0 + cols < primera || col0 > ultima) continue
+            val x0 = inicioX[i] - desplazado
+            val x1 = x0 + cols[i] * celdaW
+            if (x1 < -celdaW || x0 > width + celdaW) continue
+            // Título de cada sección al comienzo; el de la sección actual se queda fijo a la izquierda
+            val siguiente = if (i + 1 < inicioX.size) inicioX[i + 1] - desplazado else Float.MAX_VALUE
+            val ancho = titulo.measureText(c.nombre)
+            val tx = if (i == actual) minOf(max(x0, dp(12f)), siguiente - ancho - SEP_SECCION) else max(x0, dp(12f))
+            cv.drawText(c.nombre, tx, tituloY, titulo)
+            if (c.emojis.isEmpty()) {
+                val cx = (x0 + x1) / 2
+                titulo.textAlign = Paint.Align.CENTER
+                cv.drawText("Los emojis que", cx, ALTO_TITULO + celdaH * 1.7f, titulo)
+                cv.drawText("uses aparecerán", cx, ALTO_TITULO + celdaH * 1.7f + dp(16f), titulo)
+                cv.drawText("aquí", cx, ALTO_TITULO + celdaH * 1.7f + dp(32f), titulo)
+                titulo.textAlign = Paint.Align.LEFT
+                continue
+            }
             for ((k, em) in c.emojis.withIndex()) {
-                val col = col0 + k / filas
-                if (col < primera || col > ultima) continue
-                val fila = k % filas
-                val cx = dp(4f) + col * celdaW - desplazado + celdaW / 2
-                val cy = ALTO_TITULO + fila * celdaH + celdaH / 2
+                val cx = x0 + (k / filas) * celdaW + celdaW / 2
+                if (cx < -celdaW || cx > width + celdaW) continue
+                val cy = ALTO_TITULO + (k % filas) * celdaH + celdaH / 2
                 if (tocado == i * 10000 + k) cv.drawRoundRect(cx - celdaW / 2 + dp(2f), cy - celdaH / 2 + dp(2f), cx + celdaW / 2 - dp(2f), cy + celdaH / 2 - dp(2f), dp(8f), dp(8f), marca)
                 cv.drawText(em, cx, cy + ajusteY, emoji)
             }

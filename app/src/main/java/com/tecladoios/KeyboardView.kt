@@ -93,10 +93,15 @@ class KeyboardView(context: Context) : View(context) {
     private var casillaApretada = -1
 
     /** Franja transparente de arriba para los globos (con la barra, el globo pasa por encima de ella) */
-    val zona get() = if (conBarra) dp(14f) else dp(58f)
+    val zona get() = run {
+        // Espacio justo para que el globo de la primera fila no se corte (crece con el tamaño)
+        val globo = (ALTO_FILA - SEP_Y) * 1.2f + dp(4f)
+        if (conBarra) max(dp(14f), globo - BARRA - ARRIBA - SEP_Y / 2) else max(dp(58f), globo - ARRIBA - SEP_Y / 2)
+    }
     private val ARRIBA get() = dp(6f)
     private val ABAJO get() = dp(4f)
-    private val ALTO_FILA get() = dp(57f) * (config?.tamano ?: 100) / 100f
+    // Teclas más altas (antes 57 dp): más cómodas para escribir
+    private val ALTO_FILA get() = dp(64f) * (config?.tamano ?: 100) / 100f
     private val SEP_X get() = dp(3.5f)
     private val SEP_Y get() = dp(11f)
     private val LADO get() = dp(2f)
@@ -445,7 +450,7 @@ class KeyboardView(context: Context) : View(context) {
     override fun onDraw(cv: Canvas) {
         relleno.color = FONDO
         cv.drawRect(0f, zona, width.toFloat(), height.toFloat(), relleno)
-        letras.textSize = dp(25f)
+        letras.textSize = dp(27f)
         etiquetas.textSize = dp(17f)
         if (conBarra) dibujarBarra(cv)
         for (c in colocadas) dibujarTecla(cv, c)
@@ -471,9 +476,9 @@ class KeyboardView(context: Context) : View(context) {
         when (t.tipo) {
             K.TEXTO -> {
                 val s = if (shift > 0 && t.esLetra) t.texto.uppercase() else t.texto
-                letras.textSize = if (distribucion.numerico) dp(27f) else if (s.length > 1) dp(20f) else dp(25f)
+                letras.textSize = if (distribucion.numerico) dp(29f) else if (s.length > 1) dp(21f) else dp(27f)
                 cv.drawText(s, cx, cy - (letras.ascent() + letras.descent()) / 2, letras)
-                letras.textSize = dp(25f)
+                letras.textSize = dp(27f)
             }
             K.NUM, K.ABC, K.SIMB2 -> cv.drawText(t.texto, cx, cy - (etiquetas.ascent() + etiquetas.descent()) / 2, etiquetas)
             K.ESPACIO -> if (!trackpad) cv.drawText(t.texto, cx, cy - (etiquetas.ascent() + etiquetas.descent()) / 2, etiquetas)
@@ -551,10 +556,10 @@ class KeyboardView(context: Context) : View(context) {
         cv.drawPath(camino, bordeGlobo)
         val t = c.tecla
         val s = if (shift > 0 && t.esLetra) t.texto.uppercase() else t.texto
-        letras.textSize = if (s.length > 1) dp(30f) else dp(40f)
+        letras.textSize = if (s.length > 1) dp(32f) else dp(43f)
         val cy = (arriba + finAncho) / 2
         cv.drawText(s, (izq + der) / 2, cy - (letras.ascent() + letras.descent()) / 2, letras)
-        letras.textSize = dp(25f)
+        letras.textSize = dp(27f)
     }
 
     private fun dibujarOpciones(cv: Canvas) {
@@ -572,7 +577,7 @@ class KeyboardView(context: Context) : View(context) {
             }
             cv.drawText(s, x0 + ancho / 2, r.centerY() - (letras.ascent() + letras.descent()) / 2, letras)
         }
-        letras.textSize = dp(25f)
+        letras.textSize = dp(27f)
     }
 
     // Íconos dibujados (sin imágenes)

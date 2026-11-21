@@ -58,6 +58,10 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     /** Dónde debería estar el cursor tras lo último que escribió el teclado */
     private var esperado = -1
     private var pendientes = 0
+    /** La última palabra terminada (para sugerir la siguiente); null al empezar una oración */
+    private var anterior: String? = null
+    /** Palabras que suelen ir después (se muestran con la barra vacía) */
+    private var predicciones: List<String> = emptyList()
     private val letrasBI: BreakIterator = BreakIterator.getCharacterInstance()
 
     override fun onCreate() {
@@ -145,6 +149,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         kb.conBarra = sugerir
         if (seguir) cargarDiccionario()
         palabra.setLength(0); propuesta = null; olvidarDeshacer()
+        anterior = null; predicciones = emptyList()
         esperado = ei.initialSelStart; pendientes = 0
         when (clase) {
             InputType.TYPE_CLASS_NUMBER -> kb.ponerModo(Distribuciones.NUMEROS,
@@ -180,6 +185,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     /** Lee la palabra justo antes del cursor (al tocar en otro lugar del texto) */
     private fun recapturar() {
         palabra.setLength(0); propuesta = null
+        anterior = null; predicciones = emptyList()
         if (!seguir || selIni != selFin) { actualizarBarra(); return }
         val ic = currentInputConnection ?: return
         val antes = ic.getTextBeforeCursor(32, 0)
@@ -200,7 +206,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         val t = ++turno
         hilo.execute {
             if (t != turno) return@execute
-            val p = try { d.proponer(w) } catch (_: Throwable) { null }
+            val ant = anterior
+            val p = try { d.proponer(w, ant) } catch (_: Throwable) { null }
             principal.post { if (t == turno && palabra.toString() == w) { propuesta = p; actualizarBarra() } }
         }
         // La barra no se vacía mientras se calcula (no parpadea): solo cambia lo escrito
@@ -214,7 +221,12 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         val kb = teclado ?: return
         val w = palabra.toString()
         casillas.fill(null)
-        if (sugerir && w.isNotEmpty()) {
+        if (sugerir && w.isEmpty()) {
+            // Sin palabra a medias: lo que sueles escribir después (si no hay, la barra de herramientas)
+            val may = kb.shift > 0
+            for ((i, s) in predicciones.take(3).withIndex())
+                casillas[i] = KeyboardView.Sug(if (may) s.replaceFirstChar { it.uppercaseChar() } else s, 0)
+        } else if (sugerir && w.isNotEmpty()) {
             casillas[0] = KeyboardView.Sug(w, 1)
             val p = propuesta?.takeIf { it.escrito == w }
             if (p != null) {
@@ -235,7 +247,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     private fun correccionAhora(): String? {
         if (!corregir || palabra.isEmpty()) return null
         val w = palabra.toString()
-        val p = propuesta?.takeIf { it.escrito == w } ?: try { dic?.proponer(w) } catch (_: Throwable) { null }
+        val p = propuesta?.takeIf { it.escrito == w } ?: try { dic?.proponer(w, anterior) } catch (_: Throwable) { null }
         return p?.correccion?.takeIf { it != w }
     }
 
@@ -253,13 +265,37 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         val corr = correccionAhora()
         val original = palabra.toString()
         if (corr != null) reemplazarPalabra(corr)
+        registrar(corr ?: original)
         palabra.setLength(0); propuesta = null; turno++
         if (corr != null) { deshacerOriginal = original; deshacerPuesta = corr } else olvidarDeshacer()
         return if (corr != null) original else null
     }
 
+    /** Cuenta la palabra terminada y calcula las que pueden seguir */
+    private fun registrar(final: String) {
+        val d = dic ?: return
+        val ant = anterior
+        val w = final.substringAfterLast(' ')
+        anterior = w.lowercase()
+        hilo.execute { try { d.registrar(ant, final) } catch (_: Throwable) { } }
+        pedirPrediccion()
+    }
+
+    private fun pedirPrediccion() {
+        val d = dic
+        val ant = anterior
+        predicciones = emptyList()
+        if (d == null || ant == null || !sugerir) return
+        val t = ++turno
+        hilo.execute {
+            val r = try { d.predecir(ant) } catch (_: Throwable) { emptyList() }
+            principal.post { if (t == turno && palabra.isEmpty() && anterior == ant) { predicciones = r; actualizarBarra() } }
+        }
+    }
+
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        dic?.let { d -> hilo.execute { try { d.guardar() } catch (_: Throwable) { } } }
         teclado?.terminarTodo()
         cerrarEmojis()
     }
@@ -328,6 +364,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         ic.commitText(s, 1); movido(s.length)
         ic.endBatchEdit()
         palabra.setLength(0); propuesta = null; olvidarDeshacer()
+        anterior = null; predicciones = emptyList(); turno++
         actualizarBarra()
     }
 
@@ -356,7 +393,14 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     override fun sugerencia(i: Int) {
         val sg = casillas.getOrNull(i) ?: return
         val ic = currentInputConnection ?: return
-        if (palabra.isEmpty()) return
+        if (palabra.isEmpty()) {
+            // Palabra que suele seguir: se pone con su espacio
+            ic.commitText(sg.texto + " ", 1); movido(sg.texto.length + 1)
+            olvidarDeshacer()
+            ultimoEspacioMs = SystemClock.uptimeMillis()
+            registrar(sg.texto)
+            return
+        }
         ic.beginBatchEdit()
         if (sg.tipo == 1) {
             // Lo escrito tal cual: el teclado lo aprende y no lo vuelve a corregir
@@ -365,7 +409,9 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         } else reemplazarPalabra(sg.texto)
         ic.commitText(" ", 1); movido(1)
         ic.endBatchEdit()
+        val elegida = if (sg.tipo == 1) palabra.toString() else sg.texto
         palabra.setLength(0); propuesta = null; olvidarDeshacer(); turno++
+        registrar(elegida)
         ultimoEspacioMs = SystemClock.uptimeMillis()
         actualizarBarra()
     }
@@ -419,6 +465,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
             return
         }
         olvidarDeshacer()
+        anterior = null; predicciones = emptyList()
         if (selIni != selFin && selIni >= 0) {
             ic.commitText("", 1); movido(0)
             palabra.setLength(0); propuesta = null; actualizarBarra()
@@ -467,6 +514,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         val ic = currentInputConnection ?: return
         ultimoEspacioMs = 0L
         if (palabra.isNotEmpty()) { ic.beginBatchEdit(); terminarPalabra(); ic.endBatchEdit() }
+        anterior = null; predicciones = emptyList(); turno++
         olvidarDeshacer(); actualizarBarra()
         esperado = -1; pendientes = 0
         val accion = (ei?.imeOptions ?: 0) and EditorInfo.IME_MASK_ACTION
@@ -520,6 +568,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         val ic = currentInputConnection ?: return
         ic.commitText(e, 1); movido(e.length)
         ultimoEspacioMs = 0L
+        anterior = null; predicciones = emptyList()
         palabra.setLength(0); propuesta = null; olvidarDeshacer(); actualizarBarra()
     }
 
