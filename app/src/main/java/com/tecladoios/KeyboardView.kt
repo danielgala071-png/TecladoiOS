@@ -35,6 +35,8 @@ class KeyboardView(context: Context) : View(context) {
         fun respuesta(t: Respuesta.Tipo)
         fun sugerencia(i: Int)
         fun herramienta(i: Int)
+        /** Guarda lo aprendido sobre dónde tocas (cada 50 letras) */
+        fun guardarAjuste(s: String)
     }
 
     /** Una casilla de la barra: [tipo] 0 = normal, 1 = lo escrito (entre comillas), 2 = corrección */
@@ -165,23 +167,77 @@ class KeyboardView(context: Context) : View(context) {
             if (c.toque.left - LADO < dp(4f)) c.toque.left = 0f
             if (w - LADO - c.toque.right < dp(4f)) c.toque.right = w
         }
-        // Zonas de toque ajustadas a cómo escribes (según tus mediciones): la fila de arriba la
-        // tocas más abajo de su centro, así que su zona baja un poco; y la última fila de letras
-        // cede un poco de su borde de abajo al espacio (salía n o b en vez de espacio)
+        // Zonas de toque ajustadas a cómo escribes con dos dedos: la línea entre filas se corre
+        // según dónde tocas de verdad cada fila, y cada mitad (pulgar izquierdo / derecho) se
+        // corre a su lado. No cambia lo que se ve, solo dónde responde cada tecla.
         if (distribucion.modo == Distribuciones.LETRAS && filas.size >= 4) {
-            val bajaArriba = altoFila * 0.10f
-            val subeEspacio = altoFila * 0.06f
+            val auto = config?.ajusteAuto != false
+            val dy = if (auto) desvY else DESV_INICIAL
+            val alto = altoFila - SEP_Y
+            val lim = altoFila * 0.3f
+            val s01 = ((dy[0] + dy[1]) / 2f * alto).coerceIn(-lim, lim)
+            val s12 = ((dy[1] + dy[2]) / 2f * alto).coerceIn(-lim, lim)
+            // Entre la última fila de letras y el espacio, un poco más a favor del espacio
+            val s2e = (dy[2] / 2f * alto - altoFila * 0.04f).coerceIn(-lim, lim)
             val ultimaLetras = filas.size - 2
             for (c in lista) {
                 when (c.fila) {
-                    0 -> c.toque.bottom += bajaArriba
-                    1 -> c.toque.top += bajaArriba
+                    0 -> c.toque.bottom += s01
+                    1 -> { c.toque.top += s01; c.toque.bottom += s12 }
                 }
-                if (c.fila == ultimaLetras) c.toque.bottom -= subeEspacio
-                if (c.fila == filas.size - 1) c.toque.top -= subeEspacio
+                if (c.fila == ultimaLetras) { c.toque.top += s12; c.toque.bottom += s2e }
+                if (c.fila == filas.size - 1) c.toque.top += s2e
+                if (auto && c.tecla.esLetra) {
+                    val mano = if (c.dibujo.centerX() < w / 2f) 0 else 1
+                    val sx = (desvX[mano] * c.dibujo.width()).coerceIn(-c.dibujo.width() * 0.25f, c.dibujo.width() * 0.25f)
+                    if (c.toque.left > 1f) c.toque.left += sx
+                    if (c.toque.right < w - 1f) c.toque.right += sx
+                }
             }
         }
         colocadas = lista.toTypedArray()
+    }
+
+    // ---------- Ajuste a tu forma de escribir con dos dedos ----------
+    private val DESV_INICIAL = floatArrayOf(0.18f, 0f, -0.06f)
+    /** Cuánto más abajo (+) o arriba (−) de su centro tocas cada fila de letras (en altos de tecla) */
+    private val desvY = DESV_INICIAL.copyOf()
+    /** Cuánto a la derecha (+) o izquierda (−) tocas con cada pulgar (en anchos de tecla) */
+    private val desvX = floatArrayOf(0f, 0f)
+    /** Qué tan disperso tocas en vertical (para recomendar el tamaño) */
+    private var dispersion = 0.2f
+    private var muestras = 0
+
+    fun cargarAjuste(s: String?) {
+        val v = s?.split(',')?.mapNotNull { it.toFloatOrNull() } ?: return
+        if (v.size < 7) return
+        desvY[0] = v[0]; desvY[1] = v[1]; desvY[2] = v[2]
+        desvX[0] = v[3]; desvX[1] = v[4]; dispersion = v[5]; muestras = v[6].toInt()
+        acomodar()
+    }
+
+    fun reiniciarAjuste() {
+        DESV_INICIAL.copyInto(desvY); desvX[0] = 0f; desvX[1] = 0f; dispersion = 0.2f; muestras = 0
+        acomodar()
+    }
+
+    private fun ajusteTexto() = listOf(desvY[0], desvY[1], desvY[2], desvX[0], desvX[1], dispersion, muestras.toFloat()).joinToString(",")
+
+    private fun aprenderToque(c: Colocada, x: Float, y: Float) {
+        if (distribucion.modo != Distribuciones.LETRAS || !c.tecla.esLetra || c.fila > 2) return
+        val dy = (y - c.dibujo.centerY()) / c.dibujo.height()
+        val dx = (x - c.dibujo.centerX()) / c.dibujo.width()
+        if (abs(dy) > 0.9f || abs(dx) > 0.9f) return        // muy lejos: seguramente era otra tecla
+        val a = 0.02f
+        desvY[c.fila] = desvY[c.fila] * (1 - a) + dy * a
+        val mano = if (c.dibujo.centerX() < width / 2f) 0 else 1
+        desvX[mano] = desvX[mano] * (1 - a) + dx * a
+        dispersion = dispersion * (1 - a) + abs(dy - desvY[c.fila]) * a
+        muestras++
+        if (muestras % 50 == 0) {
+            if (config?.ajusteAuto != false) acomodar()
+            oyente?.guardarAjuste(ajusteTexto())
+        }
     }
 
     private fun buscar(x: Float, y: Float): Colocada? {
@@ -329,7 +385,10 @@ class KeyboardView(context: Context) : View(context) {
                     return
                 }
                 // El globo sigue al dedo si se desliza a otra letra
-                if (c.tecla.tipo == K.TEXTO && !c.toque.contains(x, y)) {
+                // Con dos dedos el pulgar se desliza un poco al soltar: solo cambia de tecla si el
+                // dedo salió claramente de ella (8 dp de margen)
+                val m = dp(8f)
+                if (c.tecla.tipo == K.TEXTO && (x < c.toque.left - m || x > c.toque.right + m || y < c.toque.top - m || y > c.toque.bottom + m)) {
                     val n = buscar(x, y) ?: return
                     if (n.tecla.tipo != K.TEXTO || n === c) return
                     removeCallbacks(dd.larga)
@@ -405,6 +464,7 @@ class KeyboardView(context: Context) : View(context) {
         val t = c.tecla
         val s = if (shift > 0 && t.esLetra) t.texto.uppercase() else t.texto
         oyente?.texto(s, if (t.esLetra) costosToque(dd.xu, dd.yu) else null)
+        aprenderToque(c, dd.xu, dd.yu)
         presionadas.remove(c)
         if (presionada === c) presionada = null
         if (t.esLetra) despuesDeLetra()

@@ -16,6 +16,9 @@ object Ajustes {
     const val VIBRACION = "vibracion"
     const val SONIDO = "sonido"
     const val SIGNOS = "signos_apertura"
+    const val AJUSTE_AUTO = "ajuste_auto"
+    /** Lo aprendido sobre dónde tocas (desvíos por fila y por mano, dispersión, cantidad) */
+    const val AJUSTE = "ajuste_toque"
     /** Cambia cuando se edita el diccionario personal: el teclado lo vuelve a leer */
     const val DIC_VERSION = "dic_version"
     /** Tamaño del teclado en % (alto de las teclas) */
@@ -35,5 +38,6 @@ class Config(p: SharedPreferences) {
     val vibracion = p.getBoolean(Ajustes.VIBRACION, true)
     val sonido = p.getBoolean(Ajustes.SONIDO, false)
     val signosApertura = p.getBoolean(Ajustes.SIGNOS, true)
+    val ajusteAuto = p.getBoolean(Ajustes.AJUSTE_AUTO, true)
     val tamano = p.getInt(Ajustes.TAMANO, 100).coerceIn(80, 130)
 }

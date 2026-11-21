@@ -39,12 +39,13 @@ class Respuesta(c: Context) {
         val v = vibrador ?: return null
         val e = try {
             when {
-                v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_CLICK) ->
+                // TICK: el golpe más corto y seco del motor, sin cola
+                v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_TICK) ->
                     VibrationEffect.startComposition()
-                        .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1.0f).compose()
-                v.areAllEffectsSupported(VibrationEffect.EFFECT_HEAVY_CLICK) == Vibrator.VIBRATION_EFFECT_SUPPORT_YES ->
-                    VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK)
-                else -> VibrationEffect.createOneShot(10L, if (v.hasAmplitudeControl()) 255 else VibrationEffect.DEFAULT_AMPLITUDE)
+                        .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 1.0f).compose()
+                v.areAllEffectsSupported(VibrationEffect.EFFECT_CLICK) == Vibrator.VIBRATION_EFFECT_SUPPORT_YES ->
+                    VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
+                else -> VibrationEffect.createOneShot(6L, if (v.hasAmplitudeControl()) 255 else VibrationEffect.DEFAULT_AMPLITUDE)
             }
         } catch (_: Throwable) {
             VibrationEffect.createOneShot(10L, VibrationEffect.DEFAULT_AMPLITUDE)
@@ -67,11 +68,17 @@ class Respuesta(c: Context) {
         return sp
     }
 
-    fun tocar(t: Tipo) {
+    fun tocar(t: Tipo, vista: android.view.View? = null) {
         val cfg = config ?: return
         if (!cfg.vibracion && !cfg.sonido) return
+        // Toque seco: la vibración de teclado que el fabricante afinó para su motor (en Xiaomi es
+        // un golpe corto y nítido). Si el celular la tiene apagada, se usa la nuestra.
+        var hecha = false
+        if (cfg.vibracion && vista != null) hecha = try {
+            vista.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+        } catch (_: Throwable) { false }
         manejador.post {
-            if (cfg.vibracion) try { armar()?.let { vibrador?.vibrate(it) } } catch (_: Throwable) { }
+            if (cfg.vibracion && !hecha) try { armar()?.let { vibrador?.vibrate(it) } } catch (_: Throwable) { }
             if (cfg.sonido) try {
                 val sp = cargarSonidos()
                 val id = when (t) { Tipo.ESPACIO -> ids[1]; Tipo.BORRAR -> ids[2]; Tipo.INTRO -> ids[3]; else -> ids[0] }

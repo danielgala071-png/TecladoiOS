@@ -90,7 +90,8 @@ class SettingsActivity : Activity() {
         val actual = p.getInt(Ajustes.TAMANO, 100).coerceIn(80, 130)
         mostrarTam(actual)
         col.addView(etiquetaTam)
-        col.addView(android.widget.SeekBar(this).apply {
+        val barraTam = android.widget.SeekBar(this)
+        col.addView(barraTam.apply {
             max = 10                      // de 80 % a 130 %, de 5 en 5
             progress = (actual - 80) / 5
             setPadding(dp(8), dp(14), dp(8), dp(14))
@@ -104,6 +105,43 @@ class SettingsActivity : Activity() {
             })
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         col.addView(titulo("Pruébalo en la casilla de abajo: el teclado cambia al momento.", 13f, 0xFF8E8E93.toInt()).apply { setPadding(0, 0, 0, dp(8)) })
+
+        // Ajuste a la forma de escribir con dos dedos
+        col.addView(titulo("AJUSTE A TU FORMA DE ESCRIBIR", 13f, 0xFF8E8E93.toInt()))
+        opcion("Ajustar las teclas a cómo escribo", Ajustes.AJUSTE_AUTO, true)
+        val estado = TextView(this).apply { textSize = 15f; setTextColor(0xFFC7C7CC.toInt()); setPadding(0, dp(4), 0, dp(4)) }
+        col.addView(estado)
+        val usar = Button(this)
+        col.addView(usar)
+        fun refrescar() {
+            val v = p.getString(Ajustes.AJUSTE, null)?.split(',')?.mapNotNull { it.toFloatOrNull() }
+            val n = v?.getOrNull(6)?.toInt() ?: 0
+            if (v == null || v.size < 7 || n < 300) {
+                estado.text = "Escribe con normalidad: el teclado va aprendiendo dónde tocas con cada pulgar " +
+                    "y ajusta las zonas de las teclas solo. Para recomendarte un tamaño necesita unas 300 letras ($n de 300)."
+                usar.visibility = android.view.View.GONE
+                return
+            }
+            // Si tus toques caen dispersos arriba y abajo, teclas más altas te ayudan (y al revés)
+            val rec = (100 + (v[5] - 0.18f) * 150).let { (Math.round(it / 5f) * 5).coerceIn(90, 125) }
+            estado.text = "Ya aprendió de $n letras. Según cómo escribes con dos dedos, el tamaño que mejor te queda es $rec %."
+            usar.visibility = android.view.View.VISIBLE
+            usar.text = "Usar tamaño recomendado ($rec %)"
+            usar.setOnClickListener {
+                p.edit().putInt(Ajustes.TAMANO, rec).apply()
+                mostrarTam(rec); barraTam.progress = (rec - 80) / 5
+                android.widget.Toast.makeText(this, "Tamaño ajustado a $rec %", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+        refrescar()
+        col.addView(Button(this).apply {
+            text = "Volver a aprender desde cero"
+            setOnClickListener {
+                p.edit().remove(Ajustes.AJUSTE).apply()
+                refrescar()
+                android.widget.Toast.makeText(this@SettingsActivity, "El ajuste empezará de nuevo", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        })
 
         col.addView(titulo("RESPUESTA DEL TECLADO", 13f, 0xFF8E8E93.toInt()))
         opcion("Vibración", Ajustes.VIBRACION, true)

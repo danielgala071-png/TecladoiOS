@@ -97,12 +97,13 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
 
     override fun onSharedPreferenceChanged(p: SharedPreferences?, clave: String?) {
         if (clave == Ajustes.DIC_VERSION) { dic = null; if (seguir) cargarDiccionario(); return }
+        if (clave == Ajustes.AJUSTE) { if (prefs.getString(Ajustes.AJUSTE, null) == null) teclado?.reiniciarAjuste(); return }
         if (clave == null || clave.startsWith("emojis") || clave.startsWith("palabras")) return
         cfg = Config(prefs)
         respuesta.config = cfg
         if (!cfg.sonido) respuesta.soltarSonidos()
         teclado?.config = cfg
-        if (clave == Ajustes.TAMANO) { cerrarEmojis(); teclado?.requestLayout() }
+        if (clave == Ajustes.TAMANO || clave == Ajustes.AJUSTE_AUTO) { cerrarEmojis(); teclado?.requestLayout() }
         teclado?.invalidate()
     }
 
@@ -120,6 +121,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         try { window?.window?.setWindowAnimations(R.style.AnimacionTeclado) } catch (_: Throwable) { }
         try { window?.window?.navigationBarColor = Color.BLACK } catch (_: Throwable) { }
         val kb = KeyboardView(this).apply { config = cfg; oyente = this@TecladoService }
+        kb.cargarAjuste(prefs.getString(Ajustes.AJUSTE, null))
         val r = FrameLayout(this).apply {
             addView(kb, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             setOnApplyWindowInsetsListener { _, ins ->
@@ -679,7 +681,9 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         ic.endBatchEdit()
     }
 
-    override fun respuesta(t: Respuesta.Tipo) = respuesta.tocar(t)
+    override fun respuesta(t: Respuesta.Tipo) = respuesta.tocar(t, panel ?: teclado)
+
+    override fun guardarAjuste(s: String) { prefs.edit().putString(Ajustes.AJUSTE, s).apply() }
 
     // ---------- Emojis ----------
     override fun emojis() {
