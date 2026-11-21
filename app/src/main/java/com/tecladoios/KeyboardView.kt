@@ -103,10 +103,11 @@ class KeyboardView(context: Context) : View(context) {
     private val ABAJO get() = dp(4f)
     // Teclas más altas (antes 57 dp): más cómodas para escribir
     private val ALTO_FILA get() = dp(66f) * (config?.tamano ?: 100) / 100f
-    private val SEP_X get() = dp(3.5f)
+    // Separación entre letras: 2.5 dp (letras más anchas)
+    private val SEP_X get() = dp(2.5f)
     // Menos espacio entre filas: cada tecla queda más alta (56 dp en vez de 53)
     private val SEP_Y get() = dp(9f)
-    private val LADO get() = dp(2f)
+    private val LADO get() = dp(1.5f)
     private val RADIO get() = dp(6f)
     /** Espacio de la barra de navegación del sistema (se pinta negro) */
     var abajoSistema = 0; set(v) { if (field != v) { field = v; requestLayout() } }
@@ -148,7 +149,8 @@ class KeyboardView(context: Context) : View(context) {
                     // Mayúscula, borrar, 123, emoji, espacio e intro: menos separación a los
                     // lados (se ven más anchas); la fila de abajo, además, más alta
                     val alto = if (fi == filas.size - 1) altoFila + extra else altoFila
-                    val sx = if (t.funcion) SEP_X * 0.3f else SEP_X / 2
+                    // Las teclas de función (mayúscula, 123, emoji, espacio, intro, borrar) quedan igual
+                    val sx = if (t.funcion) dp(1.05f) else SEP_X / 2
                     val dib = RectF(x + sx, y0 + SEP_Y / 2, x + ancho - sx, y0 + alto - SEP_Y / 2)
                     val toque = RectF(x, y0, x + ancho, y0 + alto)
                     if (fi == 0) toque.top = zona + BARRA

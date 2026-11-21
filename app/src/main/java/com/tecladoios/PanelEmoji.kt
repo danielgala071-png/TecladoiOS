@@ -130,7 +130,7 @@ class PanelEmoji(context: Context) : View(context) {
         filas = 4
         celdaH = altoGrilla / filas
         // Unas 8 columnas por pantalla, como el iPhone
-        val porPantalla = max(8, (width / (celdaH * 0.78f)).toInt())
+        val porPantalla = max(9, (width / (celdaH * 0.7f)).toInt())
         celdaW = (width - dp(8f)) / porPantalla
         inicioX = FloatArray(categorias.size); cols = IntArray(categorias.size)
         var x = dp(4f)
@@ -141,7 +141,7 @@ class PanelEmoji(context: Context) : View(context) {
             x += cols[i] * celdaW + SEP_SECCION
         }
         anchoTotal = x
-        emoji.textSize = celdaH * 0.54f
+        emoji.textSize = celdaH * 0.48f
     }
 
     private val maxDesplazado get() = max(0f, anchoTotal - width)
