@@ -1,80 +1,80 @@
 package com.tecladoios
 
 import android.content.Context
-import android.content.SharedPreferences
 import kotlin.math.ln
 
 /**
- * Diccionario de español latinoamericano (~90 000 palabras ordenadas de la más usada a la
+ * Diccionario de español latinoamericano (~158 000 palabras ordenadas de la más usada a la
  * menos usada) y el corrector, pensado como el del iPhone:
  * - Corrige solo palabras que NO existen y solo cuando está seguro.
  * - Pone las tildes que faltan (tambien → también).
  * - Tiene en cuenta las teclas vecinas (es más fácil tocar la de al lado).
  * - Aprende las palabras que rechazas al corregir (las que eliges entre comillas).
  *
- * Todo vive en tres arreglos (sin mapas grandes), así ocupa poca memoria.
+ * Todo vive en un bloque de bytes y dos listas de números (sin un texto por palabra),
+ * así ocupa unos 3 MB.
  */
 class Diccionario private constructor(
     /** Palabras por frecuencia (el índice es el puesto: 0 = la más usada) */
     private val palabras: Lista,
-    /** Las mismas palabras sin tildes y en minúscula, ordenadas */
-    private val claves: Lista,
-    /** Puesto de cada clave */
-    private val puestos: IntArray,
-    private val prefs: SharedPreferences,
+    /** Las mismas palabras vistas sin tildes, en orden alfabético (sin copiarlas: solo el orden) */
+    private val claves: Claves,
+    /** Carpeta donde se guarda lo que aprende de ti */
+    private val dir: java.io.File,
 ) {
 
     /**
-     * Muchas palabras guardadas juntas como bytes, en un solo bloque: ocupan unas 4 veces
-     * menos memoria que 87 000 textos sueltos, y Android no tiene que vigilarlos uno por uno.
+     * Las palabras tal como vienen en el archivo, en un solo bloque de bytes (una por línea):
+     * no se crea ni un texto por palabra, así ocupa lo mínimo.
      */
-    class Lista(private val datos: ByteArray, private val ini: IntArray) {
+    class Lista(val datos: ByteArray, val ini: IntArray) {
         val size get() = ini.size - 1
-        operator fun get(i: Int) = String(datos, ini[i], ini[i + 1] - ini[i], Charsets.UTF_8)
-        fun largo(i: Int) = ini[i + 1] - ini[i]
-        fun comparar(i: Int, k: ByteArray): Int {
-            val a = ini[i]; val n = ini[i + 1] - a
-            val m = minOf(n, k.size)
-            for (j in 0 until m) {
-                val x = datos[a + j].toInt() and 0xFF; val y = k[j].toInt() and 0xFF
-                if (x != y) return x - y
-            }
-            return n - k.size
-        }
-        /** ¿La palabra [i] termina en [suf]? (sin armar el texto) */
-        fun termina(i: Int, suf: ByteArray): Boolean {
-            val n = ini[i + 1] - ini[i]
-            if (n <= suf.size) return false
-            val a = ini[i + 1] - suf.size
-            for (j in suf.indices) if (datos[a + j] != suf[j]) return false
-            return true
-        }
-        fun empieza(i: Int, k: ByteArray): Boolean {
-            val a = ini[i]
-            if (ini[i + 1] - a < k.size) return false
-            for (j in k.indices) if (datos[a + j] != k[j]) return false
-            return true
+        fun fin(i: Int) = ini[i + 1] - 1            // sin el salto de línea
+        operator fun get(i: Int) = String(datos, ini[i], fin(i) - ini[i], Charsets.UTF_8)
+    }
+
+    /**
+     * Las palabras ordenadas sin tildes, para buscarlas. No guarda una segunda copia: compara
+     * leyendo los bytes de [palabras] y tratando á, é, í, ó, ú, ü como a, e, i, o, u al vuelo.
+     */
+    class Claves(private val p: Lista, private val puestos: IntArray) {
+        val size get() = puestos.size
+        fun puesto(i: Int) = puestos[i]
+
+        private fun vocal(c: Int) = when (c) {
+            0xA0, 0xA1, 0xA2, 0xA4 -> 'a'.code; 0xA8, 0xA9, 0xAA, 0xAB -> 'e'.code
+            0xAC, 0xAD, 0xAE, 0xAF -> 'i'.code; 0xB2, 0xB3, 0xB4, 0xB6 -> 'o'.code
+            0xB9, 0xBA, 0xBB, 0xBC -> 'u'.code; else -> 0
         }
 
-        companion object {
-            fun de(items: List<ByteArray>): Lista {
-                val ini = IntArray(items.size + 1)
-                var t = 0
-                for ((i, b) in items.withIndex()) { ini[i] = t; t += b.size }
-                ini[items.size] = t
-                val datos = ByteArray(t)
-                for ((i, b) in items.withIndex()) System.arraycopy(b, 0, datos, ini[i], b.size)
-                return Lista(datos, ini)
+        /** Compara la palabra [i] (sin tildes) con [k]; con [prefijo], 0 si empieza con [k] */
+        fun comparar(i: Int, k: ByteArray, prefijo: Boolean = false): Int {
+            val pp = puestos[i]; val d = p.datos
+            var j = p.ini[pp]; val fin = p.fin(pp); var q = 0
+            while (j < fin && q < k.size) {
+                var b = d[j].toInt() and 0xFF; var paso = 1
+                if (b == 0xC3 && j + 1 < fin) { val v = vocal(d[j + 1].toInt() and 0xFF); if (v != 0) { b = v; paso = 2 } }
+                val y = k[q].toInt() and 0xFF
+                if (b != y) return b - y
+                j += paso; q++
             }
-            fun comparar(a: ByteArray, b: ByteArray): Int {
-                val m = minOf(a.size, b.size)
-                for (j in 0 until m) {
-                    val x = a[j].toInt() and 0xFF; val y = b[j].toInt() and 0xFF
-                    if (x != y) return x - y
-                }
-                return a.size - b.size
-            }
+            if (q == k.size) return if (j >= fin || prefijo) 0 else 1
+            return -1
         }
+        fun empieza(i: Int, k: ByteArray) = comparar(i, k, prefijo = true) == 0
+
+        /** La palabra [i] sin tildes copiada en [buf]; devuelve cuántos bytes ocupa */
+        fun normal(i: Int, buf: ByteArray): Int {
+            val pp = puestos[i]; val d = p.datos
+            var j = p.ini[pp]; val fin = p.fin(pp); var n = 0
+            while (j < fin && n < buf.size) {
+                var b = d[j].toInt() and 0xFF; var paso = 1
+                if (b == 0xC3 && j + 1 < fin) { val v = vocal(d[j + 1].toInt() and 0xFF); if (v != 0) { b = v; paso = 2 } }
+                buf[n++] = b.toByte(); j += paso
+            }
+            return n
+        }
+        fun largo(i: Int, buf: ByteArray) = normal(i, buf)
     }
 
     /** Lo que el teclado propone para la palabra que escribes */
@@ -115,23 +115,69 @@ class Diccionario private constructor(
         const val ALFABETO = "abcdefghijklmnñopqrstuvwxyz"
 
         fun cargar(c: Context): Diccionario {
-            val bytes = ArrayList<ByteArray>(90000)
-            val norm = ArrayList<ByteArray>(90000)
-            c.assets.open("palabras.txt").bufferedReader().useLines { ls ->
-                ls.forEach { l ->
-                    val w = l.trim()
-                    if (w.isNotEmpty()) {
-                        val b = w.toByteArray(Charsets.UTF_8)
-                        bytes.add(b)
-                        val n = normal(w)
-                        norm.add(if (n == w) b else n.toByteArray(Charsets.UTF_8))
-                    }
-                }
+            // El archivo entero queda en un solo bloque; solo se anota dónde empieza cada palabra
+            val datos = c.assets.open("palabras.txt").use { it.readBytes() }
+            var n = 0
+            for (b in datos) if (b == '\n'.code.toByte()) n++
+            val ini = IntArray(n + 1)
+            var k = 0
+            ini[0] = 0
+            for (i in datos.indices) if (datos[i] == '\n'.code.toByte()) { k++; ini[k] = i + 1 }
+            val palabras = Lista(datos, ini)
+            // El orden alfabético viene ya calculado (orden.bin): el teclado arranca sin ordenar nada
+            val puestos = leerOrden(c, datos, n) ?: ordenar(palabras)
+            val dir = java.io.File(c.filesDir, "aprendido").apply { mkdirs() }
+            migrarDeAjustes(c, dir)
+            return Diccionario(palabras, Claves(palabras, puestos), dir)
+        }
+
+        private fun leerOrden(c: Context, datos: ByteArray, n: Int): IntArray? = try {
+            java.io.DataInputStream(java.io.BufferedInputStream(c.assets.open("orden.bin"))).use { f ->
+                if (f.readInt() != 0x4F524431) return null           // "ORD1"
+                if (f.readInt() != n) return null
+                val crc = java.util.zip.CRC32().apply { update(datos) }.value.toInt()
+                if (f.readInt() != crc) return null                   // la lista cambió: se ordena aquí
+                IntArray(n) { f.readInt() }
             }
-            val orden = bytes.indices.sortedWith { a, b -> val x = Lista.comparar(norm[a], norm[b]); if (x != 0) x else a - b }
-            val claves = Lista.de(orden.map { norm[it] })
-            val puestos = IntArray(orden.size) { orden[it] }
-            return Diccionario(Lista.de(bytes), claves, puestos, Ajustes.prefs(c))
+        } catch (_: Throwable) { null }
+
+        /** Solo si orden.bin no corresponde a la lista: se ordena al cargar (más lento) */
+        private fun ordenar(p: Lista): IntArray {
+            val norm = Array(p.size) { normal(p[it]).toByteArray(Charsets.UTF_8) }
+            val idx = (0 until p.size).sortedWith { a, b ->
+                val x = norm[a]; val y = norm[b]; val m = minOf(x.size, y.size)
+                var r = 0
+                for (j in 0 until m) { val d = (x[j].toInt() and 0xFF) - (y[j].toInt() and 0xFF); if (d != 0) { r = d; break } }
+                if (r == 0) r = x.size - y.size
+                if (r != 0) r else a - b
+            }
+            return idx.toIntArray()
+        }
+
+        // ---------- Lo aprendido, en archivos (no en los ajustes: así no queda copiado en memoria) ----------
+        fun leer(dir: java.io.File, nombre: String): List<String> = try {
+            java.io.File(dir, "$nombre.txt").takeIf { it.exists() }?.readLines()?.filter { it.isNotEmpty() } ?: emptyList()
+        } catch (_: Throwable) { emptyList() }
+
+        fun escribir(dir: java.io.File, nombre: String, lineas: Collection<String>) {
+            try {
+                val tmp = java.io.File(dir, "$nombre.tmp")
+                tmp.writeText(lineas.joinToString("\n"))
+                tmp.renameTo(java.io.File(dir, "$nombre.txt"))
+            } catch (_: Throwable) { }
+        }
+
+        fun carpeta(c: Context) = java.io.File(c.filesDir, "aprendido").apply { mkdirs() }
+
+        /** Versiones anteriores lo guardaban en los ajustes: se pasa a archivos una sola vez */
+        private fun migrarDeAjustes(c: Context, dir: java.io.File) {
+            val p = Ajustes.prefs(c)
+            val e = p.edit(); var hay = false
+            for (k in listOf(PROPIAS, USOS, PARES, TRIOS, NOMBRES)) {
+                val v = p.getString(k, null) ?: continue
+                escribir(dir, k, v.split('\n').filter { it.isNotEmpty() }); e.remove(k); hay = true
+            }
+            if (hay) e.apply()
         }
 
         /** Minúsculas y sin tildes (la ñ se queda) */
@@ -177,7 +223,7 @@ class Diccionario private constructor(
     // ---------- Palabras propias (las que aprendes) ----------
     private val propias = java.util.concurrent.ConcurrentHashMap<String, String>()   // clave → palabra
     init {
-        prefs.getString(PROPIAS, null)?.split('\n')?.forEach { if (it.isNotEmpty()) propias[normal(it)] = it }
+        leer(dir, PROPIAS).forEach { propias[normal(it)] = it }
     }
 
     // ---------- Lo que aprende de cómo escribes (solo en el celular) ----------
@@ -192,16 +238,16 @@ class Diccionario private constructor(
     private var sinGuardar = 0
 
     init {
-        prefs.getString(USOS, null)?.split('\n')?.forEach { l ->
+        leer(dir, USOS).forEach { l ->
             val i = l.lastIndexOf(':'); if (i > 0) l.substring(i + 1).toIntOrNull()?.let { usos[l.substring(0, i)] = it }
         }
-        prefs.getString(PARES, null)?.split('\n')?.forEach { l ->
+        leer(dir, PARES).forEach { l ->
             val i = l.lastIndexOf(':'); if (i > 0) l.substring(i + 1).toIntOrNull()?.let { conteoPares[l.substring(0, i)] = it }
         }
-        prefs.getString(TRIOS, null)?.split('\n')?.forEach { l ->
+        leer(dir, TRIOS).forEach { l ->
             val i = l.lastIndexOf(':'); if (i > 0) l.substring(i + 1).toIntOrNull()?.let { conteoTrios[l.substring(0, i)] = it }
         }
-        prefs.getString(NOMBRES, null)?.split('\n')?.forEach { if (it.length >= 2) nombres[it.lowercase()] = it }
+        leer(dir, NOMBRES).forEach { if (it.length >= 2) nombres[it.lowercase()] = it }
     }
 
     /** Escribiste un nombre con mayúscula en medio de una oración: se recuerda */
@@ -230,9 +276,9 @@ class Diccionario private constructor(
                 conteoTrios[k3] = (conteoTrios[k3] ?: 0) + 1
             }
         }
-        if (usos.size > 3500) recortar(usos, 3000)
-        if (conteoPares.size > 4500) recortar(conteoPares, 4000)
-        if (conteoTrios.size > 5500) recortar(conteoTrios, 5000)
+        if (usos.size > 2500) recortar(usos, 2000)
+        if (conteoPares.size > 3500) recortar(conteoPares, 3000)
+        if (conteoTrios.size > 3500) recortar(conteoTrios, 3000)
         if (++sinGuardar >= 15) guardar()
     }
 
@@ -244,12 +290,11 @@ class Diccionario private constructor(
     fun guardar() {
         if (sinGuardar == 0) return
         sinGuardar = 0
-        prefs.edit()
-            .putString(USOS, usos.entries.joinToString("\n") { "${it.key}:${it.value}" })
-            .putString(PARES, conteoPares.entries.joinToString("\n") { "${it.key}:${it.value}" })
-            .putString(TRIOS, conteoTrios.entries.joinToString("\n") { "${it.key}:${it.value}" })
-            .putString(NOMBRES, nombres.values.joinToString("\n"))
-            .apply()
+        escribir(dir, USOS, usos.entries.map { "${it.key}:${it.value}" })
+        escribir(dir, PARES, conteoPares.entries.map { "${it.key}:${it.value}" })
+        escribir(dir, TRIOS, conteoTrios.entries.map { "${it.key}:${it.value}" })
+        escribir(dir, NOMBRES, nombres.values)
+        escribir(dir, PROPIAS, propias.values)
     }
 
     /**
@@ -286,10 +331,9 @@ class Diccionario private constructor(
         val w = palabra.lowercase()
         if (w.length < 2 || !w.all { it.isLetter() } || existe(w)) return
         propias[normal(w)] = w
-        // Las 1000 más recientes
-        val l = prefs.getString(PROPIAS, null)?.split('\n')?.filter { it.isNotEmpty() && it != w }?.toMutableList() ?: ArrayList()
-        l.add(0, w)
-        prefs.edit().putString(PROPIAS, l.take(1000).joinToString("\n")).apply()
+        if (propias.size > 1000) propias.keys.take(propias.size - 1000).forEach { propias.remove(it) }
+        sinGuardar = maxOf(sinGuardar, 1)
+        guardar()
     }
 
     // ---------- Búsquedas ----------
@@ -302,7 +346,7 @@ class Diccionario private constructor(
     private inline fun conClave(k: String, f: (Int) -> Unit) {
         val kb = k.toByteArray(Charsets.UTF_8)
         var i = inferior(kb)
-        while (i < claves.size && claves.comparar(i, kb) == 0) { f(puestos[i]); i++ }
+        while (i < claves.size && claves.comparar(i, kb) == 0) { f(claves.puesto(i)); i++ }
     }
 
     fun existe(w: String): Boolean {
@@ -401,6 +445,12 @@ class Diccionario private constructor(
         return Propuesta(escrito, correccion, opciones)
     }
 
+    private fun termina(b: ByteArray, n: Int, suf: ByteArray): Boolean {
+        if (n <= suf.size) return false
+        for (j in suf.indices) if (b[n - suf.size + j] != suf[j]) return false
+        return true
+    }
+
     /** Palabras que empiezan con [k]: primero las que tú usas, luego las más usadas en general */
     private fun completar(k: String, n: Int, suf: Array<ByteArray>?): List<String> {
         val kb = k.toByteArray(Charsets.UTF_8)
@@ -416,15 +466,17 @@ class Diccionario private constructor(
         // concuerdan con la palabra anterior (la casa, los perros, yo tengo) suben
         val top = IntArray(n) { -1 }
         val topP = FloatArray(n) { Float.MAX_VALUE }
+        val buf = ByteArray(64)
         var i = inferior(kb); var vistos = 0
         while (i < claves.size && claves.empieza(i, kb) && vistos < 6000) {
-            if (claves.largo(i) > kb.size) {
-                var p = puestos[i].toFloat()
-                if (suf != null && suf.any { claves.termina(i, it) }) p /= 3f
+            val largo = claves.normal(i, buf)
+            if (largo > kb.size) {
+                var p = claves.puesto(i).toFloat()
+                if (suf != null && suf.any { termina(buf, largo, it) }) p /= 3f
                 if (p < topP[n - 1]) {
                     var j = n - 1
                     while (j > 0 && topP[j - 1] > p) { topP[j] = topP[j - 1]; top[j] = top[j - 1]; j-- }
-                    topP[j] = p; top[j] = puestos[i]
+                    topP[j] = p; top[j] = claves.puesto(i)
                 }
             }
             i++; vistos++

@@ -705,6 +705,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         // El panel se suelta al cerrarlo (no ocupa memoria mientras no se usa)
         raiz?.removeView(p)
         panel = null
+        PanelEmoji.soltarCache()
         teclado?.visibility = View.VISIBLE
     }
 

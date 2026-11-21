@@ -122,7 +122,8 @@ class SettingsActivity : Activity() {
 
     private val claves = listOf(Diccionario.PROPIAS, Diccionario.NOMBRES, Diccionario.USOS, Diccionario.PARES, Diccionario.TRIOS)
 
-    private fun lista(k: String) = Ajustes.prefs(this).getString(k, null)?.split('\n')?.filter { it.isNotEmpty() } ?: emptyList()
+    private val dir by lazy { Diccionario.carpeta(this) }
+    private fun lista(k: String) = Diccionario.leer(dir, k)
 
     /** Lo aprendido: nombres, palabras que agregaste y tus 150 palabras más usadas */
     private fun aprendidas(): List<String> {
@@ -154,21 +155,18 @@ class SettingsActivity : Activity() {
     /** Quita esas palabras de todo lo aprendido (también de tus frases) */
     private fun olvidar(quitar: Set<String>) {
         if (quitar.isEmpty()) return
-        val p = Ajustes.prefs(this)
-        val e = p.edit()
-        e.putString(Diccionario.PROPIAS, lista(Diccionario.PROPIAS).filter { it.lowercase() !in quitar }.joinToString("\n"))
-        e.putString(Diccionario.NOMBRES, lista(Diccionario.NOMBRES).filter { it.lowercase() !in quitar }.joinToString("\n"))
-        e.putString(Diccionario.USOS, lista(Diccionario.USOS).filter { it.substringBeforeLast(':') !in quitar }.joinToString("\n"))
+        Diccionario.escribir(dir, Diccionario.PROPIAS, lista(Diccionario.PROPIAS).filter { it.lowercase() !in quitar })
+        Diccionario.escribir(dir, Diccionario.NOMBRES, lista(Diccionario.NOMBRES).filter { it.lowercase() !in quitar })
+        Diccionario.escribir(dir, Diccionario.USOS, lista(Diccionario.USOS).filter { it.substringBeforeLast(':') !in quitar })
         for (k in listOf(Diccionario.PARES, Diccionario.TRIOS))
-            e.putString(k, lista(k).filter { l -> l.substringBeforeLast(':').split(' ').none { it in quitar } }.joinToString("\n"))
-        e.putLong(Ajustes.DIC_VERSION, System.currentTimeMillis()).apply()
+            Diccionario.escribir(dir, k, lista(k).filter { l -> l.substringBeforeLast(':').split(' ').none { it in quitar } })
+        Ajustes.prefs(this).edit().putLong(Ajustes.DIC_VERSION, System.currentTimeMillis()).apply()
         android.widget.Toast.makeText(this, "Listo: olvidó ${quitar.size} palabra(s)", android.widget.Toast.LENGTH_SHORT).show()
     }
 
     private fun borrarTodo() {
-        val e = Ajustes.prefs(this).edit()
-        claves.forEach { e.remove(it) }
-        e.putLong(Ajustes.DIC_VERSION, System.currentTimeMillis()).apply()
+        claves.forEach { java.io.File(dir, "$it.txt").delete() }
+        Ajustes.prefs(this).edit().putLong(Ajustes.DIC_VERSION, System.currentTimeMillis()).apply()
         android.widget.Toast.makeText(this, "Se borró todo lo aprendido", android.widget.Toast.LENGTH_SHORT).show()
     }
 }
