@@ -87,9 +87,13 @@ class Diccionario private constructor(
     )
 
     companion object {
-        private const val PROPIAS = "palabras_propias"
-        private const val USOS = "palabras_usos"
-        private const val PARES = "palabras_pares"
+        const val PROPIAS = "palabras_propias"
+        const val USOS = "palabras_usos"
+        const val PARES = "palabras_pares"
+        const val TRIOS = "palabras_trios"
+        const val NOMBRES = "palabras_nombres"
+        /** Índice de una letra en [ALFABETO] (para los costos según dónde tocaste) */
+        fun indiceLetra(c: Char) = ALFABETO.indexOf(c)
 
         /** Lo que suele seguir a las palabras más comunes (cuando aún no aprendió tu forma de escribir) */
         private val COMUNES = mapOf(
@@ -108,7 +112,7 @@ class Diccionario private constructor(
             "sí" to listOf("claro", "ya", "señor"), "claro" to listOf("que", "sí", "no"), "vamos" to listOf("a", "al", "pues"),
             "dale" to listOf("gracias", "nos", "ya"), "listo" to listOf("gracias", "ya", "nos"),
         )
-        private const val ALFABETO = "abcdefghijklmnñopqrstuvwxyz"
+        const val ALFABETO = "abcdefghijklmnñopqrstuvwxyz"
 
         fun cargar(c: Context): Diccionario {
             val bytes = ArrayList<ByteArray>(90000)
@@ -181,6 +185,10 @@ class Diccionario private constructor(
     private val usos = java.util.concurrent.ConcurrentHashMap<String, Int>()
     /** Qué palabra sueles poner después de cada palabra */
     private val conteoPares = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    /** Tres palabras seguidas que escribes ("nos vemos mañana") */
+    private val conteoTrios = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    /** Nombres que escribiste con mayúscula (maría → María) */
+    private val nombres = java.util.concurrent.ConcurrentHashMap<String, String>()
     private var sinGuardar = 0
 
     init {
@@ -190,19 +198,41 @@ class Diccionario private constructor(
         prefs.getString(PARES, null)?.split('\n')?.forEach { l ->
             val i = l.lastIndexOf(':'); if (i > 0) l.substring(i + 1).toIntOrNull()?.let { conteoPares[l.substring(0, i)] = it }
         }
+        prefs.getString(TRIOS, null)?.split('\n')?.forEach { l ->
+            val i = l.lastIndexOf(':'); if (i > 0) l.substring(i + 1).toIntOrNull()?.let { conteoTrios[l.substring(0, i)] = it }
+        }
+        prefs.getString(NOMBRES, null)?.split('\n')?.forEach { if (it.length >= 2) nombres[it.lowercase()] = it }
+    }
+
+    /** Escribiste un nombre con mayúscula en medio de una oración: se recuerda */
+    fun aprenderNombre(w: String) {
+        if (w.length < 3 || !w.all { it.isLetter() } || !w[0].isUpperCase() || w.drop(1).any { it.isUpperCase() }) return
+        val l = w.lowercase()
+        // Palabras comunes (Rosa, Luz, Paz) no se vuelven nombres
+        var puesto = Int.MAX_VALUE
+        conClave(normal(l)) { if (palabras[it] == l) puesto = it }
+        if (puesto < 20000) return
+        nombres[l] = w
+        if (nombres.size > 600) nombres.keys.take(nombres.size - 500).forEach { nombres.remove(it) }
+        sinGuardar += 5
     }
 
     /** Terminaste una palabra (después de [anterior]): se cuenta para sugerir mejor */
-    fun registrar(anterior: String?, palabra: String) {
+    fun registrar(anterior2: String?, anterior: String?, palabra: String) {
         val w = palabra.lowercase()
         if (w.isEmpty() || !w.all { it.isLetter() }) return
         usos[w] = (usos[w] ?: 0) + 1
         if (anterior != null) {
             val k = "${anterior.lowercase()} $w"
             conteoPares[k] = (conteoPares[k] ?: 0) + 1
+            if (anterior2 != null) {
+                val k3 = "${anterior2.lowercase()} $k"
+                conteoTrios[k3] = (conteoTrios[k3] ?: 0) + 1
+            }
         }
         if (usos.size > 3500) recortar(usos, 3000)
         if (conteoPares.size > 4500) recortar(conteoPares, 4000)
+        if (conteoTrios.size > 5500) recortar(conteoTrios, 5000)
         if (++sinGuardar >= 15) guardar()
     }
 
@@ -217,17 +247,38 @@ class Diccionario private constructor(
         prefs.edit()
             .putString(USOS, usos.entries.joinToString("\n") { "${it.key}:${it.value}" })
             .putString(PARES, conteoPares.entries.joinToString("\n") { "${it.key}:${it.value}" })
+            .putString(TRIOS, conteoTrios.entries.joinToString("\n") { "${it.key}:${it.value}" })
+            .putString(NOMBRES, nombres.values.joinToString("\n"))
             .apply()
     }
 
-    /** Las palabras que suelen ir después de [anterior]: primero las tuyas, luego las comunes */
-    fun predecir(anterior: String?, n: Int = 3): List<String> {
+    /**
+     * Lo que suele ir después, mirando las dos palabras anteriores (como SwiftKey):
+     * primero tus frases de 3 palabras, luego tus pares, luego las combinaciones comunes.
+     * Si siempre escribes lo mismo («nos vemos mañana»), la primera opción es la frase entera.
+     */
+    fun predecir(anterior2: String?, anterior: String?, n: Int = 3): List<String> {
         val a = anterior?.lowercase() ?: return emptyList()
         val r = ArrayList<String>(n)
+        fun meter(w: String) { if (r.size < n && w !in r) r.add(w) }
+        if (anterior2 != null) {
+            val pref3 = "${anterior2.lowercase()} $a "
+            conteoTrios.entries.filter { it.key.startsWith(pref3) && it.value >= 2 }
+                .sortedByDescending { it.value }.forEach { meter(it.key.substring(pref3.length)) }
+        }
         val pref = "$a "
         conteoPares.entries.filter { it.key.startsWith(pref) && it.value >= 2 }
-            .sortedByDescending { it.value }.forEach { if (r.size < n) r.add(it.key.substring(pref.length)) }
-        COMUNES[a]?.forEach { if (r.size < n && it !in r) r.add(it) }
+            .sortedByDescending { it.value }.forEach { meter(it.key.substring(pref.length)) }
+        COMUNES[a]?.forEach { meter(it) }
+        // Frase tuya: si después de la primera opción casi siempre va la misma palabra, se ofrece junta
+        val primera = r.firstOrNull()
+        if (primera != null && !primera.contains(' ')) {
+            val pref2 = "$a $primera "
+            conteoTrios.entries.filter { it.key.startsWith(pref2) && it.value >= 3 }.maxByOrNull { it.value }?.let {
+                r.add(0, "$primera ${it.key.substring(pref2.length)}")
+                if (r.size > n) r.removeAt(r.size - 1)
+            }
+        }
         return r
     }
 
@@ -266,7 +317,8 @@ class Diccionario private constructor(
         val puntaje = costo * 2.2f + ln(1f + puesto) * 0.25f
     }
 
-    fun proponer(escrito: String, anterior: String? = null, nombrePropio: Boolean = false): Propuesta {
+    fun proponer(escrito: String, anterior: String? = null, nombrePropio: Boolean = false,
+                 toques: List<FloatArray?>? = null): Propuesta {
         val ant = anterior?.lowercase()
         if (escrito.isEmpty()) return Propuesta(escrito, null, emptyList())
         val t = escrito.lowercase()
@@ -299,7 +351,7 @@ class Diccionario private constructor(
         // 2. Un error (letra vecina, de más, de menos, cambiada de lugar)
         if (k.length in 2..24 && k.all { it in ALFABETO }) {
             val primeras = ArrayList<Pair<String, Float>>()
-            ediciones(k) { e, costo ->
+            ediciones(k, toques = toques) { e, costo ->
                 conClave(e) { agregar(palabras[it], costo, it) }
                 propias[e]?.let { agregar(it, costo, 800) }
                 if (costo <= 0.8f) primeras.add(e to costo)
@@ -331,6 +383,12 @@ class Diccionario private constructor(
             if (mejor.costo <= limite && !dudosa && !rara && !sinTilde && !risa && !nombrePropio)
                 correccion = conForma(mejor.palabra, escrito)
         }
+        // Palabras pegadas: holacomo → hola como (también con la n en lugar del espacio)
+        if (!valida && correccion == null && !risa && !nombrePropio && k.length >= 5 && orden.none { it.soloTilde })
+            separar(k)?.let { correccion = conForma(it, escrito) }
+        // Nombres que escribiste antes con mayúscula: maría → María
+        val nombre = nombres[t]
+        if (nombre != null && escrito == t && correccion == null) correccion = nombre
         // Opciones de la barra: completar la palabra y las mejores correcciones
         val opciones = ArrayList<String>(3)
         val usadas = HashSet<String>().apply { add(t); correccion?.let { add(it.lowercase()) } }
@@ -426,7 +484,29 @@ class Diccionario private constructor(
     }
 
     /** Todas las palabras a un error de [k], con su costo */
-    private inline fun ediciones(k: String, soloBaratas: Boolean = false, f: (String, Float) -> Unit) {
+    /** Divide una palabra pegada en dos palabras comunes; null si no hay una división clara */
+    private fun separar(k: String): String? {
+        var mejor: String? = null; var mejorP = Float.MAX_VALUE
+        fun puesto(w: String): Int { var p = Int.MAX_VALUE; conClave(w) { if (it < p) p = it }; return p }
+        val sueltas = setOf("a", "y", "o", "e", "u")
+        for (j in 1 until k.length) {
+            for (saltaN in listOf(false, true)) {
+                if (saltaN && k[j] != 'n') continue
+                val izq = k.substring(0, j)
+                val der = k.substring(if (saltaN) j + 1 else j)
+                if ((izq.length < 2 && izq !in sueltas) || der.length < 2) continue
+                val pi = puesto(izq); if (pi > 30000) continue
+                val pd = puesto(der); if (pd > 30000) continue
+                val pt = ln(1f + pi) + ln(1f + pd) + (if (saltaN) 1.5f else 0f)
+                if (pt < mejorP) { mejorP = pt; mejor = "${palabras[pi]} ${palabras[pd]}" }
+            }
+        }
+        // Solo si ambas son palabras bastante comunes
+        return if (mejorP < 13f) mejor else null
+    }
+
+    private inline fun ediciones(k: String, soloBaratas: Boolean = false, toques: List<FloatArray?>? = null,
+                                 f: (String, Float) -> Unit) {
         val n = k.length
         val sb = StringBuilder(n + 1)
         // Letra de más (la doble cuesta poco: "holaa")
@@ -447,12 +527,21 @@ class Diccionario private constructor(
             if (k[i] == k[i + 1]) continue
             sb.setLength(0); sb.append(k, 0, i).append(k[i + 1]).append(k[i]).append(k, i + 2, n); f(sb.toString(), 0.6f)
         }
-        // Una letra equivocada (la vecina cuesta menos)
-        for (i in 0 until n) for (c in ALFABETO) {
+        // Una letra equivocada (la vecina cuesta menos; si se sabe dónde tocaste, cuesta según
+        // qué tan cerca de esa otra tecla cayó el dedo, como Gboard)
+        for (i in 0 until n) {
+            val tq = toques?.getOrNull(i)
+            for (c in ALFABETO) {
             if (c == k[i]) continue
-            val costo = costoCambio(k[i], c) + if (i == 0) 0.25f else 0f
+            var costo = costoCambio(k[i], c)
+            if (tq != null) {
+                val ci = ALFABETO.indexOf(c)
+                if (ci >= 0) costo = minOf(if (costo <= 0.5f) costo else 1.2f, tq[ci])
+            }
+            if (i == 0 && (tq == null || costo > 0.35f)) costo += 0.25f
             if (soloBaratas && costo > 0.8f) continue
             sb.setLength(0); sb.append(k, 0, i).append(c).append(k, i + 1, n); f(sb.toString(), costo)
+            }
         }
         // Una letra que faltó
         for (i in 0..n) for (c in ALFABETO) {

@@ -61,6 +61,24 @@ class SettingsActivity : Activity() {
         opcion("Mayúsculas automáticas", Ajustes.MAYUS_AUTO, true)
         opcion("Corrección automática", Ajustes.AUTOCORRECCION, true)
         opcion("Predicción", Ajustes.PREDICTIVO, true)
+        opcion("¿ y ¡ automáticos", Ajustes.SIGNOS, true)
+
+        col.addView(titulo("DICCIONARIO PERSONAL", 13f, 0xFF8E8E93.toInt()))
+        col.addView(Button(this).apply {
+            text = "Ver palabras aprendidas"
+            setOnClickListener { verAprendidas() }
+        })
+        col.addView(Button(this).apply {
+            text = "Borrar todo lo aprendido"
+            setOnClickListener {
+                android.app.AlertDialog.Builder(this@SettingsActivity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                    .setTitle("¿Borrar todo lo aprendido?")
+                    .setMessage("El teclado olvidará tus palabras, nombres y frases. Esto no se puede deshacer.")
+                    .setPositiveButton("Borrar") { _, _ -> borrarTodo() }
+                    .setNegativeButton("Cancelar", null)
+                    .show()
+            }
+        })
         opcion("Bloqueo de mayúsculas", Ajustes.BLOQ_MAYUS, true)
         opcion("Vista previa de caracteres", Ajustes.VISTA_PREVIA, true)
         opcion("Atajo \".\"", Ajustes.ATAJO_PUNTO, true)
@@ -100,5 +118,57 @@ class SettingsActivity : Activity() {
         })
 
         setContentView(ScrollView(this).apply { setBackgroundColor(Color.BLACK); addView(col) })
+    }
+
+    private val claves = listOf(Diccionario.PROPIAS, Diccionario.NOMBRES, Diccionario.USOS, Diccionario.PARES, Diccionario.TRIOS)
+
+    private fun lista(k: String) = Ajustes.prefs(this).getString(k, null)?.split('\n')?.filter { it.isNotEmpty() } ?: emptyList()
+
+    /** Lo aprendido: nombres, palabras que agregaste y tus 150 palabras más usadas */
+    private fun aprendidas(): List<String> {
+        val r = LinkedHashSet<String>()
+        r.addAll(lista(Diccionario.NOMBRES))
+        r.addAll(lista(Diccionario.PROPIAS))
+        lista(Diccionario.USOS).mapNotNull { l -> val i = l.lastIndexOf(':'); if (i > 0) l.substring(0, i) to (l.substring(i + 1).toIntOrNull() ?: 0) else null }
+            .sortedByDescending { it.second }.take(150).forEach { r.add(it.first) }
+        return r.toList()
+    }
+
+    private fun verAprendidas() {
+        val items = aprendidas()
+        val dlg = android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle("Palabras aprendidas")
+        if (items.isEmpty()) {
+            dlg.setMessage("Todavía no aprendió palabras. Se llenará a medida que escribas.").setPositiveButton("OK", null).show()
+            return
+        }
+        val marcadas = BooleanArray(items.size)
+        dlg.setMultiChoiceItems(items.toTypedArray(), marcadas) { _, i, v -> marcadas[i] = v }
+            .setPositiveButton("Olvidar las marcadas") { _, _ ->
+                olvidar(items.filterIndexed { i, _ -> marcadas[i] }.map { it.lowercase() }.toSet())
+            }
+            .setNegativeButton("Cerrar", null)
+            .show()
+    }
+
+    /** Quita esas palabras de todo lo aprendido (también de tus frases) */
+    private fun olvidar(quitar: Set<String>) {
+        if (quitar.isEmpty()) return
+        val p = Ajustes.prefs(this)
+        val e = p.edit()
+        e.putString(Diccionario.PROPIAS, lista(Diccionario.PROPIAS).filter { it.lowercase() !in quitar }.joinToString("\n"))
+        e.putString(Diccionario.NOMBRES, lista(Diccionario.NOMBRES).filter { it.lowercase() !in quitar }.joinToString("\n"))
+        e.putString(Diccionario.USOS, lista(Diccionario.USOS).filter { it.substringBeforeLast(':') !in quitar }.joinToString("\n"))
+        for (k in listOf(Diccionario.PARES, Diccionario.TRIOS))
+            e.putString(k, lista(k).filter { l -> l.substringBeforeLast(':').split(' ').none { it in quitar } }.joinToString("\n"))
+        e.putLong(Ajustes.DIC_VERSION, System.currentTimeMillis()).apply()
+        android.widget.Toast.makeText(this, "Listo: olvidó ${quitar.size} palabra(s)", android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    private fun borrarTodo() {
+        val e = Ajustes.prefs(this).edit()
+        claves.forEach { e.remove(it) }
+        e.putLong(Ajustes.DIC_VERSION, System.currentTimeMillis()).apply()
+        android.widget.Toast.makeText(this, "Se borró todo lo aprendido", android.widget.Toast.LENGTH_SHORT).show()
     }
 }

@@ -25,7 +25,8 @@ import kotlin.math.min
 class KeyboardView(context: Context) : View(context) {
 
     interface Oyente {
-        fun texto(s: String)
+        /** [costos]: para cada letra, qué tan lejos cayó el toque (0 = justo encima, 1 = lejos) */
+        fun texto(s: String, costos: FloatArray? = null)
         fun borrar(palabra: Boolean)
         fun espacio()
         fun intro()
@@ -201,6 +202,8 @@ class KeyboardView(context: Context) : View(context) {
         var c: Colocada? = null
         var modo = Modo.NORMAL
         var x0 = 0f; var y0 = 0f
+        /** Dónde está el dedo ahora (para saber dónde se soltó la letra) */
+        var xu = 0f; var yu = 0f
         var acumX = 0f; var acumY = 0f
         var repeticiones = 0
         val larga = Runnable { mantener(this) }
@@ -263,7 +266,7 @@ class KeyboardView(context: Context) : View(context) {
             return
         }
         val c = buscar(x, y) ?: return
-        val dd = Dedo(id).apply { this.c = c; x0 = x; y0 = y }
+        val dd = Dedo(id).apply { this.c = c; x0 = x; y0 = y; xu = x; yu = y }
         dedos[id] = dd
         val t = c.tecla
         oyente?.respuesta(when (t.tipo) {
@@ -317,6 +320,7 @@ class KeyboardView(context: Context) : View(context) {
             }
             Modo.NORMAL -> {
                 val c = dd.c ?: return
+                dd.xu = x; dd.yu = y
                 if (c.tecla.tipo == K.ESPACIO) {
                     // Mover el dedo sobre el espacio también mueve el cursor (como el iPhone)
                     if (abs(x - dd.x0) > dp(14f)) { removeCallbacks(dd.larga); empezarCursor(dd, x, y) }
@@ -374,12 +378,31 @@ class KeyboardView(context: Context) : View(context) {
         invalidate()
     }
 
+    /**
+     * Qué tan cerca cayó el toque de cada letra: el corrector lo usa para saber que si tocaste
+     * entre la o y la p, cualquiera de las dos pudo ser (como Gboard)
+     */
+    private fun costosToque(x: Float, y: Float): FloatArray? {
+        if (distribucion.modo != Distribuciones.LETRAS) return null
+        val r = FloatArray(Diccionario.ALFABETO.length) { 1.2f }
+        for (c in colocadas) {
+            if (!c.tecla.esLetra) continue
+            val i = Diccionario.indiceLetra(c.tecla.texto[0])
+            if (i < 0) continue
+            val dx = (x - c.dibujo.centerX()) / c.dibujo.width()
+            val dy = (y - c.dibujo.centerY()) / c.dibujo.height()
+            val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+            r[i] = (0.12f + 0.6f * max(0f, dist - 0.45f)).coerceAtMost(1.2f)
+        }
+        return r
+    }
+
     private fun escribir(dd: Dedo) {
         val c = dd.c ?: return
         removeCallbacks(dd.larga)
         val t = c.tecla
         val s = if (shift > 0 && t.esLetra) t.texto.uppercase() else t.texto
-        oyente?.texto(s)
+        oyente?.texto(s, if (t.esLetra) costosToque(dd.xu, dd.yu) else null)
         presionadas.remove(c)
         if (presionada === c) presionada = null
         if (t.esLetra) despuesDeLetra()
