@@ -101,15 +101,16 @@ class KeyboardView(context: Context) : View(context) {
     private val ARRIBA get() = dp(6f)
     private val ABAJO get() = dp(4f)
     // Teclas más altas (antes 57 dp): más cómodas para escribir
-    private val ALTO_FILA get() = dp(64f) * (config?.tamano ?: 100) / 100f
+    private val ALTO_FILA get() = dp(66f) * (config?.tamano ?: 100) / 100f
     private val SEP_X get() = dp(3.5f)
-    private val SEP_Y get() = dp(11f)
+    // Menos espacio entre filas: cada tecla queda más alta (56 dp en vez de 53)
+    private val SEP_Y get() = dp(9f)
     private val LADO get() = dp(2f)
     private val RADIO get() = dp(6f)
     /** Espacio de la barra de navegación del sistema (se pinta negro) */
     var abajoSistema = 0; set(v) { if (field != v) { field = v; requestLayout() } }
 
-    private class Colocada(val tecla: Tecla, val dibujo: RectF, val toque: RectF)
+    private class Colocada(val tecla: Tecla, val dibujo: RectF, val toque: RectF, val fila: Int = 0)
     private var colocadas: Array<Colocada> = emptyArray()
     private var anchoUnidad = 1f
 
@@ -151,7 +152,7 @@ class KeyboardView(context: Context) : View(context) {
                     val toque = RectF(x, y0, x + ancho, y0 + alto)
                     if (fi == 0) toque.top = zona + BARRA
                     if (fi == filas.size - 1) toque.bottom = height.toFloat()
-                    lista.add(Colocada(t, dib, toque))
+                    lista.add(Colocada(t, dib, toque, fi))
                 }
                 x += ancho
             }
@@ -160,6 +161,22 @@ class KeyboardView(context: Context) : View(context) {
         for (c in lista) {
             if (c.toque.left - LADO < dp(4f)) c.toque.left = 0f
             if (w - LADO - c.toque.right < dp(4f)) c.toque.right = w
+        }
+        // Zonas de toque ajustadas a cómo escribes (según tus mediciones): la fila de arriba la
+        // tocas más abajo de su centro, así que su zona baja un poco; y la última fila de letras
+        // cede un poco de su borde de abajo al espacio (salía n o b en vez de espacio)
+        if (distribucion.modo == Distribuciones.LETRAS && filas.size >= 4) {
+            val bajaArriba = altoFila * 0.10f
+            val subeEspacio = altoFila * 0.06f
+            val ultimaLetras = filas.size - 2
+            for (c in lista) {
+                when (c.fila) {
+                    0 -> c.toque.bottom += bajaArriba
+                    1 -> c.toque.top += bajaArriba
+                }
+                if (c.fila == ultimaLetras) c.toque.bottom -= subeEspacio
+                if (c.fila == filas.size - 1) c.toque.top -= subeEspacio
+            }
         }
         colocadas = lista.toTypedArray()
     }
@@ -450,7 +467,7 @@ class KeyboardView(context: Context) : View(context) {
     override fun onDraw(cv: Canvas) {
         relleno.color = FONDO
         cv.drawRect(0f, zona, width.toFloat(), height.toFloat(), relleno)
-        letras.textSize = dp(27f)
+        letras.textSize = dp(28f)
         etiquetas.textSize = dp(17f)
         if (conBarra) dibujarBarra(cv)
         for (c in colocadas) dibujarTecla(cv, c)
@@ -476,9 +493,9 @@ class KeyboardView(context: Context) : View(context) {
         when (t.tipo) {
             K.TEXTO -> {
                 val s = if (shift > 0 && t.esLetra) t.texto.uppercase() else t.texto
-                letras.textSize = if (distribucion.numerico) dp(29f) else if (s.length > 1) dp(21f) else dp(27f)
+                letras.textSize = if (distribucion.numerico) dp(29f) else if (s.length > 1) dp(22f) else dp(28f)
                 cv.drawText(s, cx, cy - (letras.ascent() + letras.descent()) / 2, letras)
-                letras.textSize = dp(27f)
+                letras.textSize = dp(28f)
             }
             K.NUM, K.ABC, K.SIMB2 -> cv.drawText(t.texto, cx, cy - (etiquetas.ascent() + etiquetas.descent()) / 2, etiquetas)
             K.ESPACIO -> if (!trackpad) cv.drawText(t.texto, cx, cy - (etiquetas.ascent() + etiquetas.descent()) / 2, etiquetas)
@@ -559,7 +576,7 @@ class KeyboardView(context: Context) : View(context) {
         letras.textSize = if (s.length > 1) dp(32f) else dp(43f)
         val cy = (arriba + finAncho) / 2
         cv.drawText(s, (izq + der) / 2, cy - (letras.ascent() + letras.descent()) / 2, letras)
-        letras.textSize = dp(27f)
+        letras.textSize = dp(28f)
     }
 
     private fun dibujarOpciones(cv: Canvas) {
@@ -577,7 +594,7 @@ class KeyboardView(context: Context) : View(context) {
             }
             cv.drawText(s, x0 + ancho / 2, r.centerY() - (letras.ascent() + letras.descent()) / 2, letras)
         }
-        letras.textSize = dp(27f)
+        letras.textSize = dp(28f)
     }
 
     // Íconos dibujados (sin imágenes)
