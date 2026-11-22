@@ -323,6 +323,12 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
                 if (k >= 3) break
                 casillas[k++] = KeyboardView.Sug(if (may) s.replaceFirstChar { it.uppercaseChar() } else s, 0)
             }
+            // Caja vacía: la barra no se queda en blanco, ofrece con qué empezar (como el iPhone)
+            if (k < 3 && predicciones.isEmpty() && anterior == null && cajaVacia()) {
+                val ini = paraEmpezar()
+                if (k == 0) { casillas[0] = KeyboardView.Sug(ini[0], 0); casillas[1] = KeyboardView.Sug(ini[1], 0); casillas[2] = KeyboardView.Sug(ini[2], 0) }
+                else { casillas[1] = KeyboardView.Sug(ini[1], 0); casillas[2] = KeyboardView.Sug(ini[0], 0) }
+            }
         } else if (sugerir && w.isNotEmpty()) {
             casillas[0] = KeyboardView.Sug(w, 1)
             val p = propuesta?.takeIf { it.escrito == w }
@@ -414,8 +420,47 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     }
 
     /** Cuenta la palabra terminada y calcula las que pueden seguir */
+    // ---------- Con qué empezar (barra con la caja vacía) ----------
+    private val inicios by lazy { getSharedPreferences("inicios", MODE_PRIVATE) }
+
+    private fun saludoDeLaHora(): String {
+        val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        return when (h) { in 5..11 -> "Buenos días"; in 12..18 -> "Buenas tardes"; else -> "Buenas noches" }
+    }
+
+    /** [izquierda, centro, derecha]: el saludo de la hora al medio y a los lados tus inicios más usados */
+    private fun paraEmpezar(): Array<String> {
+        val saludo = saludoDeLaHora()
+        val tuyas = try {
+            (inicios.getString("lista", "") ?: "").split(';').mapNotNull {
+                val i = it.lastIndexOf(':'); if (i <= 0) null else it.substring(0, i) to (it.substring(i + 1).toIntOrNull() ?: 0)
+            }.filter { it.second >= 3 && !saludo.startsWith(it.first, true) }.sortedByDescending { it.second }.map { it.first }
+        } catch (_: Throwable) { emptyList() }
+        val izq = tuyas.getOrNull(0) ?: "Hola"
+        val der = tuyas.getOrNull(1)?.takeIf { it != izq } ?: if (izq != "Gracias") "Gracias" else "Hola"
+        return arrayOf(izq, saludo, der)
+    }
+
+    /** Aprende con qué palabra sueles empezar tus mensajes (sin tocar el cerebro, solo un contador) */
+    private fun aprenderInicio(w: String) {
+        if (w.length < 2 || !w.all { it.isLetter() }) return
+        val p = w.lowercase().replaceFirstChar { it.uppercaseChar() }
+        hilo.execute {
+            try {
+                val m = LinkedHashMap<String, Int>()
+                (inicios.getString("lista", "") ?: "").split(';').forEach {
+                    val i = it.lastIndexOf(':'); if (i > 0) m[it.substring(0, i)] = it.substring(i + 1).toIntOrNull() ?: 0
+                }
+                m[p] = (m[p] ?: 0) + 1
+                val top = m.entries.sortedByDescending { it.value }.take(12)
+                inicios.edit().putString("lista", top.joinToString(";") { "${it.key}:${it.value}" }).apply()
+            } catch (_: Throwable) { }
+        }
+    }
+
     private fun registrar(final: String) {
         val d = dic ?: return
+        if (anterior == null && anterior2 == null) final.split(' ').firstOrNull()?.let { aprenderInicio(it) }
         for (w in final.split(' ')) {
             if (w.isEmpty()) continue
             val a2 = anterior2; val a1 = anterior

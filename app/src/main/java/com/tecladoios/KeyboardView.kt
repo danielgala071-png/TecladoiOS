@@ -724,27 +724,41 @@ class KeyboardView(context: Context) : View(context) {
 
     private val textoBarra = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; textAlign = Paint.Align.CENTER; typeface = Typeface.create("sans-serif", Typeface.NORMAL) }
     private val divisor = Paint().apply { color = CONTORNO }
+    private val textoBarraFuerte = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; textAlign = Paint.Align.CENTER; typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL) }
+    private val TEXTO_SUAVE = 0xFFD1D1D6.toInt()
+    private val fondoTarjeta = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF1C1C1E.toInt() }
+    private val bordeTarjeta = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1f); color = CONTORNO }
+    private val divisorTarjeta = Paint().apply { color = 0xFF48484A.toInt() }
+    private val tarjeta = RectF()
     private val casilla = RectF()
     private val espacios = Regex("\\s+")
 
     /** Barra como la del iPhone: tres casillas; la corrección que se pondrá va resaltada */
     private fun dibujarBarra(cv: Canvas) {
         val y0 = zona; val y1 = zona + BARRA
+        // Estilo «Tarjeta»: una sola pieza grafito con borde fino y las 3 palabras separadas
+        tarjeta.set(dp(6f), y0 + dp(3f), width - dp(6f), y1 - dp(3f))
+        cv.drawRoundRect(tarjeta, dp(12f), dp(12f), fondoTarjeta)
+        cv.drawRoundRect(tarjeta, dp(12f), dp(12f), bordeTarjeta)
 
         val ancho = width / 3f
         textoBarra.textSize = dp(17f)
+        textoBarraFuerte.textSize = dp(17f)
+        // La palabra principal va en negrita y blanca: la que se pondrá sola o, si no hay, la del medio
+        val principal = sugerencias.indexOfFirst { it?.tipo == 2 }.takeIf { it >= 0 } ?: 1
         for (k in 0 until 3) {
             val sg = sugerencias[k]
             val x0 = k * ancho
-            if (k > 0 && sugerencias[k] != null && sugerencias[k - 1] != null &&
-                sg?.tipo != 2 && sugerencias[k - 1]?.tipo != 2 && casillaApretada != k && casillaApretada != k - 1)
-                cv.drawRect(x0, y0 + BARRA * 0.28f, x0 + dp(1f), y1 - BARRA * 0.28f, divisor)
+            if (k > 0 && casillaApretada != k && casillaApretada != k - 1)
+                cv.drawRect(x0, y0 + BARRA * 0.3f, x0 + dp(1f), y1 - BARRA * 0.3f, divisorTarjeta)
             if (sg == null) continue
-            casilla.set(x0 + dp(4f), y0 + dp(5f), x0 + ancho - dp(4f), y1 - dp(5f))
-            if (sg.tipo == 2 || casillaApretada == k) {
-                relleno.color = if (casillaApretada == k) LETRA_PRESIONADA else LETRA
-                cv.drawRoundRect(casilla, dp(7f), dp(7f), relleno)
+            if (casillaApretada == k) {
+                casilla.set(x0 + dp(if (k == 0) 9f else 3f), y0 + dp(6f), x0 + ancho - dp(if (k == 2) 9f else 3f), y1 - dp(6f))
+                relleno.color = LETRA_PRESIONADA
+                cv.drawRoundRect(casilla, dp(9f), dp(9f), relleno)
             }
+            val p = if (k == principal) textoBarraFuerte else textoBarra
+            p.color = if (k == principal) TEXTO else TEXTO_SUAVE
             var s = when (sg.tipo) {
                 1 -> "“${sg.texto}”"
                 3 -> sg.texto.trim().take(80).replace(espacios, " ")
@@ -752,23 +766,23 @@ class KeyboardView(context: Context) : View(context) {
             }
             // Lo copiado lleva el ícono del portapapeles a la izquierda
             val icono = if (sg.tipo == 3) dp(20f) else 0f
-            val max = ancho - dp(14f) - icono
-            if (textoBarra.measureText(s) > max) {
-                val n = textoBarra.breakText(s, true, max - textoBarra.measureText("…"), null)
+            val max = ancho - dp(18f) - icono
+            if (p.measureText(s) > max) {
+                val n = p.breakText(s, true, max - p.measureText("…"), null)
                 s = s.substring(0, n.coerceAtLeast(1)) + "…"
             }
-            val ty = (y0 + y1) / 2 - (textoBarra.ascent() + textoBarra.descent()) / 2
+            val ty = (y0 + y1) / 2 - (p.ascent() + p.descent()) / 2
             if (sg.tipo == 3) {
-                val tx = x0 + ancho / 2 - (textoBarra.measureText(s) + icono) / 2
+                val tx = x0 + ancho / 2 - (p.measureText(s) + icono) / 2
                 val px = tx + dp(6f); val cy = (y0 + y1) / 2
                 trazo.strokeWidth = dp(1.3f)
                 cv.drawRoundRect(px - dp(5.5f), cy - dp(6.5f), px + dp(5.5f), cy + dp(7.5f), dp(2f), dp(2f), trazo)
                 cv.drawRoundRect(px - dp(2.5f), cy - dp(8.5f), px + dp(2.5f), cy - dp(5f), dp(1f), dp(1f), trazo)
                 trazo.strokeWidth = dp(1.5f)
-                textoBarra.textAlign = Paint.Align.LEFT
-                cv.drawText(s, tx + icono, ty, textoBarra)
-                textoBarra.textAlign = Paint.Align.CENTER
-            } else cv.drawText(s, x0 + ancho / 2, ty, textoBarra)
+                p.textAlign = Paint.Align.LEFT
+                cv.drawText(s, tx + icono, ty, p)
+                p.textAlign = Paint.Align.CENTER
+            } else cv.drawText(s, x0 + ancho / 2, ty, p)
         }
     }
 
