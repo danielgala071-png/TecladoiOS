@@ -54,6 +54,11 @@ android {
         }
     }
 
+    // El diccionario va sin comprimir dentro del APK: así se lee mapeado, sin copiarlo a la RAM
+    androidResources {
+        noCompress += listOf("txt", "bin")
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

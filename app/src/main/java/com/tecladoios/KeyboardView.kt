@@ -387,7 +387,11 @@ class KeyboardView(context: Context) : View(context) {
     override fun onTouchEvent(e: MotionEvent): Boolean {
         val i = e.actionIndex
         when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> bajar(e.getPointerId(i), e.getX(i), e.getY(i))
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                // Los toques llegan al instante, sin esperar al siguiente cuadro de la pantalla
+                if (e.actionMasked == MotionEvent.ACTION_DOWN) requestUnbufferedDispatch(e)
+                bajar(e.getPointerId(i), e.getX(i), e.getY(i))
+            }
             MotionEvent.ACTION_MOVE -> for (k in 0 until e.pointerCount) {
                 dedos[e.getPointerId(k)]?.let { mover(it, e.getX(k), e.getY(k)) }
             }
@@ -769,8 +773,18 @@ class KeyboardView(context: Context) : View(context) {
     private val espacios = Regex("\\s+")
     private val enlace = Regex("^(?:https?://)?(?:www\\.)?([a-z0-9-]+(?:\\.[a-z0-9-]+)+)(?:[/?#:]\\S*)?$", RegexOption.IGNORE_CASE)
 
-    /** Si lo copiado es un enlace, su dominio (youtube.com); si no, null */
+    private var dominioDe: String? = null
+    private var dominioVal: String? = null
+
+    /** Si lo copiado es un enlace, su dominio (youtube.com); si no, null. Se calcula una sola vez */
     private fun dominio(t: String): String? {
+        if (t === dominioDe) return dominioVal
+        dominioDe = t
+        dominioVal = calcularDominio(t)
+        return dominioVal
+    }
+
+    private fun calcularDominio(t: String): String? {
         val s = t.trim()
         if (s.length > 2000 || s.contains(' ') || s.contains('\n')) return null
         if (!s.startsWith("http", true) && !s.startsWith("www.", true)) return null
