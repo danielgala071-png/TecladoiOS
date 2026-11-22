@@ -448,6 +448,9 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         selIni = newSelStart; selFin = newSelEnd
+        // La app vació la caja por su cuenta (WhatsApp, Messenger… envían con su propio botón):
+        // si estabas en números o símbolos, vuelve a las letras para el siguiente mensaje
+        if (newSelStart == 0 && newSelEnd == 0 && oldSelStart > 0 && esperado != 0) cajaVaciada()
         if (newSelStart == newSelEnd && newSelStart == esperado) pendientes = 0
         else if (pendientes > 0) pendientes--
         else {
@@ -737,6 +740,17 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
      * Después de enviar (o de un salto de línea) estando en números o símbolos: vuelve a las letras
      * con la mayúscula del inicio de oración, listo para el siguiente mensaje (como el iPhone)
      */
+    private fun cajaVaciada() {
+        val kb = teclado ?: return
+        val m = kb.distribucion.modo
+        if (m != Distribuciones.SIMBOLOS && m != Distribuciones.SIMBOLOS2) return
+        val ic = currentInputConnection ?: return
+        val vacia = try {
+            ic.getTextBeforeCursor(1, 0).isNullOrEmpty() && ic.getTextAfterCursor(1, 0).isNullOrEmpty()
+        } catch (_: Throwable) { false }
+        if (vacia) kb.ponerModo(Distribuciones.LETRAS)
+    }
+
     private fun volverALetras() {
         val kb = teclado ?: return
         val m = kb.distribucion.modo
