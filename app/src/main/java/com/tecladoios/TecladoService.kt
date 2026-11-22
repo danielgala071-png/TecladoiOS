@@ -730,6 +730,20 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
             if (ei != null && (ei.inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0) ic.commitText("\n", 1)
             else sendKeyChar('\n')
         } else ic.performEditorAction(accion)
+        volverALetras()
+    }
+
+    /**
+     * Después de enviar (o de un salto de línea) estando en números o símbolos: vuelve a las letras
+     * con la mayúscula del inicio de oración, listo para el siguiente mensaje (como el iPhone)
+     */
+    private fun volverALetras() {
+        val kb = teclado ?: return
+        val m = kb.distribucion.modo
+        if (m == Distribuciones.SIMBOLOS || m == Distribuciones.SIMBOLOS2) kb.ponerModo(Distribuciones.LETRAS)
+        actualizarMayus()
+        // La app vacía la caja un instante después de enviar: se revisa otra vez la mayúscula
+        principal.postDelayed({ actualizarMayus() }, 120L)
     }
 
     override fun cursor(dx: Int, dy: Int) {
