@@ -204,7 +204,9 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
                 ei.inputType and InputType.TYPE_NUMBER_FLAG_DECIMAL != 0)
             InputType.TYPE_CLASS_PHONE -> kb.ponerModo(Distribuciones.TELEFONO)
             InputType.TYPE_CLASS_DATETIME -> kb.ponerModo(Distribuciones.NUMEROS)
-            else -> if (!restarting || kb.distribucion.numerico) kb.ponerModo(Distribuciones.LETRAS)
+            // Al reiniciar la misma caja se conserva el modo, salvo que la app la haya vaciado
+            // (WhatsApp, Telegram… reinician la caja al enviar con su botón)
+            else -> if (!restarting || kb.distribucion.numerico || cajaVacia()) kb.ponerModo(Distribuciones.LETRAS)
         }
         kb.etiquetaIntro = etiquetaIntro(ei)
         actualizarMayus()
@@ -450,7 +452,12 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         selIni = newSelStart; selFin = newSelEnd
         // La app vació la caja por su cuenta (WhatsApp, Messenger… envían con su propio botón):
         // si estabas en números o símbolos, vuelve a las letras para el siguiente mensaje
-        if (newSelStart == 0 && newSelEnd == 0 && oldSelStart > 0 && esperado != 0) cajaVaciada()
+        if (newSelStart == 0 && newSelEnd == 0 && oldSelStart > 0 && esperado != 0) {
+            cajaVaciada()
+            // Algunas apps vacían la caja un instante después de mover el cursor: se revisa de nuevo
+            principal.removeCallbacks(revisarVaciada)
+            principal.postDelayed(revisarVaciada, 150L)
+        }
         if (newSelStart == newSelEnd && newSelStart == esperado) pendientes = 0
         else if (pendientes > 0) pendientes--
         else {
@@ -740,15 +747,24 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
      * Después de enviar (o de un salto de línea) estando en números o símbolos: vuelve a las letras
      * con la mayúscula del inicio de oración, listo para el siguiente mensaje (como el iPhone)
      */
-    private fun cajaVaciada() {
-        val kb = teclado ?: return
-        val m = kb.distribucion.modo
-        if (m != Distribuciones.SIMBOLOS && m != Distribuciones.SIMBOLOS2) return
-        val ic = currentInputConnection ?: return
-        val vacia = try {
+    private val revisarVaciada = Runnable { if (cajaVaciada()) actualizarMayus() }
+
+    /** La caja de texto no tiene nada escrito */
+    private fun cajaVacia(): Boolean {
+        val ic = currentInputConnection ?: return false
+        return try {
             ic.getTextBeforeCursor(1, 0).isNullOrEmpty() && ic.getTextAfterCursor(1, 0).isNullOrEmpty()
         } catch (_: Throwable) { false }
-        if (vacia) kb.ponerModo(Distribuciones.LETRAS)
+    }
+
+    /** Si la app vació la caja estando en números o símbolos, vuelve a las letras. Devuelve si cambió */
+    private fun cajaVaciada(): Boolean {
+        val kb = teclado ?: return false
+        val m = kb.distribucion.modo
+        if (m != Distribuciones.SIMBOLOS && m != Distribuciones.SIMBOLOS2) return false
+        if (!cajaVacia()) return false
+        kb.ponerModo(Distribuciones.LETRAS)
+        return true
     }
 
     private fun volverALetras() {

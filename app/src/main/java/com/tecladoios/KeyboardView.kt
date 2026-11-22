@@ -342,6 +342,8 @@ class KeyboardView(context: Context) : View(context) {
         var xu = 0f; var yu = 0f
         var acumX = 0f; var acumY = 0f
         var repeticiones = 0
+        /** El dedo apoyó «123» y sigue apoyado: si se desliza a un símbolo y lo suelta, se escribe y vuelve a las letras */
+        var desde123 = false
         val larga = Runnable { mantener(this) }
         val repetir = object : Runnable {
             override fun run() {
@@ -422,6 +424,11 @@ class KeyboardView(context: Context) : View(context) {
                 postDelayed(dd.repetir, 450L)
             }
             K.SHIFT -> tocarShift()
+            K.NUM -> {
+                // Como el iPhone: los símbolos salen al apoyar el dedo, sin esperar a soltarlo
+                cambiarModoConDedo(Distribuciones.SIMBOLOS, dd)
+                dd.desde123 = true
+            }
             K.ESPACIO -> postDelayed(dd.larga, 450L)
             K.EMOJI -> postDelayed(dd.larga, 500L)
         }
@@ -455,6 +462,18 @@ class KeyboardView(context: Context) : View(context) {
                 }
             }
             Modo.NORMAL -> {
+                if (dd.desde123) {
+                    // Deslizando desde «123»: se ilumina el símbolo que queda bajo el dedo
+                    dd.xu = x; dd.yu = y
+                    val n = buscar(x, y)?.takeIf { it.tecla.tipo == K.TEXTO }
+                    if (n !== dd.c) {
+                        dd.c?.let { presionadas.remove(it) }
+                        dd.c = n; presionada = n
+                        n?.let { presionadas.add(it) }
+                        invalidate()
+                    }
+                    return
+                }
                 val c = dd.c ?: return
                 dd.xu = x; dd.yu = y
                 if (c.tecla.tipo == K.ESPACIO) {
@@ -482,6 +501,15 @@ class KeyboardView(context: Context) : View(context) {
     private fun subir(dd: Dedo) {
         removeCallbacks(dd.larga); removeCallbacks(dd.repetir)
         val c = dd.c
+        if (dd.desde123 && dd.modo == Modo.NORMAL) {
+            // Soltó sobre un símbolo: se escribe y vuelve a las letras; si no, se queda en símbolos
+            if (c != null && c.tecla.tipo == K.TEXTO) {
+                escribir(dd)
+                if (distribucion.modo != Distribuciones.LETRAS) ponerModo(Distribuciones.LETRAS)
+            }
+            invalidate()
+            return
+        }
         when (dd.modo) {
             Modo.NORMAL -> if (c != null) when (c.tecla.tipo) {
                 K.TEXTO -> escribir(dd)
@@ -610,6 +638,19 @@ class KeyboardView(context: Context) : View(context) {
         dd.x0 = x; dd.y0 = y; dd.acumX = 0f; dd.acumY = 0f
         trackpad = true
         oyente?.respuesta(Respuesta.Tipo.FUNCION)
+        invalidate()
+    }
+
+    /** Cambia de distribución sin soltar el dedo que la pidió (para deslizar desde «123») */
+    private fun cambiarModoConDedo(modo: Int, dd: Dedo) {
+        for (otro in dedos.values) if (otro !== dd) { removeCallbacks(otro.larga); removeCallbacks(otro.repetir) }
+        dedos.entries.removeAll { it.value !== dd }
+        presionadas.clear(); presionada = null
+        distribucion = Distribuciones.crear(modo, false)
+        shift = 0; shiftAuto = false
+        dd.c = null
+        requestLayout()
+        acomodar()
         invalidate()
     }
 
