@@ -158,15 +158,18 @@ class Diccionario private constructor(
         private const val SALTO: Byte = 10   // salto de línea
 
         /** orden.bin también queda mapeado: los 158 000 puestos no ocupan memoria del teclado */
-        private fun leerOrden(c: Context, datos: java.nio.ByteBuffer, n: Int): java.nio.IntBuffer? = try {
-            val f = mapear(c, "orden.bin")
-            if (f.getInt(0) != 0x4F524431) return null                // "ORD1"
-            if (f.getInt(4) != n) return null
-            val crc = java.util.zip.CRC32().apply { update(datos.duplicate().apply { position(0) }) }.value.toInt()
-            if (f.getInt(8) != crc) return null                        // la lista cambió: se ordena aquí
-            if (f.limit() < 12 + n * 4) return null
-            (f.duplicate().apply { position(12) } as java.nio.ByteBuffer).slice().order(java.nio.ByteOrder.BIG_ENDIAN).asIntBuffer().apply { limit(n) }
-        } catch (_: Throwable) { null }
+        private fun leerOrden(c: Context, datos: java.nio.ByteBuffer, n: Int): java.nio.IntBuffer? {
+            try {
+                val f = mapear(c, "orden.bin")
+                if (f.getInt(0) != 0x4F524431) return null                // "ORD1"
+                if (f.getInt(4) != n) return null
+                val crc = java.util.zip.CRC32().apply { update(datos.duplicate().apply { position(0) }) }.value.toInt()
+                if (f.getInt(8) != crc) return null                        // la lista cambió: se ordena aquí
+                if (f.limit() < 12 + n * 4) return null
+                return (f.duplicate().apply { position(12) } as java.nio.ByteBuffer).slice()
+                    .order(java.nio.ByteOrder.BIG_ENDIAN).asIntBuffer().apply { limit(n) }
+            } catch (_: Throwable) { return null }
+        }
 
         /** Solo si orden.bin no corresponde a la lista: se ordena al cargar (más lento) */
         private fun ordenar(p: Lista): IntArray {
