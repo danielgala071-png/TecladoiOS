@@ -63,6 +63,7 @@ class SettingsActivity : Activity() {
         opcion("Predicción", Ajustes.PREDICTIVO, true)
         opcion("¿ y ¡ automáticos", Ajustes.SIGNOS, true)
         opcion("Historial del portapapeles", Ajustes.PORTAPAPELES, true)
+        opcion("Volver a letras después de un emoji", Ajustes.EMOJI_VOLVER, false)
         col.addView(titulo("Guarda en el celular lo último que copias. Ábrelo desde el botón junto a ABC en los emojis; lo recién copiado aparece en la barra para pegarlo.", 13f, 0xFF8E8E93.toInt()).apply { setPadding(0, 0, 0, dp(8)) })
 
         col.addView(titulo("DICCIONARIO PERSONAL", 13f, 0xFF8E8E93.toInt()))

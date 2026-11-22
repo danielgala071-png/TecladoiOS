@@ -38,6 +38,8 @@ class KeyboardView(context: Context) : View(context) {
         fun ajustes()
         /** Guarda lo aprendido sobre dónde tocas (cada 50 letras) */
         fun guardarAjuste(s: String)
+        /** Mantener presionada una sugerencia: olvidarla */
+        fun olvidarSugerencia(i: Int)
     }
 
     /** Una casilla de la barra: [tipo] 0 = normal, 1 = lo escrito (entre comillas), 2 = corrección, 3 = lo copiado (pegar) */
@@ -54,7 +56,7 @@ class KeyboardView(context: Context) : View(context) {
     private val LETRA = 0xFF2C2C2E.toInt()          // teclas de letras: grafito
     private val LETRA_PRESIONADA = 0xFF48484A.toInt()
     private val FUNCION = Color.BLACK               // mayúscula, borrar, 123, emoji, espacio, intro
-    private val FUNCION_PRESIONADA = 0xFF2C2C2E.toInt()
+    private val FUNCION_PRESIONADA = 0xFF3A3A3C.toInt()   // se aclara al presionar (más notorio)
     private val CONTORNO = 0xFF3A3A3C.toInt()
     private val TEXTO = Color.WHITE
     private val ELEGIDA = 0xFF636366.toInt()        // opción elegida al mantener una tecla
@@ -67,6 +69,18 @@ class KeyboardView(context: Context) : View(context) {
     private var ultimoShiftMs = 0L
     /** Lo que dice la tecla intro (null = flecha) */
     var etiquetaIntro: String? = null; set(v) { field = v; invalidate() }
+
+    /** Color que combina con tu fondo de pantalla: tecla de enviar/buscar, borde de la barra y bloqueo de mayúsculas */
+    var acento: Int = 0xFFE53935.toInt()
+        set(v) {
+            field = v
+            acentoP.color = v
+            acentoApretado.color = Color.rgb((Color.red(v) * 0.78f).toInt(), (Color.green(v) * 0.78f).toInt(), (Color.blue(v) * 0.78f).toInt())
+            bordeTarjeta.color = (v and 0x00FFFFFF) or (0x70 shl 24)
+            invalidate()
+        }
+    private val acentoP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFE53935.toInt() }
+    private val acentoApretado = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFB32D2A.toInt() }
 
     fun ponerModo(modo: Int, decimal: Boolean = false) {
         terminarTodo()
@@ -395,7 +409,9 @@ class KeyboardView(context: Context) : View(context) {
         if (conBarra && y >= zona && y < zona + BARRA) {
             val k = (x / (width / 3f)).toInt().coerceIn(0, 2)
             if (sugerencias[k] == null) return
-            dedos[id] = Dedo(id).apply { modo = Modo.BARRA; x0 = x; y0 = y; repeticiones = k }
+            val bd = Dedo(id).apply { modo = Modo.BARRA; x0 = x; y0 = y; repeticiones = k }
+            dedos[id] = bd
+            postDelayed(bd.larga, 550L)
             casillaApretada = k
             oyente?.respuesta(Respuesta.Tipo.LETRA)
             invalidate()
@@ -598,6 +614,17 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     private fun mantener(dd: Dedo) {
+        if (dd.modo == Modo.BARRA) {
+            // Mantener una sugerencia: se olvida (o se quita lo copiado de la barra)
+            if (casillaApretada == dd.repeticiones) {
+                oyente?.respuesta(Respuesta.Tipo.FUNCION)
+                oyente?.olvidarSugerencia(dd.repeticiones)
+            }
+            casillaApretada = -1
+            dd.modo = Modo.HECHO
+            invalidate()
+            return
+        }
         val c = dd.c ?: return
         if (dd.modo != Modo.NORMAL) return
         when (c.tecla.tipo) {
@@ -692,7 +719,10 @@ class KeyboardView(context: Context) : View(context) {
         val r = c.dibujo
         val apretada = c in presionadas
         val conGlobo = apretada && t.tipo == K.TEXTO && config?.vistaPrevia != false && !distribucion.numerico
-        if (t.funcion) {
+        if (t.tipo == K.INTRO && etiquetaIntro != null) {
+            // Enviar, Buscar, Ir…: la tecla toma el color de tu fondo, como el azul del iPhone
+            cv.drawRoundRect(r, RADIO, RADIO, if (apretada) acentoApretado else acentoP)
+        } else if (t.funcion) {
             relleno.color = if (apretada) FUNCION_PRESIONADA else FUNCION
             cv.drawRoundRect(r, RADIO, RADIO, relleno)
             cv.drawRoundRect(r, RADIO, RADIO, contorno)
@@ -710,7 +740,12 @@ class KeyboardView(context: Context) : View(context) {
                 letras.textSize = dp(28f)
             }
             K.NUM, K.ABC, K.SIMB2 -> cv.drawText(t.texto, cx, cy - (etiquetas.ascent() + etiquetas.descent()) / 2, etiquetas)
-            K.ESPACIO -> if (!trackpad) cv.drawText(t.texto, cx, cy - (etiquetas.ascent() + etiquetas.descent()) / 2, etiquetas)
+            K.ESPACIO -> if (!trackpad) {
+                // «español» en gris tenue, como el nombre del idioma en la barra espaciadora
+                etiquetas.color = 0xFF8E8E93.toInt()
+                cv.drawText("español", cx, cy - (etiquetas.ascent() + etiquetas.descent()) / 2, etiquetas)
+                etiquetas.color = TEXTO
+            }
             K.INTRO -> {
                 val e = etiquetaIntro
                 if (e != null) cv.drawText(e, cx, cy - (etiquetas.ascent() + etiquetas.descent()) / 2, etiquetas)
@@ -732,6 +767,15 @@ class KeyboardView(context: Context) : View(context) {
     private val tarjeta = RectF()
     private val casilla = RectF()
     private val espacios = Regex("\\s+")
+    private val enlace = Regex("^(?:https?://)?(?:www\\.)?([a-z0-9-]+(?:\\.[a-z0-9-]+)+)(?:[/?#:]\\S*)?$", RegexOption.IGNORE_CASE)
+
+    /** Si lo copiado es un enlace, su dominio (youtube.com); si no, null */
+    private fun dominio(t: String): String? {
+        val s = t.trim()
+        if (s.length > 2000 || s.contains(' ') || s.contains('\n')) return null
+        if (!s.startsWith("http", true) && !s.startsWith("www.", true)) return null
+        return enlace.matchEntire(s)?.groupValues?.get(1)?.lowercase()
+    }
 
     /** Barra como la del iPhone: tres casillas; la corrección que se pondrá va resaltada */
     private fun dibujarBarra(cv: Canvas) {
@@ -761,18 +805,18 @@ class KeyboardView(context: Context) : View(context) {
             p.color = if (k == principal) TEXTO else TEXTO_SUAVE
             var s = when (sg.tipo) {
                 1 -> "“${sg.texto}”"
-                3 -> sg.texto.trim().take(80).replace(espacios, " ")
+                3 -> dominio(sg.texto)?.let { "🔗 $it" } ?: sg.texto.trim().take(80).replace(espacios, " ")
                 else -> sg.texto
             }
             // Lo copiado lleva el ícono del portapapeles a la izquierda
-            val icono = if (sg.tipo == 3) dp(20f) else 0f
+            val icono = if (sg.tipo == 3 && dominio(sg.texto) == null) dp(20f) else 0f
             val max = ancho - dp(18f) - icono
             if (p.measureText(s) > max) {
                 val n = p.breakText(s, true, max - p.measureText("…"), null)
                 s = s.substring(0, n.coerceAtLeast(1)) + "…"
             }
             val ty = (y0 + y1) / 2 - (p.ascent() + p.descent()) / 2
-            if (sg.tipo == 3) {
+            if (sg.tipo == 3 && icono > 0f) {
                 val tx = x0 + ancho / 2 - (p.measureText(s) + icono) / 2
                 val px = tx + dp(6f); val cy = (y0 + y1) / 2
                 trazo.strokeWidth = dp(1.3f)
@@ -854,7 +898,7 @@ class KeyboardView(context: Context) : View(context) {
         camino.lineTo(cx - s, cy - s * 0.05f)
         camino.close()
         cv.drawPath(camino, if (shift > 0) lleno else trazo)
-        if (shift == 2) cv.drawRect(cx - s * 0.45f, cy + s * 1.05f, cx + s * 0.45f, cy + s * 1.25f, lleno)
+        if (shift == 2) cv.drawRoundRect(cx - s * 0.55f, cy + s * 1.05f, cx + s * 0.55f, cy + s * 1.3f, s * 0.12f, s * 0.12f, acentoP)
     }
 
     private fun dibujarBorrar(cv: Canvas, cx: Float, cy: Float) {

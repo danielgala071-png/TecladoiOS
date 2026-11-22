@@ -25,6 +25,8 @@ object Ajustes {
     const val TAMANO = "tamano"
     /** Guardar el historial de lo que copias */
     const val PORTAPAPELES = "portapapeles"
+    /** Después de elegir un emoji, volver a las letras */
+    const val EMOJI_VOLVER = "emoji_volver"
 
     fun prefs(c: Context): SharedPreferences =
         c.applicationContext.getSharedPreferences(ARCHIVO, Context.MODE_PRIVATE)
@@ -42,5 +44,6 @@ class Config(p: SharedPreferences) {
     val signosApertura = p.getBoolean(Ajustes.SIGNOS, true)
     val ajusteAuto = p.getBoolean(Ajustes.AJUSTE_AUTO, true)
     val portapapeles = p.getBoolean(Ajustes.PORTAPAPELES, true)
+    val emojiVolver = p.getBoolean(Ajustes.EMOJI_VOLVER, false)
     val tamano = p.getInt(Ajustes.TAMANO, 100).coerceIn(80, 130)
 }

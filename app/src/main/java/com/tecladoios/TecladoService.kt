@@ -1,5 +1,9 @@
 package com.tecladoios
 
+import android.widget.Toast
+
+import android.app.WallpaperManager
+
 import android.content.SharedPreferences
 import android.graphics.Color
 import android.inputmethodservice.InputMethodService
@@ -115,6 +119,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     override fun onDestroy() {
         hilo.shutdown()
         try { getSystemService(android.content.ClipboardManager::class.java)?.removePrimaryClipChangedListener(alCopiar) } catch (_: Throwable) { }
+        try { oyenteFondo?.let { WallpaperManager.getInstance(this).removeOnColorsChangedListener(it) } } catch (_: Throwable) { }
         prefs.unregisterOnSharedPreferenceChangeListener(this)
         respuesta.soltar()
         super.onDestroy()
@@ -161,6 +166,12 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
             }
         }
         raiz = r; teclado = kb; panel = null; panelClip = null
+        leerAcento()
+        if (oyenteFondo == null) try {
+            val o = WallpaperManager.OnColorsChangedListener { _, cual -> if (cual and WallpaperManager.FLAG_SYSTEM != 0) principal.post { leerAcento() } }
+            WallpaperManager.getInstance(this).addOnColorsChangedListener(o, principal)
+            oyenteFondo = o
+        } catch (_: Throwable) { }
         return r
     }
 
@@ -682,6 +693,7 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         if (palabra.isNotEmpty()) {
             ic.beginBatchEdit()
             val original = terminarPalabra()
+            if (original != null) respuesta.correccion()
             ic.commitText(" ", 1); movido(1)
             ic.endBatchEdit()
             if (original != null) deshacerPos = esperado
@@ -870,6 +882,52 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         ultimoEspacioMs = 0L
         anterior = null; anterior2 = null; predicciones = emptyList()
         vaciar(); propuesta = null; olvidarDeshacer(); actualizarBarra()
+        if (cfg.emojiVolver) cerrarEmojis()
+    }
+
+    override fun olvidarSugerencia(i: Int) {
+        val sg = casillas.getOrNull(i) ?: return
+        when (sg.tipo) {
+            3 -> copiado = null                       // lo copiado sale de la barra (sigue en el portapapeles)
+            1 -> {}                                   // lo que escribiste no se olvida
+            else -> {
+                val w = sg.texto
+                dic?.let { d -> hilo.execute { try { d.olvidar(w) } catch (_: Throwable) { } } }
+                if (propuesta?.correccion == w) propuesta = null
+                predicciones = predicciones.filter { !it.equals(w, true) }
+                Toast.makeText(this, "No se volverá a sugerir «$w»", Toast.LENGTH_SHORT).show()
+            }
+        }
+        actualizarBarra()
+    }
+
+    // ---------- Color que combina con el fondo de pantalla ----------
+    private var oyenteFondo: WallpaperManager.OnColorsChangedListener? = null
+
+    private fun leerAcento() {
+        val kb = teclado ?: return
+        val c = try {
+            WallpaperManager.getInstance(this).getWallpaperColors(WallpaperManager.FLAG_SYSTEM)
+        } catch (_: Throwable) { null }
+        kb.acento = elegirAcento(c)
+    }
+
+    /** El color más vivo del fondo (si el fondo es casi todo negro, el carmesí del eclipse) */
+    private fun elegirAcento(c: android.app.WallpaperColors?): Int {
+        val defecto = 0xFFE53935.toInt()
+        if (c == null) return defecto
+        val hsv = FloatArray(3)
+        var mejor = defecto; var puntaje = 0f
+        for (col in listOfNotNull(c.primaryColor, c.secondaryColor, c.tertiaryColor)) {
+            Color.colorToHSV(col.toArgb(), hsv)
+            val p = hsv[1] * hsv[2]
+            if (hsv[1] >= 0.3f && hsv[2] >= 0.3f && p > puntaje) { puntaje = p; mejor = col.toArgb() }
+        }
+        if (puntaje == 0f) return defecto
+        // Que se lea bien sobre negro: ni muy oscuro ni pastel
+        Color.colorToHSV(mejor, hsv)
+        hsv[1] = hsv[1].coerceIn(0.55f, 0.85f); hsv[2] = hsv[2].coerceIn(0.75f, 0.92f)
+        return Color.HSVToColor(hsv)
     }
 
     // ---------- Portapapeles ----------

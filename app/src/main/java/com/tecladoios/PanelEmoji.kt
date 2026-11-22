@@ -55,6 +55,8 @@ class PanelEmoji(context: Context) : View(context) {
 
     companion object {
         private const val RECIENTES = "emojis_recientes"
+        private const val TONOS = "emojis_tonos"
+        private val MODIFICADORES = listOf("\uD83C\uDFFB", "\uD83C\uDFFC", "\uD83C\uDFFD", "\uD83C\uDFFE", "\uD83C\uDFFF")
         private var base: List<Categoria>? = null
         fun soltarCache() { base = null }
         private val NOMBRES = mapOf(
@@ -105,8 +107,68 @@ class PanelEmoji(context: Context) : View(context) {
         prefs.edit().putString(RECIENTES, l.take(32).joinToString("\n")).apply()
     }
 
+    // ---------- Tono de piel (mantener un emoji de manos o personas) ----------
+    /** emoji base → el tono que elegiste la última vez */
+    private val tonos = HashMap<String, String>()
+
+    private fun leerTonos() {
+        tonos.clear()
+        prefs.getString(TONOS, null)?.split('\n')?.forEach {
+            val i = it.indexOf('\t'); if (i > 0) tonos[it.substring(0, i)] = it.substring(i + 1)
+        }
+    }
+
+    private fun guardarTonos() {
+        prefs.edit().putString(TONOS, tonos.entries.joinToString("\n") { "${it.key}\t${it.value}" }).apply()
+    }
+
+    private fun conTono(e: String, mod: String): String {
+        val b = e.replace("\uFE0F", "")
+        val n = Character.charCount(b.codePointAt(0))
+        return b.substring(0, n) + mod + b.substring(n)
+    }
+
+    /** El emoji y sus 5 tonos, si el celular los tiene; si no, vacío */
+    private fun variantesDe(e: String): List<String> {
+        if (MODIFICADORES.any { e.contains(it) }) return emptyList()
+        val t = conTono(e, MODIFICADORES[2])
+        return try { if (emoji.hasGlyph(t)) listOf(e) + MODIFICADORES.map { conTono(e, it) } else emptyList() } catch (_: Throwable) { emptyList() }
+    }
+
+    private fun mostrado(e: String) = tonos[e] ?: e
+
+    private var tonosVisibles: List<String> = emptyList()
+    private var baseTono: String? = null
+    private var tonoElegido = -1
+    private val cajaTonos = RectF()
+    private val mantenerEmoji = Runnable {
+        val cod = tocado
+        if (cod < 0 || arrastrando) return@Runnable
+        val base = textoDe(cod) ?: return@Runnable
+        val v = variantesDe(base)
+        if (v.isEmpty()) return@Runnable
+        oyente?.respuesta(Respuesta.Tipo.FUNCION)
+        tonosVisibles = v; baseTono = base
+        // La fila de tonos aparece arriba del emoji, centrada y dentro de la pantalla
+        val i = cod / 10000; val k = cod % 10000
+        val cx = inicioX[i] - desplazado + (k / filas) * celdaW + celdaW / 2
+        val cy = ALTO_TITULO + (k % filas) * celdaH
+        val w = celdaW * 1.05f * v.size + dp(12f); val h = celdaH * 0.95f
+        val izq = (cx - w / 2).coerceIn(dp(4f), width - dp(4f) - w)
+        val arriba = (cy - h - dp(4f)).coerceAtLeast(dp(2f))
+        cajaTonos.set(izq, arriba, izq + w, arriba + h)
+        tonoElegido = v.indexOf(mostrado(base)).coerceAtLeast(0)
+        invalidate()
+    }
+
+    private fun tonoEn(x: Float): Int {
+        val w = (cajaTonos.width() - dp(12f)) / tonosVisibles.size
+        return ((x - cajaTonos.left - dp(6f)) / w).toInt().coerceIn(0, tonosVisibles.size - 1)
+    }
+
     /** Al abrir: arma la lista (los usados se reordenan solo al volver a abrir, como en iOS) */
     fun abrir() {
+        leerTonos()
         val rec = recientes()
         val lista = ArrayList<Categoria>()
         // Siempre primero: los recientes; después las demás secciones
@@ -199,13 +261,21 @@ class PanelEmoji(context: Context) : View(context) {
                             if (tocadoCat >= 0) oyente?.respuesta(Respuesta.Tipo.FUNCION)
                         }
                     }
-                } else tocado = emojiEn(x, y)
+                } else {
+                    tocado = emojiEn(x, y)
+                    if (tocado >= 0) postDelayed(mantenerEmoji, 420L)
+                }
                 invalidate()
             }
             MotionEvent.ACTION_MOVE -> {
                 velocidad?.addMovement(e)
                 if (borrando) return true
-                if (!arrastrando && abs(x - x0) > dp(8f) && y < height - abajoSistema - ALTO_BARRA) { arrastrando = true; tocado = -1 }
+                if (tonosVisibles.isNotEmpty()) {
+                    val n = tonoEn(x)
+                    if (n != tonoElegido) { tonoElegido = n; invalidate() }
+                    return true
+                }
+                if (!arrastrando && abs(x - x0) > dp(8f) && y < height - abajoSistema - ALTO_BARRA) { arrastrando = true; tocado = -1; removeCallbacks(mantenerEmoji) }
                 if (arrastrando) {
                     desplazado = (desplazado - (x - ultX)).coerceIn(0f, maxDesplazado)
                     invalidate()
@@ -213,7 +283,24 @@ class PanelEmoji(context: Context) : View(context) {
                 ultX = x
             }
             MotionEvent.ACTION_UP -> {
-                removeCallbacks(repetir)
+                removeCallbacks(repetir); removeCallbacks(mantenerEmoji)
+                if (tonosVisibles.isNotEmpty()) {
+                    // Elegiste un tono: se escribe y se recuerda para ese emoji
+                    val base = baseTono
+                    val elegido = tonosVisibles.getOrNull(tonoElegido)
+                    if (base != null && elegido != null) {
+                        if (elegido == base) tonos.remove(base) else tonos[base] = elegido
+                        guardarTonos()
+                        oyente?.respuesta(Respuesta.Tipo.LETRA)
+                        oyente?.emoji(elegido)
+                        usar(elegido)
+                    }
+                    tonosVisibles = emptyList(); baseTono = null; tonoElegido = -1
+                    tocado = -1; tocadoCat = -1; arrastrando = false
+                    velocidad?.recycle(); velocidad = null
+                    invalidate()
+                    return true
+                }
                 if (borrando) { borrando = false }
                 else if (arrastrando) {
                     velocidad?.let {
@@ -228,7 +315,7 @@ class PanelEmoji(context: Context) : View(context) {
                 } else if (tocadoCat >= 0 && botonesCat.getOrNull(tocadoCat)?.contains(x, y) == true) {
                     irA(tocadoCat)
                 } else if (tocado >= 0) {
-                    textoDe(tocado)?.let { em ->
+                    textoDe(tocado)?.let { mostrado(it) }?.let { em ->
                         oyente?.respuesta(Respuesta.Tipo.LETRA)
                         oyente?.emoji(em)
                         usar(em)
@@ -239,7 +326,9 @@ class PanelEmoji(context: Context) : View(context) {
                 invalidate()
             }
             MotionEvent.ACTION_CANCEL -> {
-                removeCallbacks(repetir); borrando = false; tocado = -1; tocadoCat = -1; arrastrando = false
+                removeCallbacks(repetir); removeCallbacks(mantenerEmoji)
+                tonosVisibles = emptyList(); baseTono = null
+                borrando = false; tocado = -1; tocadoCat = -1; arrastrando = false
                 invalidate()
             }
         }
@@ -294,6 +383,9 @@ class PanelEmoji(context: Context) : View(context) {
     private val marca = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF3A3A3C.toInt() }
     private val trazo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 1.5f * d; strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND }
     private val camino = Path()
+    private val cajaTonoP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF2C2C2E.toInt() }
+    private val bordeTonoP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = d; color = 0xFF48484A.toInt() }
+    private val marcaTono = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF48484A.toInt() }
 
     private fun categoriaActual(): Int {
         var r = 0
@@ -331,10 +423,20 @@ class PanelEmoji(context: Context) : View(context) {
                 if (cx < -celdaW || cx > width + celdaW) continue
                 val cy = ALTO_TITULO + (k % filas) * celdaH + celdaH / 2
                 if (tocado == i * 10000 + k) cv.drawRoundRect(cx - celdaW / 2 + dp(2f), cy - celdaH / 2 + dp(2f), cx + celdaW / 2 - dp(2f), cy + celdaH / 2 - dp(2f), dp(8f), dp(8f), marca)
-                cv.drawText(em, cx, cy + ajusteY, emoji)
+                cv.drawText(mostrado(em), cx, cy + ajusteY, emoji)
             }
         }
         dibujarBarra(cv, actual)
+        if (tonosVisibles.isNotEmpty()) {
+            cv.drawRoundRect(cajaTonos, dp(12f), dp(12f), cajaTonoP)
+            cv.drawRoundRect(cajaTonos, dp(12f), dp(12f), bordeTonoP)
+            val w = (cajaTonos.width() - dp(12f)) / tonosVisibles.size
+            for ((k, t) in tonosVisibles.withIndex()) {
+                val cx = cajaTonos.left + dp(6f) + w * k + w / 2
+                if (k == tonoElegido) cv.drawRoundRect(cx - w / 2 + dp(1f), cajaTonos.top + dp(4f), cx + w / 2 - dp(1f), cajaTonos.bottom - dp(4f), dp(8f), dp(8f), marcaTono)
+                cv.drawText(t, cx, cajaTonos.centerY() + ajusteY, emoji)
+            }
+        }
     }
 
     private fun dibujarBarra(cv: Canvas, actual: Int) {

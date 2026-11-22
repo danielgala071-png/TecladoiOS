@@ -87,6 +87,23 @@ class Respuesta(c: Context) {
         }
     }
 
+    private var efectoSuave: VibrationEffect? = null
+
+    /** Autocorrección: un segundo «tic» muy suave justo después del espacio, para notarla sin mirar */
+    fun correccion() {
+        val cfg = config ?: return
+        if (!cfg.vibracion) return
+        manejador.postDelayed({
+            try {
+                val v = vibrador ?: return@postDelayed
+                val e = efectoSuave ?: (if (v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_TICK))
+                    VibrationEffect.startComposition().addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 0.45f).compose()
+                else armar()).also { efectoSuave = it }
+                e?.let { v.vibrate(it) }
+            } catch (_: Throwable) { }
+        }, 75L)
+    }
+
     /** Libera los sonidos (si están apagados no ocupan memoria) */
     fun soltarSonidos() { manejador.post { sonidos?.release(); sonidos = null } }
 

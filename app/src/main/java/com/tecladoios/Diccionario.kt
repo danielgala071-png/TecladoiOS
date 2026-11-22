@@ -92,6 +92,7 @@ class Diccionario private constructor(
         const val PARES = "palabras_pares"
         const val TRIOS = "palabras_trios"
         const val NOMBRES = "palabras_nombres"
+        const val OLVIDADAS = "palabras_olvidadas"
         /** Índice de una letra en [ALFABETO] (para los costos según dónde tocaste) */
         fun indiceLetra(c: Char) = ALFABETO.indexOf(c)
 
@@ -252,6 +253,8 @@ class Diccionario private constructor(
     /** Nombres que escribiste con mayúscula (maría → María) */
     private val nombres = java.util.concurrent.ConcurrentHashMap<String, String>()
     private var sinGuardar = 0
+    /** Palabras que pediste olvidar: no se sugieren ni se ponen solas */
+    private val olvidadas: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     init {
         leer(dir, USOS).forEach { l ->
@@ -264,7 +267,26 @@ class Diccionario private constructor(
             val i = l.lastIndexOf(':'); if (i > 0) l.substring(i + 1).toIntOrNull()?.let { conteoTrios[l.substring(0, i)] = it }
         }
         leer(dir, NOMBRES).forEach { if (it.length >= 2) nombres[it.lowercase()] = it }
+        olvidadas.addAll(leer(dir, OLVIDADAS))
     }
+
+    /** Olvidar una palabra (mantener presionada en la barra): sale de lo aprendido y no se vuelve a sugerir */
+    fun olvidar(palabra: String) {
+        val w = palabra.lowercase().trim()
+        if (w.isEmpty()) return
+        olvidadas.add(w)
+        if (olvidadas.size > 500) olvidadas.remove(olvidadas.first())
+        propias.remove(normal(w))
+        usos.remove(w)
+        nombres.remove(w)
+        conteoPares.keys.removeAll { it.endsWith(" $w") || it == w }
+        conteoTrios.keys.removeAll { it.endsWith(" $w") }
+        escribir(dir, OLVIDADAS, olvidadas)
+        sinGuardar = maxOf(sinGuardar, 1)
+        guardar()
+    }
+
+    fun olvidada(w: String) = w.lowercase() in olvidadas
 
     /** Escribiste un nombre con mayúscula en medio de una oración: se recuerda */
     fun aprenderNombre(w: String) {
@@ -321,7 +343,7 @@ class Diccionario private constructor(
     fun predecir(anterior2: String?, anterior: String?, n: Int = 3): List<String> {
         val a = anterior?.lowercase() ?: return emptyList()
         val r = ArrayList<String>(n)
-        fun meter(w: String) { if (r.size < n && w !in r) r.add(w) }
+        fun meter(w: String) { if (r.size < n && w !in r && w.lowercase() !in olvidadas) r.add(w) }
         if (anterior2 != null) {
             val pref3 = "${anterior2.lowercase()} $a "
             conteoTrios.entries.filter { it.key.startsWith(pref3) && it.value >= 2 }
@@ -451,11 +473,12 @@ class Diccionario private constructor(
         val nombre = nombres[t]
         if (nombre != null && escrito == t && correccion == null) correccion = nombre
         // La cuenta rápida solo decide la corrección (la barra no la necesita)
+        if (correccion != null && correccion!!.lowercase() in olvidadas) correccion = null
         if (rapido) return Propuesta(escrito, correccion, emptyList())
         // Opciones de la barra: completar la palabra y las mejores correcciones
         val opciones = ArrayList<String>(3)
         val usadas = HashSet<String>().apply { add(t); correccion?.let { add(it.lowercase()) } }
-        fun poner(w: String) { if (opciones.size < 2 && usadas.add(w.lowercase())) opciones.add(conForma(w, escrito)) }
+        fun poner(w: String) { if (opciones.size < 2 && w.lowercase() !in olvidadas && usadas.add(w.lowercase())) opciones.add(conForma(w, escrito)) }
         // Abreviatura de chat (q, xq, tb, ntp…): la palabra completa va primero en la barra
         ABREVIATURAS[t]?.let { poner(it) }
         // La misma palabra con tilde va primero en la barra
