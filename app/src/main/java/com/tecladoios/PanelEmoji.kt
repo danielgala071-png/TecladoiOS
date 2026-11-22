@@ -125,7 +125,7 @@ class PanelEmoji(context: Context) : View(context) {
 
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) { rearmar() }
 
-    private val SEP_SECCION get() = dp(18f)
+    private val SEP_SECCION get() = dp(26f)
 
     private fun rearmar() {
         val altoGrilla = height - abajoSistema - ALTO_TITULO - ALTO_BARRA
@@ -140,7 +140,11 @@ class PanelEmoji(context: Context) : View(context) {
         for ((i, c) in categorias.withIndex()) {
             inicioX[i] = x
             // Los recientes vacíos dejan lugar para su aviso
-            cols[i] = if (c.emojis.isEmpty()) 3 else ceil(c.emojis.size / filas.toFloat()).toInt()
+            // Cada sección mide al menos lo que su título (con pocos recientes, el título no se corta
+            // ni se monta sobre el de al lado)
+            val porTitulo = ceil((titulo.measureText(c.nombre) + dp(12f)) / celdaW).toInt()
+            val porEmojis = if (c.emojis.isEmpty()) 3 else ceil(c.emojis.size / filas.toFloat()).toInt()
+            cols[i] = max(porEmojis, porTitulo)
             x += cols[i] * celdaW + SEP_SECCION
         }
         anchoTotal = x
