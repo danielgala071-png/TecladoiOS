@@ -40,6 +40,8 @@ class KeyboardView(context: Context) : View(context) {
         fun guardarAjuste(s: String)
         /** Mantener presionada una sugerencia: olvidarla */
         fun olvidarSugerencia(i: Int)
+        /** Mantener la tecla Enviar: salto de línea en vez de enviar */
+        fun saltoLinea()
     }
 
     /** Una casilla de la barra: [tipo] 0 = normal, 1 = lo escrito (entre comillas), 2 = corrección, 3 = lo copiado (pegar) */
@@ -450,6 +452,8 @@ class KeyboardView(context: Context) : View(context) {
                 dd.desde123 = true
             }
             K.ESPACIO -> postDelayed(dd.larga, 450L)
+            // Enviar/Buscar/Ir: mantenerla pone un salto de línea (escribir en varias líneas en el chat)
+            K.INTRO -> if (etiquetaIntro != null) postDelayed(dd.larga, 450L)
             K.EMOJI -> postDelayed(dd.larga, 500L)
         }
         invalidate()
@@ -653,6 +657,13 @@ class KeyboardView(context: Context) : View(context) {
                 invalidate()
             }
             K.ESPACIO -> empezarCursor(dd, dd.x0, dd.y0)
+            K.INTRO -> {
+                dd.modo = Modo.HECHO
+                presionadas.remove(c)
+                oyente?.respuesta(Respuesta.Tipo.INTRO)
+                oyente?.saltoLinea()
+                invalidate()
+            }
             K.EMOJI -> {
                 // Al soltar ya no abre los emojis
                 dd.modo = Modo.HECHO

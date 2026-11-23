@@ -782,6 +782,20 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         }
     }
 
+    /** Mantener Enviar: salto de línea sin enviar (las apps de chat lo aceptan aunque su tecla sea Enviar) */
+    override fun saltoLinea() {
+        val ic = currentInputConnection ?: return
+        ultimoEspacioMs = 0L
+        ic.beginBatchEdit()
+        if (palabra.isNotEmpty()) terminarPalabra()
+        ic.commitText("\n", 1)
+        ic.endBatchEdit()
+        anterior = null; anterior2 = null; predicciones = emptyList(); turno++
+        olvidarDeshacer()
+        esperado = -1; pendientes = 0
+        actualizarBarra()
+    }
+
     override fun intro() {
         val ei = info
         val ic = currentInputConnection ?: return
