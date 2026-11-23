@@ -58,9 +58,9 @@ class KeyboardView(context: Context) : View(context) {
     // ---------- Colores (negro AMOLED) ----------
     private val FONDO = Color.BLACK
     private val LETRA = 0xFF2C2C2E.toInt()          // teclas de letras: grafito
-    private val LETRA_PRESIONADA = 0xFF48484A.toInt()
+    private var LETRA_PRESIONADA = 0xFF48484A.toInt()
     private val FUNCION = Color.BLACK               // mayúscula, borrar, 123, emoji, espacio, intro
-    private val FUNCION_PRESIONADA = 0xFF3A3A3C.toInt()   // se aclara al presionar (más notorio)
+    private var FUNCION_PRESIONADA = 0xFF3A3A3C.toInt()   // se aclara al presionar (más notorio)
     private val CONTORNO = 0xFF3A3A3C.toInt()
     private val TEXTO = Color.WHITE
     private val ELEGIDA = 0xFF636366.toInt()        // opción elegida al mantener una tecla
@@ -84,6 +84,16 @@ class KeyboardView(context: Context) : View(context) {
             chipP.color = Acento.oscuro(v, 0.42f)
             chipApretado.color = Acento.oscuro(v, 0.55f)
             bordeGlobo.color = Acento.conAlfa(v, 0x99)
+            // Estilo de color dinámico: el grafito y los bordes toman un tinte de tu color
+            LETRA_ARRIBA = Acento.mezclar(0xFF353538.toInt(), v, 0.10f)
+            LETRA_ABAJO = Acento.mezclar(0xFF29292B.toInt(), v, 0.08f)
+            LETRA_PRESIONADA = Acento.mezclar(0xFF48484A.toInt(), v, 0.14f)
+            FUNCION_PRESIONADA = Acento.mezclar(0xFF3A3A3C.toInt(), v, 0.18f)
+            baseLetra.color = Acento.mezclar(0xFF161618.toInt(), v, 0.08f)
+            contorno.color = Acento.mezclar(0xFF3A3A3C.toInt(), v, 0.22f)
+            fondoTarjeta.color = Acento.mezclar(0xFF1C1C1E.toInt(), v, 0.10f)
+            globoP.color = Acento.mezclar(0xFF2C2C2E.toInt(), v, 0.10f)
+            degradadoAlto = -1f      // el degradado de las letras se rehace con el tinte nuevo
             invalidate()
         }
     private val acentoP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFE53935.toInt() }
@@ -408,7 +418,17 @@ class KeyboardView(context: Context) : View(context) {
         return true
     }
 
+    private var ultimoBajarMs = 0L
+    private var ultimoBajarX = 0f
+    private var ultimoBajarY = 0f
+    private var ultimaLetraMs = 0L
+
     private fun bajar(id: Int, x: Float, y: Float) {
+        val ahora = SystemClock.uptimeMillis()
+        // Toque fantasma: a dos manos, a veces el pulgar roza la pantalla dos veces casi en el mismo
+        // punto en menos de 45 ms; ese segundo contacto no es otra letra y se ignora
+        if (dedos.isNotEmpty() && ahora - ultimoBajarMs < 45L && abs(x - ultimoBajarX) < dp(9f) && abs(y - ultimoBajarY) < dp(9f)) return
+        ultimoBajarMs = ahora; ultimoBajarX = x; ultimoBajarY = y
         // Como en el iPhone, al apoyar otro dedo la letra del dedo anterior se escribe ya
         for (otro in dedos.values) {
             if (otro.modo == Modo.NORMAL && otro.c?.tecla?.tipo == K.TEXTO) {
@@ -417,6 +437,11 @@ class KeyboardView(context: Context) : View(context) {
             }
         }
         // Barra de sugerencias
+        // Escribiendo rápido, un toque que cae en la parte baja de la barra iba a la fila de arriba
+        val rapido = ahora - ultimaLetraMs < 300L
+        if (conBarra && y >= zona && y < zona + BARRA && rapido && y > zona + BARRA * 0.55f) {
+            buscar(x, zona + BARRA + dp(2f))?.let { return bajarEnTecla(id, it, x, zona + BARRA + dp(2f), ahora) }
+        }
         if (conBarra && y >= zona && y < zona + BARRA) {
             val k = (x / (width / 3f)).toInt().coerceIn(0, 2)
             if (sugerencias[k] == null) return
@@ -429,6 +454,11 @@ class KeyboardView(context: Context) : View(context) {
             return
         }
         val c = buscar(x, y) ?: return
+        bajarEnTecla(id, c, x, y, ahora)
+    }
+
+    private fun bajarEnTecla(id: Int, c: Colocada, x: Float, y: Float, ahora: Long) {
+        if (c.tecla.tipo == K.TEXTO) ultimaLetraMs = ahora
         val dd = Dedo(id).apply { this.c = c; x0 = x; y0 = y; xu = x; yu = y }
         dedos[id] = dd
         val t = c.tecla
@@ -718,8 +748,8 @@ class KeyboardView(context: Context) : View(context) {
     private val trazo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; style = Paint.Style.STROKE; strokeWidth = dp(1.25f); strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND }   // íconos finos estilo SF
     private val lleno = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; style = Paint.Style.FILL }
     private val globoP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = LETRA }
-    private val LETRA_ARRIBA = 0xFF353538.toInt()
-    private val LETRA_ABAJO = 0xFF29292B.toInt()
+    private var LETRA_ARRIBA = 0xFF353538.toInt()
+    private var LETRA_ABAJO = 0xFF29292B.toInt()
     private val baseLetra = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF161618.toInt() }
     private val letraDegradado = Paint(Paint.ANTI_ALIAS_FLAG)
     private var degradadoAlto = -1f

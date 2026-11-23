@@ -40,6 +40,12 @@ object Acento {
         return Color.HSVToColor(hsv)
     }
 
+    /** Mezcla [a] con un poco de [b] (f = cuánto de b): para teñir el grafito con tu color */
+    fun mezclar(a: Int, b: Int, f: Float): Int = Color.rgb(
+        (Color.red(a) * (1 - f) + Color.red(b) * f).toInt(),
+        (Color.green(a) * (1 - f) + Color.green(b) * f).toInt(),
+        (Color.blue(a) * (1 - f) + Color.blue(b) * f).toInt())
+
     /** El color con transparencia (0–255) */
     fun conAlfa(c: Int, a: Int) = (c and 0x00FFFFFF) or (a shl 24)
 

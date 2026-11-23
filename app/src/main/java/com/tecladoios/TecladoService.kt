@@ -292,16 +292,20 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         if (d == null || w.isEmpty()) { actualizarBarra(); return }
         val t = ++turno
         val tq0 = toquesDe(w)
-        hilo.execute {
-            if (t != turno) return@execute
-            val ant = anterior
+        val ant = anterior
+        calculoDe = w
+        calculo = hilo.submit<Diccionario.Propuesta?> {
+            if (t != turno) return@submit null
             // Con mayúscula en medio de una oración probablemente es un nombre: no se corrige
             val nombre = ant != null && w.first().isUpperCase()
             val p = try { d.proponer(w, ant, nombre, tq0) } catch (_: Throwable) { null }
             principal.post { if (t == turno && palabra.toString() == w) { propuesta = p; actualizarBarra() } }
             // Qué letras pueden seguir: ayuda a acertar la tecla cuando el toque cae justo entre dos
-            val sig = try { d.siguientes(w) } catch (_: Throwable) { null }
-            principal.post { if (palabra.toString() == w) teclado?.probables = sig?.takeIf { it.isNotEmpty() } }
+            if (t == turno) {
+                val sig = try { d.siguientes(w) } catch (_: Throwable) { null }
+                principal.post { if (palabra.toString() == w) teclado?.probables = sig?.takeIf { it.isNotEmpty() } }
+            }
+            p
         }
         // La barra no se vacía mientras se calcula (no parpadea): solo cambia lo escrito
         if (sugerir) teclado?.let { kb ->
@@ -358,12 +362,26 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     }
 
     /** La corrección para la palabra que termina (la ya calculada o, si no llegó, al momento) */
+    /** La cuenta completa de la palabra que se está escribiendo (en el hilo del diccionario) */
+    private var calculo: java.util.concurrent.Future<Diccionario.Propuesta?>? = null
+    private var calculoDe = ""
+
+    /**
+     * Escribiendo rápido, el espacio llega antes que la cuenta completa: se la espera un instante
+     * (máx. 40 ms, imperceptible) para corregir con todo el criterio y no solo con la cuenta rápida
+     */
+    private fun esperarCalculo(w: String): Diccionario.Propuesta? {
+        if (calculoDe != w) return null
+        val f = calculo ?: return null
+        return try { f.get(40L, java.util.concurrent.TimeUnit.MILLISECONDS)?.takeIf { it.escrito == w } } catch (_: Throwable) { null }
+    }
+
     private fun correccionAhora(): String? {
         if (!corregir || palabra.isEmpty()) return null
         val w = palabra.toString()
-        // Si la cuenta completa (en el otro hilo) aún no llegó, se hace una rápida aquí mismo:
-        // solo un error, sin buscar dos ni completar palabras, para que el espacio nunca se trabe
-        val p = propuesta?.takeIf { it.escrito == w } ?: try {
+        // Si la cuenta completa (en el otro hilo) aún no llegó, se espera un instante; si tarda,
+        // se hace una rápida aquí mismo para que el espacio nunca se trabe
+        val p = propuesta?.takeIf { it.escrito == w } ?: esperarCalculo(w) ?: try {
             dic?.proponer(w, anterior, anterior != null && w.first().isUpperCase(), toquesDe(w), rapido = true)
         } catch (_: Throwable) { null }
         p?.correccion?.takeIf { it != w }?.let { return it }
