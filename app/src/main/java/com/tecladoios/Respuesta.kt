@@ -94,9 +94,14 @@ class Respuesta(c: Context) {
         efLetra?.let { return it }
         val v = vibrador ?: return null
         val e = try {
-            if (v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_CLICK))
-                VibrationEffect.startComposition().addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1.0f).compose()
-            else armar()
+            when {
+                // Golpe pesado y seco en cada letra: se siente la presión de la tecla
+                v.areAllEffectsSupported(VibrationEffect.EFFECT_HEAVY_CLICK) == Vibrator.VIBRATION_EFFECT_SUPPORT_YES ->
+                    VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK)
+                v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_CLICK) ->
+                    VibrationEffect.startComposition().addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1.0f).compose()
+                else -> armar()
+            }
         } catch (_: Throwable) { armar() }
         efLetra = e
         return e
@@ -108,8 +113,11 @@ class Respuesta(c: Context) {
         val v = vibrador ?: return null
         val e = try {
             when {
-                v.areAllEffectsSupported(VibrationEffect.EFFECT_HEAVY_CLICK) == Vibrator.VIBRATION_EFFECT_SUPPORT_YES ->
-                    VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK)
+                // Teclas grandes: golpe profundo (thud) + clic, distinto al de las letras
+                v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_THUD, VibrationEffect.Composition.PRIMITIVE_CLICK) ->
+                    VibrationEffect.startComposition()
+                        .addPrimitive(VibrationEffect.Composition.PRIMITIVE_THUD, 0.8f)
+                        .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1.0f).compose()
                 else -> firmeLetra()
             }
         } catch (_: Throwable) { firmeLetra() }

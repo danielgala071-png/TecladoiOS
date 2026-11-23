@@ -121,7 +121,7 @@ class KeyboardView(context: Context) : View(context) {
     // ---------- Medidas ----------
     /** Barra de sugerencias arriba de las teclas (solo al escribir texto) */
     var conBarra = false; set(v) { if (field != v) { field = v; requestLayout(); acomodar(); invalidate() } }
-    private val BARRA get() = if (conBarra) dp(44f) else 0f
+    private val BARRA get() = if (conBarra) dp(50f) else 0f      // barra más alta y visible
     private val sugerencias = arrayOfNulls<Sug>(3)
     fun ponerSugerencias(a: Sug?, b: Sug?, c: Sug?) {
         if (sugerencias[0] === a && sugerencias[1] === b && sugerencias[2] === c) return
@@ -139,12 +139,13 @@ class KeyboardView(context: Context) : View(context) {
     private val ARRIBA get() = dp(6f)
     private val ABAJO get() = dp(4f)
     // Teclas más altas (antes 57 dp): más cómodas para escribir
-    private val ALTO_FILA get() = dp(66f) * (config?.tamano ?: 100) / 100f
+    // Teclas menos altas (antes 66 dp) y más anchas: más cómodas a dos manos
+    private val ALTO_FILA get() = dp(58f) * (config?.tamano ?: 100) / 100f
     // Separación entre letras: 2.5 dp (letras más anchas)
-    private val SEP_X get() = dp(2.5f)
+    private val SEP_X get() = dp(1.8f)
     // Menos espacio entre filas: cada tecla queda más alta (56 dp en vez de 53)
-    private val SEP_Y get() = dp(9f)
-    private val LADO get() = dp(1.5f)
+    private val SEP_Y get() = dp(8f)
+    private val LADO get() = dp(1f)
     private val RADIO get() = dp(8f)          // esquinas como el teclado de iOS 26
     /** Espacio de la barra de navegación del sistema (se pinta negro) */
     var abajoSistema = 0; set(v) { if (field != v) { field = v; requestLayout() } }
@@ -881,8 +882,8 @@ class KeyboardView(context: Context) : View(context) {
         cv.drawRoundRect(tarjeta, rc, rc, bordeTarjeta)
 
         val ancho = width / 3f
-        textoBarra.textSize = dp(17f)
-        textoBarraFuerte.textSize = dp(17f)
+        textoBarra.textSize = dp(18f)
+        textoBarraFuerte.textSize = dp(18.5f)
         // La palabra principal va en negrita y blanca: la que se pondrá sola o, si no hay, la del medio
         val principal = sugerencias.indexOfFirst { it?.tipo == 2 }.takeIf { it >= 0 } ?: 1
         for (k in 0 until 3) {
