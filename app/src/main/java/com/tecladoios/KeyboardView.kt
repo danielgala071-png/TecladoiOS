@@ -846,19 +846,19 @@ class KeyboardView(context: Context) : View(context) {
         for (k in 0 until 3) {
             val sg = sugerencias[k]
             val x0 = k * ancho
-            // Puntitos tenues entre palabras (no junto al chip de color)
-            if (k > 0 && k != principal && k - 1 != principal && casillaApretada != k && casillaApretada != k - 1)
+            // Puntitos tenues entre palabras
+            if (k > 0 && casillaApretada != k && casillaApretada != k - 1)
                 cv.drawCircle(x0, (y0 + y1) / 2, dp(1.8f), puntoSep)
             if (sg == null) continue
-            if (k == principal || casillaApretada == k) {
-                // La palabra que se pondrá sola va sobre un chip del color de tu fondo
+            if (casillaApretada == k) {
                 casilla.set(x0 + dp(if (k == 0) 10f else 4f), y0 + dp(8f), x0 + ancho - dp(if (k == 2) 10f else 4f), y1 - dp(8f))
                 val rr = casilla.height() / 2
-                if (k == principal) cv.drawRoundRect(casilla, rr, rr, if (casillaApretada == k) chipApretado else chipP)
-                else { relleno.color = LETRA_PRESIONADA; cv.drawRoundRect(casilla, rr, rr, relleno) }
+                relleno.color = LETRA_PRESIONADA
+                cv.drawRoundRect(casilla, rr, rr, relleno)
             }
             val p = if (k == principal) textoBarraFuerte else textoBarra
-            p.color = if (k == principal) TEXTO else TEXTO_SUAVE
+            // La palabra que se pondrá sola: sin cápsula, solo sus letras del color de tu fondo
+            p.color = if (k == principal) acento else TEXTO_SUAVE
             var s = when (sg.tipo) {
                 1 -> "“${sg.texto}”"
                 3 -> dominio(sg.texto)?.let { "🔗 $it" } ?: sg.texto.trim().take(80).replace(espacios, " ")
