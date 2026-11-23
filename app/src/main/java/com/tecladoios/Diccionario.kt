@@ -31,11 +31,11 @@ class Diccionario private constructor(
      * Las palabras tal cual vienen en el archivo. [datos] está mapeado desde el APK (no se copia a
      * la memoria del teclado: Android lo lee del almacenamiento cuando hace falta y lo suelta solo).
      */
-    class Lista(val datos: java.nio.ByteBuffer, val ini: IntArray) {
-        val size get() = ini.size - 1
-        fun fin(i: Int) = ini[i + 1] - 1            // sin el salto de línea
+    class Lista(val datos: java.nio.ByteBuffer, val ini: java.nio.IntBuffer) {
+        val size get() = ini.limit() - 1
+        fun fin(i: Int) = ini.get(i + 1) - 1        // sin el salto de línea
         operator fun get(i: Int): String {
-            val a = ini[i]; val n = fin(i) - a
+            val a = ini.get(i); val n = fin(i) - a
             val b = ByteArray(n)
             for (k in 0 until n) b[k] = datos.get(a + k)
             return String(b, Charsets.UTF_8)
@@ -59,7 +59,7 @@ class Diccionario private constructor(
         /** Compara la palabra [i] (sin tildes) con [k]; con [prefijo], 0 si empieza con [k] */
         fun comparar(i: Int, k: ByteArray, prefijo: Boolean = false): Int {
             val pp = puestos.get(i); val d = p.datos
-            var j = p.ini[pp]; val fin = p.fin(pp); var q = 0
+            var j = p.ini.get(pp); val fin = p.fin(pp); var q = 0
             while (j < fin && q < k.size) {
                 var b = d.get(j).toInt() and 0xFF; var paso = 1
                 if (b == 0xC3 && j + 1 < fin) { val v = vocal(d.get(j + 1).toInt() and 0xFF); if (v != 0) { b = v; paso = 2 } }
@@ -75,7 +75,7 @@ class Diccionario private constructor(
         /** La palabra [i] sin tildes copiada en [buf]; devuelve cuántos bytes ocupa */
         fun normal(i: Int, buf: ByteArray): Int {
             val pp = puestos.get(i); val d = p.datos
-            var j = p.ini[pp]; val fin = p.fin(pp); var n = 0
+            var j = p.ini.get(pp); val fin = p.fin(pp); var n = 0
             while (j < fin && n < buf.size) {
                 var b = d.get(j).toInt() and 0xFF; var paso = 1
                 if (b == 0xC3 && j + 1 < fin) { val v = vocal(d.get(j + 1).toInt() and 0xFF); if (v != 0) { b = v; paso = 2 } }
@@ -141,12 +141,8 @@ class Diccionario private constructor(
         fun cargar(c: Context): Diccionario {
             // El archivo entero queda mapeado; solo se anota dónde empieza cada palabra
             val datos = mapear(c, "palabras.txt")
-            val total = datos.limit()
-            var n = 0
-            for (i in 0 until total) if (datos.get(i) == SALTO) n++
-            val ini = IntArray(n + 1)
-            var k = 0
-            for (i in 0 until total) if (datos.get(i) == SALTO) { k++; ini[k] = i + 1 }
+            val ini = inicios(c, datos)
+            val n = ini.limit() - 1
             val palabras = Lista(datos, ini)
             // El orden alfabético viene ya calculado (orden.bin): el teclado arranca sin ordenar nada
             val puestos = leerOrden(c, datos, n) ?: java.nio.IntBuffer.wrap(ordenar(palabras))
@@ -156,6 +152,44 @@ class Diccionario private constructor(
         }
 
         private const val SALTO: Byte = 10   // salto de línea
+
+        /**
+         * Dónde empieza cada palabra. La primera vez se calcula y se guarda en un archivo; desde
+         * entonces se abre mapeado: arranque más rápido y ~630 KB menos de RAM del teclado.
+         */
+        private fun inicios(c: Context, datos: java.nio.ByteBuffer): java.nio.IntBuffer {
+            val total = datos.limit()
+            val f = java.io.File(c.noBackupFilesDir, "inicios.bin")
+            try {
+                if (f.exists()) {
+                    java.io.RandomAccessFile(f, "r").use { raf ->
+                        val m = raf.channel.map(java.nio.channels.FileChannel.MapMode.READ_ONLY, 0, raf.length())
+                        if (m.limit() >= 8 && m.getInt(0) == total) {
+                            val n1 = m.getInt(4)
+                            if (n1 > 2 && m.limit() >= 8 + n1 * 4) {
+                                val ib = (m.duplicate().apply { position(8) } as java.nio.ByteBuffer).slice().asIntBuffer().apply { limit(n1) }
+                                // Comprobación rápida: los saltos de línea siguen donde el archivo dice
+                                val ok = (1 until n1).step(maxOf(1, n1 / 64)).all { i -> datos.get(ib.get(i) - 1) == SALTO }
+                                if (ok && ib.get(n1 - 1) == total) return ib
+                            }
+                        }
+                    }
+                }
+            } catch (_: Throwable) { }
+            var n = 0
+            for (i in 0 until total) if (datos.get(i) == SALTO) n++
+            val ini = IntArray(n + 1)
+            var k = 0
+            for (i in 0 until total) if (datos.get(i) == SALTO) { k++; ini[k] = i + 1 }
+            try {
+                val b = java.nio.ByteBuffer.allocate(8 + ini.size * 4)
+                b.putInt(total); b.putInt(ini.size); b.asIntBuffer().put(ini)
+                val tmp = java.io.File(f.path + ".tmp")
+                tmp.writeBytes(b.array())
+                tmp.renameTo(f)
+            } catch (_: Throwable) { }
+            return java.nio.IntBuffer.wrap(ini)
+        }
 
         /** orden.bin también queda mapeado: los 158 000 puestos no ocupan memoria del teclado */
         private fun leerOrden(c: Context, datos: java.nio.ByteBuffer, n: Int): java.nio.IntBuffer? {

@@ -339,7 +339,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
                 casillas[k++] = KeyboardView.Sug(if (may) s.replaceFirstChar { it.uppercaseChar() } else s, 0)
             }
             // Caja vacía: la barra no se queda en blanco, ofrece con qué empezar (como el iPhone)
-            if (k < 3 && predicciones.isEmpty() && anterior == null && cajaVacia()) {
+            // (selIni == 0 primero: así no se pregunta a la app en cada actualización)
+            if (k < 3 && predicciones.isEmpty() && anterior == null && selIni <= 0 && cajaVacia()) {
                 val ini = paraEmpezar()
                 if (k == 0) { casillas[0] = KeyboardView.Sug(ini[0], 0); casillas[1] = KeyboardView.Sug(ini[1], 0); casillas[2] = KeyboardView.Sug(ini[2], 0) }
                 else { casillas[1] = KeyboardView.Sug(ini[1], 0); casillas[2] = KeyboardView.Sug(ini[0], 0) }
