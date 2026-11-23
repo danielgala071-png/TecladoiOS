@@ -99,12 +99,30 @@ class PanelEmoji(context: Context) : View(context) {
         return r
     }
 
+    /**
+     * Usados frecuentemente (como el iPhone): cada emoji lleva un puntaje que sube al usarlo y se
+     * desgasta un poco con cada uso de otro, así mandan los que más usas, sin olvidar los recientes
+     */
+    private fun puntajes(): LinkedHashMap<String, Float> {
+        val m = LinkedHashMap<String, Float>()
+        val l = prefs.getString(RECIENTES, null)?.split('\n')?.filter { it.isNotEmpty() } ?: return m
+        for ((i, linea) in l.withIndex()) {
+            val tab = linea.indexOf('\t')
+            if (tab > 0) m[linea.substring(0, tab)] = linea.substring(tab + 1).toFloatOrNull() ?: 1f
+            else m[linea] = (l.size - i).toFloat() / l.size   // lista antigua: el orden vale como puntaje
+        }
+        return m
+    }
+
     private fun recientes(): List<String> =
-        prefs.getString(RECIENTES, null)?.split('\n')?.filter { it.isNotEmpty() } ?: emptyList()
+        puntajes().entries.sortedByDescending { it.value }.map { it.key }
 
     private fun usar(e: String) {
-        val l = ArrayList(recientes()); l.remove(e); l.add(0, e)
-        prefs.edit().putString(RECIENTES, l.take(32).joinToString("\n")).apply()
+        val m = puntajes()
+        for (k in m.keys.toList()) m[k] = m[k]!! * 0.93f
+        m[e] = (m[e] ?: 0f) + 1f
+        val top = m.entries.sortedByDescending { it.value }.take(32)
+        prefs.edit().putString(RECIENTES, top.joinToString("\n") { "${it.key}\t${"%.3f".format(java.util.Locale.US, it.value)}" }).apply()
     }
 
     // ---------- Tono de piel (mantener un emoji de manos o personas) ----------
@@ -172,7 +190,7 @@ class PanelEmoji(context: Context) : View(context) {
         val rec = recientes()
         val lista = ArrayList<Categoria>()
         // Siempre primero: los recientes; después las demás secciones
-        lista.add(Categoria("RECIENTES", "🕘", rec))
+        lista.add(Categoria("USADOS FRECUENTEMENTE", "🕘", rec))
         lista.addAll(leerBase())
         categorias = lista
         rearmar()

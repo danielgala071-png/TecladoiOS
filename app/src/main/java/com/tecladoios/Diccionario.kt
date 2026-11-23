@@ -535,6 +535,17 @@ class Diccionario private constructor(
         // Nombres que escribiste antes con mayúscula: maría → María
         val nombre = nombres[t]
         if (nombre != null && escrito == t && correccion == null) correccion = nombre
+        // Completar con el espacio (como iOS 17): lo escrito no es una palabra, no hay ningún error
+        // cercano y la palabra completa es clarísima (la única posible o la que tú más usas)
+        if (!rapido && correccion == null && !valida && !risa && !nombrePropio && t.length >= 3 &&
+            t.all { it.isLetter() } && orden.none { it.costo <= 1.0f }) {
+            val comps = completar(k, 3, suf).filter { it.lowercase() !in olvidadas && it.length >= t.length + 2 }
+            comps.firstOrNull()?.let { c0 ->
+                val u0 = usos[c0.lowercase()] ?: 0
+                val u1 = comps.getOrNull(1)?.let { usos[it.lowercase()] ?: 0 } ?: -1
+                if (comps.size == 1 || (u0 >= 2 && u0 > u1 * 2)) correccion = conForma(c0, escrito)
+            }
+        }
         // La cuenta rápida solo decide la corrección (la barra no la necesita)
         if (correccion != null && correccion!!.lowercase() in olvidadas) correccion = null
         if (rapido) return Propuesta(escrito, correccion, emptyList())
