@@ -558,15 +558,18 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
     private fun registrar(final: String) {
         val d = dic ?: return
         if (anterior == null && anterior2 == null) final.split(' ').firstOrNull()?.let { aprenderInicio(it) }
+        val tareas = ArrayList<Runnable>(2)
         for (w in final.split(' ')) {
             if (w.isEmpty()) continue
             val a2 = anterior2; val a1 = anterior
             // Un nombre con mayúscula en medio de una oración se recuerda (maría → María)
-            if (a1 != null && w[0].isUpperCase()) hilo.execute { try { d.aprenderNombre(w) } catch (_: Throwable) { } }
-            hilo.execute { try { d.registrar(a2, a1, w) } catch (_: Throwable) { } }
+            if (a1 != null && w[0].isUpperCase()) tareas.add(Runnable { try { d.aprenderNombre(w) } catch (_: Throwable) { } })
+            tareas.add(Runnable { try { d.registrar(a2, a1, w) } catch (_: Throwable) { } })
             anterior2 = a1; anterior = w.lowercase()
         }
+        // Primero las palabras que pueden seguir (las ves al instante); lo aprendido se guarda después
         pedirPrediccion()
+        tareas.forEach { hilo.execute(it) }
     }
 
     private fun pedirPrediccion() {
