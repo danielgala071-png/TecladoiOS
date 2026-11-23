@@ -622,7 +622,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         copiado = null      // al escribir, lo copiado deja la barra (sigue en el portapapeles)
         tocada = null
         // Recién se terminó una palabra con espacio y ahora va un signo: se pega a la palabra
-        if (s.length == 1 && s[0] in ".,;:!?)" && palabra.isEmpty() && SystemClock.uptimeMillis() - ultimoEspacioMs < 4000L) {
+        // («hola ,» → «hola,»: siempre que haya una palabra y un espacio antes del signo)
+        if (s.length == 1 && s[0] in ".,;:!?)" && palabra.isEmpty()) {
             ic.beginBatchEdit(); pegarSigno(s); ic.endBatchEdit()
         }
         if (s.isNotEmpty() && s.all { it.isLetter() }) {
@@ -651,6 +652,15 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         ic.beginBatchEdit()
         if (signo && palabra.isNotEmpty()) terminarPalabra()
         ic.commitText(s, 1); movido(s.length)
+        // Coma o punto y coma después de una palabra: el espacio se pone solo («hola, »)
+        if (corregir && (s == "," || s == ";") && selIni == selFin) {
+            val antes = ic.getTextBeforeCursor(2, 0)
+            val despues = ic.getTextAfterCursor(1, 0)
+            if (antes != null && antes.length == 2 && antes[0].isLetter() && (despues.isNullOrEmpty() || despues[0] != ' ')) {
+                ic.commitText(" ", 1); movido(1)
+                espacioAutoMs = SystemClock.uptimeMillis()
+            }
+        }
         ic.endBatchEdit()
         vaciar(); propuesta = null; olvidarDeshacer()
         anterior = null; anterior2 = null; predicciones = emptyList(); turno++
@@ -723,9 +733,19 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         actualizarBarra()
     }
 
+    /** Cuándo se puso solo el espacio después de una coma (para no duplicarlo si tocas espacio) */
+    private var espacioAutoMs = 0L
+
     override fun espacio() {
         val ic = currentInputConnection ?: return
         val ahora = SystemClock.uptimeMillis()
+        // Ya había un espacio puesto solo tras la coma: tocar espacio no pone otro
+        if (palabra.isEmpty() && ahora - espacioAutoMs < 3000L) {
+            espacioAutoMs = 0L
+            val antes = ic.getTextBeforeCursor(2, 0)
+            if (antes != null && antes.length == 2 && antes[1] == ' ' && antes[0] in ",;") return
+        }
+        espacioAutoMs = 0L
         if (palabra.isNotEmpty()) {
             ic.beginBatchEdit()
             val original = terminarPalabra()
