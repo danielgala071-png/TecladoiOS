@@ -71,20 +71,50 @@ class Respuesta(c: Context) {
     fun tocar(t: Tipo, vista: android.view.View? = null) {
         val cfg = config ?: return
         if (!cfg.vibracion && !cfg.sonido) return
-        // Toque seco: la vibración de teclado que el fabricante afinó para su motor (en Xiaomi es
-        // un golpe corto y nítido). Si el celular la tiene apagada, se usa la nuestra.
-        var hecha = false
-        if (cfg.vibracion && vista != null) hecha = try {
-            vista.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
-        } catch (_: Throwable) { false }
+        // Toque firme: nuestro propio «clic» del motor a toda fuerza (el del sistema en Xiaomi es
+        // muy suave). Letras: clic seco; espacio, borrar, intro y demás: clic pesado.
         manejador.post {
-            if (cfg.vibracion && !hecha) try { armar()?.let { vibrador?.vibrate(it) } } catch (_: Throwable) { }
+            if (cfg.vibracion) try {
+                val e = if (t == Tipo.LETRA) firmeLetra() else firmeFuncion()
+                e?.let { vibrador?.vibrate(it) }
+            } catch (_: Throwable) { }
             if (cfg.sonido) try {
                 val sp = cargarSonidos()
                 val id = when (t) { Tipo.ESPACIO -> ids[1]; Tipo.BORRAR -> ids[2]; Tipo.INTRO -> ids[3]; else -> ids[0] }
                 sp.play(id, 0.5f, 0.5f, 1, 0, 1f)
             } catch (_: Throwable) { }
         }
+    }
+
+    private var efLetra: VibrationEffect? = null
+    private var efFuncion: VibrationEffect? = null
+
+    /** Clic seco a fuerza completa (sin cola), o el de siempre si el motor no lo tiene */
+    private fun firmeLetra(): VibrationEffect? {
+        efLetra?.let { return it }
+        val v = vibrador ?: return null
+        val e = try {
+            if (v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_CLICK))
+                VibrationEffect.startComposition().addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1.0f).compose()
+            else armar()
+        } catch (_: Throwable) { armar() }
+        efLetra = e
+        return e
+    }
+
+    /** Clic pesado para las teclas grandes (espacio, borrar, intro, mayúscula, 123, emoji) */
+    private fun firmeFuncion(): VibrationEffect? {
+        efFuncion?.let { return it }
+        val v = vibrador ?: return null
+        val e = try {
+            when {
+                v.areAllEffectsSupported(VibrationEffect.EFFECT_HEAVY_CLICK) == Vibrator.VIBRATION_EFFECT_SUPPORT_YES ->
+                    VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK)
+                else -> firmeLetra()
+            }
+        } catch (_: Throwable) { firmeLetra() }
+        efFuncion = e
+        return e
     }
 
     private var efectoSuave: VibrationEffect? = null

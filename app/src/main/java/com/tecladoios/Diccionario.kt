@@ -297,6 +297,24 @@ class Diccionario private constructor(
             "porlomenos" to "por lo menos", "loque" to "lo que", "esque" to "es que",
             "yaque" to "ya que", "asique" to "así que", "almismo" to "al mismo", "derrepente" to "de repente",
             "atiempo" to "a tiempo", "alfinal" to "al final", "porahora" to "por ahora",
+            "nadamas" to "nada más", "haiga" to "haya",
+        )
+
+        /**
+         * Faltas de ortografía típicas al escribir rápido (h que falta, b/v, s/c/z, ll/y, k por qu):
+         * se corrigen siempre, porque lo escrito no es una palabra
+         */
+        private val FALTAS = mapOf(
+            "haci" to "así", "aci" to "así", "ise" to "hice", "hize" to "hice", "iso" to "hizo", "hiso" to "hizo",
+            "isimos" to "hicimos", "ubiera" to "hubiera", "uviera" to "hubiera", "ubieras" to "hubieras", "ubo" to "hubo",
+            "aser" to "hacer", "acer" to "hacer", "aserlo" to "hacerlo", "aciendo" to "haciendo", "aces" to "haces",
+            "alluda" to "ayuda", "llendo" to "yendo", "nadien" to "nadie", "dijistes" to "dijiste", "fuistes" to "fuiste",
+            "hechar" to "echar", "enpezar" to "empezar", "inportante" to "importante", "bamos" to "vamos",
+            "bale" to "vale", "boy" to "voy", "vien" to "bien", "aora" to "ahora", "nesesito" to "necesito",
+            "nesecito" to "necesito", "nececito" to "necesito", "conosco" to "conozco", "hiba" to "iba",
+            "aki" to "aquí", "ahy" to "ahí", "sierto" to "cierto", "oy" to "hoy", "ablar" to "hablar",
+            "ablamos" to "hablamos", "abla" to "habla", "porqe" to "porque", "kiero" to "quiero", "kieres" to "quieres",
+            "bes" to "ves", "llo" to "yo", "ollo" to "hoyo",
         )
     }
 
@@ -474,6 +492,10 @@ class Diccionario private constructor(
         }
         // Las palabras que ya usaste antes no se corrigen
         val valida = existe(t) || usos.containsKey(t)
+        // Falta típica (haci → así, boy → voy): se corrige directo, sin buscar
+        if (!valida && !nombrePropio) FALTAS[t]?.takeIf { it !in olvidadas }?.let { f ->
+            return Propuesta(escrito, conForma(f, escrito), if (rapido) emptyList() else completar(k, 2, null).filter { it != t })
+        }
         // Risas y onomatopeyas (jajaja, jsjsjs, jejeje) se dejan tal cual
         val suf = sufijos(ant)
         val risa = t.length >= 4 && t.count { it == 'j' } >= 2 && t.all { it in "jaeiosxdhk" }
