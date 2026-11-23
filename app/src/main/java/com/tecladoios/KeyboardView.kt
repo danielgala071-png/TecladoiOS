@@ -156,7 +156,7 @@ class KeyboardView(context: Context) : View(context) {
 
     /** Alto del teclado sin la franja de arriba (lo que se ve) */
     /** La fila de abajo (123, emoji, espacio, intro) es más alta que las de letras */
-    private val EXTRA_ABAJO get() = if (distribucion.filas.last().teclas.any { it.tipo == K.ESPACIO }) dp(14f) else 0f
+    private val EXTRA_ABAJO get() = if (distribucion.filas.last().teclas.any { it.tipo == K.ESPACIO }) dp(18f) else 0f   // fila de abajo más alta
 
     fun altoVisible(): Int = (BARRA + ARRIBA + ALTO_FILA * max(4, distribucion.filas.size) + EXTRA_ABAJO + ABAJO + abajoSistema).toInt()
 

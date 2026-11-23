@@ -70,10 +70,11 @@ object Distribuciones {
     private fun hueco(ancho: Float) = Tecla(K.VACIA, "", ancho, funcion = false)
 
     private fun filaAbajo(modo: Int) = Fila(listOf(
-        if (modo == LETRAS) Tecla(K.NUM, "123", 1.55f) else Tecla(K.ABC, "ABC", 1.55f),
-        Tecla(K.EMOJI, "", 1.55f),
-        Tecla(K.ESPACIO, "espacio", 4.3f),
-        Tecla(K.INTRO, "", 2.6f),
+        // 123, emoji e intro más grandes (la barra espaciadora cede un poco)
+        if (modo == LETRAS) Tecla(K.NUM, "123", 1.85f) else Tecla(K.ABC, "ABC", 1.85f),
+        Tecla(K.EMOJI, "", 1.85f),
+        Tecla(K.ESPACIO, "espacio", 3.6f),
+        Tecla(K.INTRO, "", 2.7f),
     ))
 
     fun crear(modo: Int, decimal: Boolean = false): Distribucion = when (modo) {
@@ -90,10 +91,10 @@ object Distribuciones {
                 t("\"", 1f, listOf("„", "“", "”", "«", "»")),
             )),
             Fila(listOf(
-                Tecla(K.SIMB2, "#+=", 1.5f),
-                t(".", 1.4f, listOf("…")), t(",", 1.4f), t("?", 1.4f, listOf("¿")), t("!", 1.4f, listOf("¡")),
-                t("'", 1.4f, listOf("‘", "’", "`")),
-                Tecla(K.BORRAR, "", 1.5f),
+                Tecla(K.SIMB2, "#+=", 1.75f),
+                t(".", 1.3f, listOf("…")), t(",", 1.3f), t("?", 1.3f, listOf("¿")), t("!", 1.3f, listOf("¡")),
+                t("'", 1.3f, listOf("‘", "’", "`")),
+                Tecla(K.BORRAR, "", 1.75f),
             )),
             filaAbajo(modo),
         ), SIMBOLOS)
@@ -103,10 +104,10 @@ object Distribuciones {
             }),
             Fila(listOf("_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•").map { t(it) }),
             Fila(listOf(
-                Tecla(K.NUM, "123", 1.5f),
-                t(".", 1.4f, listOf("…")), t(",", 1.4f), t("?", 1.4f, listOf("¿")), t("!", 1.4f, listOf("¡")),
-                t("'", 1.4f, listOf("‘", "’", "`")),
-                Tecla(K.BORRAR, "", 1.5f),
+                Tecla(K.NUM, "123", 1.75f),
+                t(".", 1.3f, listOf("…")), t(",", 1.3f), t("?", 1.3f, listOf("¿")), t("!", 1.3f, listOf("¡")),
+                t("'", 1.3f, listOf("‘", "’", "`")),
+                Tecla(K.BORRAR, "", 1.75f),
             )),
             filaAbajo(modo),
         ), SIMBOLOS2)
@@ -129,8 +130,8 @@ object Distribuciones {
         else -> Distribucion(listOf(
             Fila("qwertyuiop".map { letra(it) }),
             Fila("asdfghjklñ".map { letra(it) }),
-            // Mayúscula y borrar de 1.5 teclas; las letras z–m del mismo ancho que las demás
-            Fila(listOf(Tecla(K.SHIFT, "", 1.5f)) + "zxcvbnm".map { letra(it) } + listOf(Tecla(K.BORRAR, "", 1.5f))),
+            // Mayúscula y borrar más grandes (1.75 teclas); z–m apenas más angostas para que entren
+            Fila(listOf(Tecla(K.SHIFT, "", 1.75f)) + "zxcvbnm".map { letraAngosta(it) } + listOf(Tecla(K.BORRAR, "", 1.75f))),
             filaAbajo(LETRAS),
         ), LETRAS)
     }
