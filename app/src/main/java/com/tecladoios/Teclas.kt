@@ -91,10 +91,10 @@ object Distribuciones {
                 t("\"", 1f, listOf("„", "“", "”", "«", "»")),
             )),
             Fila(listOf(
-                Tecla(K.SIMB2, "#+=", 1.75f),
-                t(".", 1.3f, listOf("…")), t(",", 1.3f), t("?", 1.3f, listOf("¿")), t("!", 1.3f, listOf("¡")),
-                t("'", 1.3f, listOf("‘", "’", "`")),
-                Tecla(K.BORRAR, "", 1.75f),
+                Tecla(K.SIMB2, "#+=", 1.5f),
+                t(".", 1.4f, listOf("…")), t(",", 1.4f), t("?", 1.4f, listOf("¿")), t("!", 1.4f, listOf("¡")),
+                t("'", 1.4f, listOf("‘", "’", "`")),
+                Tecla(K.BORRAR, "", 1.5f),
             )),
             filaAbajo(modo),
         ), SIMBOLOS)
@@ -104,10 +104,10 @@ object Distribuciones {
             }),
             Fila(listOf("_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•").map { t(it) }),
             Fila(listOf(
-                Tecla(K.NUM, "123", 1.75f),
-                t(".", 1.3f, listOf("…")), t(",", 1.3f), t("?", 1.3f, listOf("¿")), t("!", 1.3f, listOf("¡")),
-                t("'", 1.3f, listOf("‘", "’", "`")),
-                Tecla(K.BORRAR, "", 1.75f),
+                Tecla(K.NUM, "123", 1.5f),
+                t(".", 1.4f, listOf("…")), t(",", 1.4f), t("?", 1.4f, listOf("¿")), t("!", 1.4f, listOf("¡")),
+                t("'", 1.4f, listOf("‘", "’", "`")),
+                Tecla(K.BORRAR, "", 1.5f),
             )),
             filaAbajo(modo),
         ), SIMBOLOS2)
@@ -130,8 +130,8 @@ object Distribuciones {
         else -> Distribucion(listOf(
             Fila("qwertyuiop".map { letra(it) }),
             Fila("asdfghjklñ".map { letra(it) }),
-            // Mayúscula y borrar más grandes (1.75 teclas); z–m apenas más angostas para que entren
-            Fila(listOf(Tecla(K.SHIFT, "", 1.75f)) + "zxcvbnm".map { letraAngosta(it) } + listOf(Tecla(K.BORRAR, "", 1.75f))),
+            // Mayúscula y borrar más cortas (1.4 teclas); z–m con el ancho completo de una letra
+            Fila(listOf(Tecla(K.SHIFT, "", 1.4f)) + "zxcvbnm".map { letra(it) } + listOf(Tecla(K.BORRAR, "", 1.4f))),
             filaAbajo(LETRAS),
         ), LETRAS)
     }
