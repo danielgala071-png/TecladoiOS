@@ -78,6 +78,7 @@ class KeyboardView(context: Context) : View(context) {
     var acento: Int = 0xFFE53935.toInt()
         set(v) {
             field = v
+            if (!CON_COLOR) return
             acentoP.color = v
             acentoApretado.color = Color.rgb((Color.red(v) * 0.78f).toInt(), (Color.green(v) * 0.78f).toInt(), (Color.blue(v) * 0.78f).toInt())
             bordeTarjeta.color = Acento.conAlfa(v, 0x73)
@@ -96,7 +97,9 @@ class KeyboardView(context: Context) : View(context) {
             degradadoAlto = -1f      // el degradado de las letras se rehace con el tinte nuevo
             invalidate()
         }
-    private val acentoP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFE53935.toInt() }
+    /** Negro AMOLED total: sin el color del fondo ni tintes (true = vuelve el estilo de color) */
+    private val CON_COLOR = false
+    private val acentoP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() }
     private val acentoApretado = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFB32D2A.toInt() }
 
     fun ponerModo(modo: Int, decimal: Boolean = false) {
@@ -747,7 +750,7 @@ class KeyboardView(context: Context) : View(context) {
     private val etiquetas = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; textAlign = Paint.Align.CENTER; typeface = Typeface.create("sans-serif", Typeface.NORMAL) }
     private val trazo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; style = Paint.Style.STROKE; strokeWidth = dp(1.25f); strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND }   // íconos finos estilo SF
     private val lleno = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; style = Paint.Style.FILL }
-    private val globoP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = LETRA }
+    private val globoP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF1C1C1E.toInt() }   // globo casi negro
     private var LETRA_ARRIBA = 0xFF353538.toInt()
     private var LETRA_ABAJO = 0xFF29292B.toInt()
     private val baseLetra = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF161618.toInt() }
@@ -757,7 +760,7 @@ class KeyboardView(context: Context) : View(context) {
     private val chipApretado = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Acento.oscuro(Acento.DEFECTO, 0.55f) }
     private val puntoSep = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF636366.toInt() }
     // Borde fino en vez de sombra difuminada (la sombra se recalcula en cada cuadro y gasta)
-    private val bordeGlobo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1f); color = Acento.conAlfa(Acento.DEFECTO, 0x99) }
+    private val bordeGlobo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1f); color = 0xFF48484A.toInt() }
     private val camino = Path()
     private val ovalo = RectF()
 
@@ -777,7 +780,16 @@ class KeyboardView(context: Context) : View(context) {
         val r = c.dibujo
         val apretada = c in presionadas
         val conGlobo = apretada && t.tipo == K.TEXTO && config?.vistaPrevia != false && !distribucion.numerico
-        if (t.tipo == K.INTRO && etiquetaIntro != null) {
+        if (!CON_COLOR) {
+            // Negro AMOLED total: todas las teclas negras con un contorno fino; al presionar, grafito
+            relleno.color = when {
+                !apretada || conGlobo -> FUNCION
+                t.funcion -> FUNCION_PRESIONADA
+                else -> LETRA_PRESIONADA
+            }
+            cv.drawRoundRect(r, RADIO, RADIO, relleno)
+            cv.drawRoundRect(r, RADIO, RADIO, contorno)
+        } else if (t.tipo == K.INTRO && etiquetaIntro != null) {
             // Enviar, Buscar, Ir…: la tecla toma el color de tu fondo, como el azul del iPhone
             cv.drawRoundRect(r, RADIO, RADIO, if (apretada) acentoApretado else acentoP)
         } else if (t.funcion) {
@@ -832,8 +844,8 @@ class KeyboardView(context: Context) : View(context) {
     private val divisor = Paint().apply { color = CONTORNO }
     private val textoBarraFuerte = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; textAlign = Paint.Align.CENTER; typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL) }
     private val TEXTO_SUAVE = 0xFFD1D1D6.toInt()
-    private val fondoTarjeta = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF1C1C1E.toInt() }
-    private val bordeTarjeta = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1f); color = CONTORNO }
+    private val fondoTarjeta = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
+    private val bordeTarjeta = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1f); color = CONTORNO }   // gris neutro
     private val divisorTarjeta = Paint().apply { color = 0xFF48484A.toInt() }
     private val tarjeta = RectF()
     private val casilla = RectF()
@@ -888,7 +900,7 @@ class KeyboardView(context: Context) : View(context) {
             }
             val p = if (k == principal) textoBarraFuerte else textoBarra
             // La palabra que se pondrá sola: sin cápsula, solo sus letras del color de tu fondo
-            p.color = if (k == principal) acento else TEXTO_SUAVE
+            p.color = if (k == principal) (if (CON_COLOR) acento else TEXTO) else TEXTO_SUAVE
             var s = when (sg.tipo) {
                 1 -> "“${sg.texto}”"
                 3 -> dominio(sg.texto)?.let { "🔗 $it" } ?: sg.texto.trim().take(80).replace(espacios, " ")

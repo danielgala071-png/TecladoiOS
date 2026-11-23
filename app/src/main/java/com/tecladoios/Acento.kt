@@ -15,7 +15,12 @@ object Acento {
     @Volatile var color: Int = DEFECTO
         private set
 
+    /** Negro AMOLED total: sin leer el fondo; todo en gris neutro */
+    const val NEUTRO = 0xFF8E8E93.toInt()
+    private const val SIN_COLOR = true
+
     fun leer(c: Context): Int {
+        if (SIN_COLOR) { color = NEUTRO; return color }
         val wc = try {
             WallpaperManager.getInstance(c).getWallpaperColors(WallpaperManager.FLAG_SYSTEM)
         } catch (_: Throwable) { null }

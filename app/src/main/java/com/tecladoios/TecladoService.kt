@@ -24,6 +24,17 @@ import java.text.BreakIterator
  * devuelve lo que habías escrito).
  */
 /** Artículos y preposiciones que no van dos veces seguidas («el el» → «el») */
+        /** Interrogativos y exclamativos: llevan tilde justo después de ¿ o ¡ */
+        private val INTERROGATIVOS = mapOf("que" to "qué", "como" to "cómo", "donde" to "dónde", "cuando" to "cuándo",
+            "quien" to "quién", "quienes" to "quiénes", "cual" to "cuál", "cuales" to "cuáles", "cuanto" to "cuánto",
+            "cuanta" to "cuánta", "cuantos" to "cuántos", "cuantas" to "cuántas", "adonde" to "adónde")
+        /** Formas de «haber» antes de «hecho» (y la «e» que suele ir por «he») */
+        private val HABER = setOf("he", "e", "has", "ha", "hemos", "han", "habia", "había", "habias", "habías",
+            "habian", "habían", "haber", "habria", "habría", "hubiera", "haya")
+        /** Después de estas palabras, «a» + participio es «ha» (me a dicho → me ha dicho) */
+        private val ANTES_DE_HA = setOf("me", "te", "se", "le", "lo", "la", "nos", "les", "los", "las", "ya", "no",
+            "nunca", "siempre", "quien", "quién", "que", "él", "ella", "usted", "eso", "esto", "todo", "nadie", "alguien")
+        private val PARTICIPIOS = setOf("hecho", "dicho", "visto", "puesto", "escrito", "vuelto", "roto", "abierto", "muerto", "resuelto", "cubierto", "devuelto")
 private val REPETIBLES_NO = setOf("el", "la", "los", "las", "un", "una", "de", "del", "al", "en", "con", "por", "para", "a")
 
 class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oyente, PanelPortapapeles.Oyente,
@@ -419,6 +430,21 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
      * «a el» → «al», «de el» → «del», y artículos o preposiciones repetidos («el el») se quitan.
      * Devuelve lo que quedó escrito ("" si se quitó la palabra repetida).
      */
+    /**
+     * Cambia el final del texto (justo antes del cursor) de [viejo] a [nuevo], respetando si la
+     * primera letra iba en mayúscula. Devuelve lo nuevo o null si el texto no coincidía.
+     */
+    private fun cambiarFinal(viejo: String, nuevo: String): String? {
+        val ic = currentInputConnection ?: return null
+        val antes = ic.getTextBeforeCursor(viejo.length, 0)?.toString() ?: return null
+        if (!antes.equals(viejo, ignoreCase = true) || antes.length != viejo.length) return null
+        val n = if (antes[0].isUpperCase()) nuevo.replaceFirstChar { it.uppercaseChar() } else nuevo
+        ic.deleteSurroundingText(viejo.length, 0)
+        ic.commitText(n, 1)
+        movido(n.length - viejo.length)
+        return n.substringAfterLast(' ')
+    }
+
     private fun gramatica(w: String): String {
         val ic = currentInputConnection ?: return w
         val lw = w.lowercase()
@@ -437,6 +463,30 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
                 anterior = anterior2; anterior2 = null
                 return conForma
             }
+        }
+        val ant2 = anterior2
+        // ¿Qué? ¿Cómo? ¡Cuánto…! Interrogativos y exclamativos con tilde justo después de ¿ o ¡
+        INTERROGATIVOS[lw]?.let { conTilde ->
+            val antes = ic.getTextBeforeCursor(w.length + 6, 0)?.toString() ?: return@let
+            if (!antes.endsWith(w)) return@let
+            val previo = antes.dropLast(w.length).trimEnd().lowercase()
+            if (previo.endsWith("¿") || previo.endsWith("¡") || (lw == "que" && previo.endsWith("¿por")))
+                return cambiarFinal(w, conTilde) ?: w
+        }
+        // «por hay» → «por ahí», «de hay» → «de ahí»
+        if (lw == "hay" && (ant == "por" || ant == "de")) return cambiarFinal(w, "ahí") ?: w
+        // «ay que» → «hay que»
+        if (lw == "que" && ant == "ay") { cambiarFinal("ay $w", "hay $w")?.let { anterior = "hay"; return w } }
+        // «haber si» → «a ver si»
+        if (lw == "si" && ant == "haber") { cambiarFinal("haber $w", "a ver $w")?.let { anterior2 = "a"; anterior = "ver"; return w } }
+        // «he echo» → «he hecho», «e echo» → «he hecho»
+        if (lw == "echo" && ant in HABER) {
+            if (ant == "e") { cambiarFinal("e $w", "he hecho")?.let { anterior = "he"; return "hecho" } }
+            else return cambiarFinal(w, "hecho") ?: w
+        }
+        // «me a dicho» → «me ha dicho»: «a» antes de un participio, tras un pronombre o adverbio
+        if (ant == "a" && ant2 in ANTES_DE_HA && lw.length >= 5 && (lw.endsWith("ado") || lw.endsWith("ido") || lw.endsWith("ído") || lw in PARTICIPIOS)) {
+            cambiarFinal("a $w", "ha $w")?.let { anterior = "ha"; return w }
         }
         if (lw == ant && lw in REPETIBLES_NO) {
             val antes = ic.getTextBeforeCursor(w.length + 1, 0)?.toString() ?: return w
@@ -665,7 +715,13 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         }
         ic.endBatchEdit()
         vaciar(); propuesta = null; olvidarDeshacer()
-        anterior = null; anterior2 = null; predicciones = emptyList(); turno++
+        anterior = null; anterior2 = null; turno++
+        // Después de ¿ o ¡ la barra ofrece cómo suelen empezar las preguntas y exclamaciones
+        predicciones = when (s) {
+            "¿" -> listOf("qué", "cómo", "por qué")
+            "¡" -> listOf("qué", "hola", "gracias")
+            else -> emptyList()
+        }
         actualizarBarra()
     }
 
