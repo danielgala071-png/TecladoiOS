@@ -447,9 +447,26 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
                 val i = it.lastIndexOf(':'); if (i <= 0) null else it.substring(0, i) to (it.substring(i + 1).toIntOrNull() ?: 0)
             }.filter { it.second >= 3 && !saludo.startsWith(it.first, true) }.sortedByDescending { it.second }.map { it.first }
         } catch (_: Throwable) { emptyList() }
-        val izq = tuyas.getOrNull(0) ?: "Hola"
-        val der = tuyas.getOrNull(1)?.takeIf { it != izq } ?: if (izq != "Gracias") "Gracias" else "Hola"
-        return arrayOf(izq, saludo, der)
+        // Las que pediste olvidar (manteniéndolas en la barra) no vuelven
+        val olvido = (inicios.getString("olvidadas", "") ?: "").split(';').filter { it.isNotEmpty() }.toSet()
+        val libres = (tuyas + listOf("Hola", "Gracias", "Sí", "Ok", "Buenas")).filter { it.lowercase() !in olvido }.distinct()
+        val izq = libres.getOrNull(0) ?: "Hola"
+        val der = libres.getOrNull(1) ?: "Gracias"
+        val centro = if (saludo.lowercase() in olvido) (libres.getOrNull(2) ?: saludo) else saludo
+        return arrayOf(izq, centro, der)
+    }
+
+    /** Una palabra para empezar que ya no quieres ver en la barra */
+    private fun olvidarInicio(w: String) {
+        val l = w.lowercase()
+        hilo.execute {
+            try {
+                val olv = (inicios.getString("olvidadas", "") ?: "").split(';').filter { it.isNotEmpty() }.toMutableSet()
+                olv.add(l)
+                val lista = (inicios.getString("lista", "") ?: "").split(';').filter { it.isNotEmpty() && !it.substringBeforeLast(':').equals(w, true) }
+                inicios.edit().putString("olvidadas", olv.take(100).joinToString(";")).putString("lista", lista.joinToString(";")).apply()
+            } catch (_: Throwable) { }
+        }
     }
 
     /** Aprende con qué palabra sueles empezar tus mensajes (sin tocar el cerebro, solo un contador) */
@@ -903,10 +920,12 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
         val sg = casillas.getOrNull(i) ?: return
         when (sg.tipo) {
             3 -> copiado = null                       // lo copiado sale de la barra (sigue en el portapapeles)
-            1 -> {}                                   // lo que escribiste no se olvida
             else -> {
-                val w = sg.texto
+                // También lo que escribiste (entre comillas): si el teclado lo aprendió mal, lo desaprende
+                val w = sg.texto.trim()
+                if (w.isEmpty()) return
                 dic?.let { d -> hilo.execute { try { d.olvidar(w) } catch (_: Throwable) { } } }
+                olvidarInicio(w)
                 if (propuesta?.correccion == w) propuesta = null
                 predicciones = predicciones.filter { !it.equals(w, true) }
                 Toast.makeText(this, "No se volverá a sugerir «$w»", Toast.LENGTH_SHORT).show()

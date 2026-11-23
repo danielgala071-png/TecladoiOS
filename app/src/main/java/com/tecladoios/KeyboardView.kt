@@ -422,7 +422,7 @@ class KeyboardView(context: Context) : View(context) {
             if (sugerencias[k] == null) return
             val bd = Dedo(id).apply { modo = Modo.BARRA; x0 = x; y0 = y; repeticiones = k }
             dedos[id] = bd
-            postDelayed(bd.larga, 550L)
+            postDelayed(bd.larga, 450L)
             casillaApretada = k
             oyente?.respuesta(Respuesta.Tipo.LETRA)
             invalidate()
