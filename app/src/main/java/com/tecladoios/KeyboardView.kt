@@ -458,7 +458,7 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     private fun bajarEnTecla(id: Int, c: Colocada, x: Float, y: Float, ahora: Long) {
-        if (c.tecla.tipo == K.TEXTO) ultimaLetraMs = ahora
+        if (c.tecla.tipo == K.TEXTO) { ultimaLetraMs = ahora; globoDe = c; globoMs = ahora }
         val dd = Dedo(id).apply { this.c = c; x0 = x; y0 = y; xu = x; yu = y }
         dedos[id] = dd
         val t = c.tecla
@@ -917,7 +917,33 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     /** Globo del iPhone: la tecla crece hacia arriba con la letra grande */
+    // Rebote del globo (como iOS): aparece un poco más chico y crece con un rebotito en 0,11 s.
+    // Solo se dibuja de nuevo durante esos instantes; después no gasta nada.
+    private var globoDe: Colocada? = null
+    private var globoMs = 0L
+    private val DURA_REBOTE = 110f
+
+    private fun escalaGlobo(c: Colocada): Float {
+        if (c !== globoDe) return 1f
+        val t = (SystemClock.uptimeMillis() - globoMs) / DURA_REBOTE
+        if (t >= 1f) return 1f
+        postInvalidateOnAnimation()
+        val p = t - 1f
+        val c1 = 1.9f; val c3 = c1 + 1f
+        return 0.80f + 0.20f * (1f + c3 * p * p * p + c1 * p * p)   // sube, se pasa un poco y se asienta
+    }
+
     private fun dibujarGlobo(cv: Canvas, c: Colocada) {
+        val esc = escalaGlobo(c)
+        if (esc != 1f) {
+            cv.save()
+            cv.scale(esc, esc, c.dibujo.centerX(), c.dibujo.bottom)
+            dibujarGloboForma(cv, c)
+            cv.restore()
+        } else dibujarGloboForma(cv, c)
+    }
+
+    private fun dibujarGloboForma(cv: Canvas, c: Colocada) {
         val k = c.dibujo
         val kw = k.width(); val kh = k.height()
         val bw = max(kw * 1.5f, kw + dp(20f))
