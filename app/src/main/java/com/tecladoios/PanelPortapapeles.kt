@@ -197,6 +197,7 @@ class PanelPortapapeles(context: Context) : View(context) {
     private val etiqueta = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER; textSize = 16f * d }
     private val trazo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 1.5f * d; strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND }
     private val camino = Path()
+    private val bordeFicha = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = d }
 
     private fun forma(i: Int): StaticLayout {
         formas[i]?.let { return it }
@@ -236,7 +237,9 @@ class PanelPortapapeles(context: Context) : View(context) {
             for (i in textos.indices) {
                 fichaRect(i, tmp)
                 if (tmp.bottom < arribaGrilla || tmp.top > abajoGrilla) continue
-                cv.drawRoundRect(tmp, dp(8f), dp(8f), if (i == tocado) fichaApretada else ficha)
+                cv.drawRoundRect(tmp, dp(10f), dp(10f), if (i == tocado) fichaApretada else ficha)
+                bordeFicha.color = Acento.conAlfa(Acento.color, 0x66)
+                cv.drawRoundRect(tmp, dp(10f), dp(10f), bordeFicha)
                 val f = forma(i)
                 cv.save()
                 cv.translate(tmp.left + dp(10f), tmp.centerY() - f.height / 2f)

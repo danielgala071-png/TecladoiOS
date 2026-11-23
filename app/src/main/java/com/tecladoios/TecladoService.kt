@@ -920,28 +920,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
 
     private fun leerAcento() {
         val kb = teclado ?: return
-        val c = try {
-            WallpaperManager.getInstance(this).getWallpaperColors(WallpaperManager.FLAG_SYSTEM)
-        } catch (_: Throwable) { null }
-        kb.acento = elegirAcento(c)
-    }
-
-    /** El color más vivo del fondo (si el fondo es casi todo negro, el carmesí del eclipse) */
-    private fun elegirAcento(c: android.app.WallpaperColors?): Int {
-        val defecto = 0xFFE53935.toInt()
-        if (c == null) return defecto
-        val hsv = FloatArray(3)
-        var mejor = defecto; var puntaje = 0f
-        for (col in listOfNotNull(c.primaryColor, c.secondaryColor, c.tertiaryColor)) {
-            Color.colorToHSV(col.toArgb(), hsv)
-            val p = hsv[1] * hsv[2]
-            if (hsv[1] >= 0.3f && hsv[2] >= 0.3f && p > puntaje) { puntaje = p; mejor = col.toArgb() }
-        }
-        if (puntaje == 0f) return defecto
-        // Que se lea bien sobre negro: ni muy oscuro ni pastel
-        Color.colorToHSV(mejor, hsv)
-        hsv[1] = hsv[1].coerceIn(0.55f, 0.85f); hsv[2] = hsv[2].coerceIn(0.75f, 0.92f)
-        return Color.HSVToColor(hsv)
+        kb.acento = Acento.leer(this)
+        panel?.invalidate(); panelClip?.invalidate()
     }
 
     // ---------- Portapapeles ----------

@@ -160,6 +160,7 @@ class SettingsActivity : Activity() {
         })
 
         setContentView(ScrollView(this).apply { setBackgroundColor(Color.BLACK); addView(col) })
+        pintar(col, Acento.leer(this))
     }
 
     private val claves = listOf(Diccionario.PROPIAS, Diccionario.NOMBRES, Diccionario.USOS, Diccionario.PARES, Diccionario.TRIOS)
@@ -210,5 +211,33 @@ class SettingsActivity : Activity() {
         claves.forEach { java.io.File(dir, "$it.txt").delete() }
         Ajustes.prefs(this).edit().putLong(Ajustes.DIC_VERSION, System.currentTimeMillis()).apply()
         android.widget.Toast.makeText(this, "Se borró todo lo aprendido", android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    /** Ajustes a juego con el teclado: negro AMOLED, botones grafito y el color de tu fondo */
+    private fun pintar(v: android.view.View, acento: Int) {
+        val estados = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
+        when (v) {
+            is ViewGroup -> for (i in 0 until v.childCount) pintar(v.getChildAt(i), acento)
+            is Switch -> {
+                v.thumbTintList = android.content.res.ColorStateList(estados, intArrayOf(acento, 0xFFC7C7CC.toInt()))
+                v.trackTintList = android.content.res.ColorStateList(estados, intArrayOf(Acento.conAlfa(acento, 0x80), 0xFF3A3A3C.toInt()))
+            }
+            is Button -> {
+                v.isAllCaps = false
+                v.textSize = 16f
+                v.setTextColor(Color.WHITE)
+                v.stateListAnimator = null
+                v.background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(0xFF1C1C1E.toInt()); cornerRadius = dp(14).toFloat()
+                    setStroke(dp(1), Acento.conAlfa(acento, 0x66))
+                }
+                (v.layoutParams as? ViewGroup.MarginLayoutParams)?.let { it.topMargin = dp(5); it.bottomMargin = dp(5); v.layoutParams = it }
+                v.minHeight = dp(50)
+            }
+            is android.widget.SeekBar -> {
+                v.progressTintList = android.content.res.ColorStateList.valueOf(acento)
+                v.thumbTintList = android.content.res.ColorStateList.valueOf(acento)
+            }
+        }
     }
 }

@@ -381,6 +381,7 @@ class PanelEmoji(context: Context) : View(context) {
     private val titulo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF8E8E93.toInt(); textSize = 12f * d; isFakeBoldText = true }
     private val etiqueta = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER; textSize = 16f * d }
     private val marca = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF3A3A3C.toInt() }
+    private val marcaCat = Paint(Paint.ANTI_ALIAS_FLAG)
     private val trazo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 1.5f * d; strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND }
     private val camino = Path()
     private val cajaTonoP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF2C2C2E.toInt() }
@@ -471,7 +472,11 @@ class PanelEmoji(context: Context) : View(context) {
         for ((i, c) in categorias.withIndex()) {
             val cx = lado + clip + ancho * i + ancho / 2
             botonesCat[i].set(cx - ancho / 2, y0, cx + ancho / 2, y0 + ALTO_BARRA)
-            if (i == actual) cv.drawCircle(cx, cy, dp(15f), marca)
+            if (i == actual) {
+                // Categoría actual: chip del color de tu fondo
+                marcaCat.color = Acento.oscuro(Acento.color, 0.5f)
+                cv.drawRoundRect(cx - dp(17f), cy - dp(14f), cx + dp(17f), cy + dp(14f), dp(14f), dp(14f), marcaCat)
+            }
             cv.drawText(c.icono, cx, cy - (icono.ascent() + icono.descent()) / 2, icono)
         }
     }

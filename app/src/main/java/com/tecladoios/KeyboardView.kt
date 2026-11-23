@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Shader
+import android.graphics.LinearGradient
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
@@ -78,7 +80,10 @@ class KeyboardView(context: Context) : View(context) {
             field = v
             acentoP.color = v
             acentoApretado.color = Color.rgb((Color.red(v) * 0.78f).toInt(), (Color.green(v) * 0.78f).toInt(), (Color.blue(v) * 0.78f).toInt())
-            bordeTarjeta.color = (v and 0x00FFFFFF) or (0x70 shl 24)
+            bordeTarjeta.color = Acento.conAlfa(v, 0x73)
+            chipP.color = Acento.oscuro(v, 0.42f)
+            chipApretado.color = Acento.oscuro(v, 0.55f)
+            bordeGlobo.color = Acento.conAlfa(v, 0x99)
             invalidate()
         }
     private val acentoP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFE53935.toInt() }
@@ -127,7 +132,7 @@ class KeyboardView(context: Context) : View(context) {
     // Menos espacio entre filas: cada tecla queda más alta (56 dp en vez de 53)
     private val SEP_Y get() = dp(9f)
     private val LADO get() = dp(1.5f)
-    private val RADIO get() = dp(6f)
+    private val RADIO get() = dp(8f)          // esquinas como el teclado de iOS 26
     /** Espacio de la barra de navegación del sistema (se pinta negro) */
     var abajoSistema = 0; set(v) { if (field != v) { field = v; requestLayout() } }
 
@@ -710,11 +715,19 @@ class KeyboardView(context: Context) : View(context) {
     private val contorno = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1f); color = CONTORNO }
     private val letras = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; textAlign = Paint.Align.CENTER; typeface = Typeface.create("sans-serif", Typeface.NORMAL) }
     private val etiquetas = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; textAlign = Paint.Align.CENTER; typeface = Typeface.create("sans-serif", Typeface.NORMAL) }
-    private val trazo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; style = Paint.Style.STROKE; strokeWidth = dp(1.5f); strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND }
+    private val trazo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; style = Paint.Style.STROKE; strokeWidth = dp(1.25f); strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND }   // íconos finos estilo SF
     private val lleno = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; style = Paint.Style.FILL }
     private val globoP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = LETRA }
+    private val LETRA_ARRIBA = 0xFF353538.toInt()
+    private val LETRA_ABAJO = 0xFF29292B.toInt()
+    private val baseLetra = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF161618.toInt() }
+    private val letraDegradado = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var degradadoAlto = -1f
+    private val chipP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Acento.oscuro(Acento.DEFECTO, 0.42f) }
+    private val chipApretado = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Acento.oscuro(Acento.DEFECTO, 0.55f) }
+    private val puntoSep = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF636366.toInt() }
     // Borde fino en vez de sombra difuminada (la sombra se recalcula en cada cuadro y gasta)
-    private val bordeGlobo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1f); color = 0xFF48484A.toInt() }
+    private val bordeGlobo = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1f); color = Acento.conAlfa(Acento.DEFECTO, 0x99) }
     private val camino = Path()
     private val ovalo = RectF()
 
@@ -742,8 +755,21 @@ class KeyboardView(context: Context) : View(context) {
             cv.drawRoundRect(r, RADIO, RADIO, relleno)
             cv.drawRoundRect(r, RADIO, RADIO, contorno)
         } else {
-            relleno.color = if (apretada && !conGlobo) LETRA_PRESIONADA else LETRA
-            cv.drawRoundRect(r, RADIO, RADIO, relleno)
+            // Base más oscura asomando 1,5 dp abajo: relieve fino como el iPhone
+            cv.drawRoundRect(r.left, r.top + dp(1.5f), r.right, r.bottom + dp(1.5f), RADIO, RADIO, baseLetra)
+            if (apretada && !conGlobo) {
+                relleno.color = LETRA_PRESIONADA
+                cv.drawRoundRect(r, RADIO, RADIO, relleno)
+            } else {
+                // Grafito con un degradado muy suave: más claro arriba, más oscuro abajo
+                if (degradadoAlto != r.height()) {
+                    degradadoAlto = r.height()
+                    letraDegradado.shader = LinearGradient(0f, 0f, 0f, r.height(), LETRA_ARRIBA, LETRA_ABAJO, Shader.TileMode.CLAMP)
+                }
+                cv.save(); cv.translate(r.left, r.top)
+                cv.drawRoundRect(0f, 0f, r.width(), r.height(), RADIO, RADIO, letraDegradado)
+                cv.restore()
+            }
         }
         if (trackpad && t.tipo != K.ESPACIO) return   // con el cursor, las teclas quedan en blanco
         val cx = r.centerX(); val cy = r.centerY()
@@ -806,9 +832,11 @@ class KeyboardView(context: Context) : View(context) {
     private fun dibujarBarra(cv: Canvas) {
         val y0 = zona; val y1 = zona + BARRA
         // Estilo «Tarjeta»: una sola pieza grafito con borde fino y las 3 palabras separadas
+        // Estilo «Cápsula»: una cápsula redonda completa con filo del color de tu fondo
         tarjeta.set(dp(6f), y0 + dp(3f), width - dp(6f), y1 - dp(3f))
-        cv.drawRoundRect(tarjeta, dp(12f), dp(12f), fondoTarjeta)
-        cv.drawRoundRect(tarjeta, dp(12f), dp(12f), bordeTarjeta)
+        val rc = tarjeta.height() / 2
+        cv.drawRoundRect(tarjeta, rc, rc, fondoTarjeta)
+        cv.drawRoundRect(tarjeta, rc, rc, bordeTarjeta)
 
         val ancho = width / 3f
         textoBarra.textSize = dp(17f)
@@ -818,13 +846,16 @@ class KeyboardView(context: Context) : View(context) {
         for (k in 0 until 3) {
             val sg = sugerencias[k]
             val x0 = k * ancho
-            if (k > 0 && casillaApretada != k && casillaApretada != k - 1)
-                cv.drawRect(x0, y0 + BARRA * 0.3f, x0 + dp(1f), y1 - BARRA * 0.3f, divisorTarjeta)
+            // Puntitos tenues entre palabras (no junto al chip de color)
+            if (k > 0 && k != principal && k - 1 != principal && casillaApretada != k && casillaApretada != k - 1)
+                cv.drawCircle(x0, (y0 + y1) / 2, dp(1.8f), puntoSep)
             if (sg == null) continue
-            if (casillaApretada == k) {
-                casilla.set(x0 + dp(if (k == 0) 9f else 3f), y0 + dp(6f), x0 + ancho - dp(if (k == 2) 9f else 3f), y1 - dp(6f))
-                relleno.color = LETRA_PRESIONADA
-                cv.drawRoundRect(casilla, dp(9f), dp(9f), relleno)
+            if (k == principal || casillaApretada == k) {
+                // La palabra que se pondrá sola va sobre un chip del color de tu fondo
+                casilla.set(x0 + dp(if (k == 0) 10f else 4f), y0 + dp(8f), x0 + ancho - dp(if (k == 2) 10f else 4f), y1 - dp(8f))
+                val rr = casilla.height() / 2
+                if (k == principal) cv.drawRoundRect(casilla, rr, rr, if (casillaApretada == k) chipApretado else chipP)
+                else { relleno.color = LETRA_PRESIONADA; cv.drawRoundRect(casilla, rr, rr, relleno) }
             }
             val p = if (k == principal) textoBarraFuerte else textoBarra
             p.color = if (k == principal) TEXTO else TEXTO_SUAVE
@@ -922,7 +953,8 @@ class KeyboardView(context: Context) : View(context) {
         camino.lineTo(cx - s * 0.45f, cy - s * 0.05f)
         camino.lineTo(cx - s, cy - s * 0.05f)
         camino.close()
-        cv.drawPath(camino, if (shift > 0) lleno else trazo)
+        // Mayúscula activa: flecha rellena del color de tu fondo
+        cv.drawPath(camino, if (shift > 0) acentoP else trazo)
         if (shift == 2) cv.drawRoundRect(cx - s * 0.55f, cy + s * 1.05f, cx + s * 0.55f, cy + s * 1.3f, s * 0.12f, s * 0.12f, acentoP)
     }
 
