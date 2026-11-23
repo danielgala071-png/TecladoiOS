@@ -659,6 +659,8 @@ class TecladoService : InputMethodService(), KeyboardView.Oyente, PanelEmoji.Oye
             if (antes != null && antes.length == 2 && antes[0].isLetter() && (despues.isNullOrEmpty() || despues[0] != ' ')) {
                 ic.commitText(" ", 1); movido(1)
                 espacioAutoMs = SystemClock.uptimeMillis()
+                // Como al tocar espacio en los símbolos: vuelve a las letras para la siguiente palabra
+                teclado?.let { kb -> if (kb.distribucion.modo == Distribuciones.SIMBOLOS || kb.distribucion.modo == Distribuciones.SIMBOLOS2) kb.ponerModo(Distribuciones.LETRAS) }
             }
         }
         ic.endBatchEdit()
