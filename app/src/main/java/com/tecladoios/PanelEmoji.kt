@@ -230,8 +230,8 @@ class PanelEmoji(context: Context) : View(context) {
             if (!borrando) return
             repeticiones++
             oyente?.respuesta(Respuesta.Tipo.BORRAR)
-            oyente?.borrar(repeticiones > 18)
-            postDelayed(this, if (repeticiones > 18) 200L else 90L)
+            oyente?.borrar(repeticiones > 8)
+            postDelayed(this, if (repeticiones > 8) 170L else 85L)
         }
     }
 

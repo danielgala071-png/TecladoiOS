@@ -372,8 +372,8 @@ class KeyboardView(context: Context) : View(context) {
                 repeticiones++
                 oyente?.respuesta(Respuesta.Tipo.BORRAR)
                 // Como el iPhone: después de un rato borra palabras enteras
-                oyente?.borrar(repeticiones > 18)
-                postDelayed(this, if (repeticiones > 18) 200L else 90L)
+                oyente?.borrar(repeticiones > 8)
+                postDelayed(this, if (repeticiones > 8) 170L else 85L)
             }
         }
     }
