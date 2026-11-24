@@ -142,10 +142,10 @@ class KeyboardView(context: Context) : View(context) {
     // Teclas menos altas (antes 66 dp) y más anchas: más cómodas a dos manos
     private val ALTO_FILA get() = dp(58f) * (config?.tamano ?: 100) / 100f
     // Separación entre letras: 2.5 dp (letras más anchas)
-    private val SEP_X get() = dp(1.8f)
+    private val SEP_X get() = dp(1.2f)       // teclas más anchas
     // Menos espacio entre filas: cada tecla queda más alta (56 dp en vez de 53)
     private val SEP_Y get() = dp(8f)
-    private val LADO get() = dp(1f)
+    private val LADO get() = dp(0.5f)
     private val RADIO get() = dp(8f)          // esquinas como el teclado de iOS 26
     /** Espacio de la barra de navegación del sistema (se pinta negro) */
     var abajoSistema = 0; set(v) { if (field != v) { field = v; requestLayout() } }
@@ -411,7 +411,14 @@ class KeyboardView(context: Context) : View(context) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 // Los toques llegan al instante, sin esperar al siguiente cuadro de la pantalla
                 if (e.actionMasked == MotionEvent.ACTION_DOWN) requestUnbufferedDispatch(e)
-                bajar(e.getPointerId(i), e.getX(i), e.getY(i))
+                // Dónde cubre más el dedo: Android da el centro de la zona de contacto. Con el pulgar
+                // apoyado de plano (contacto grande) ese centro cae más abajo de lo que apuntas, así
+                // que se corre un poco hacia arriba según el tamaño del contacto
+                val y = e.getY(i)
+                val tm = e.getTouchMajor(i)
+                val yAj = if (y > zona + BARRA && tm > 0f)
+                    max(zona + BARRA + 1f, y - min(tm * 0.10f, ALTO_FILA * 0.18f)) else y
+                bajar(e.getPointerId(i), e.getX(i), yAj)
             }
             MotionEvent.ACTION_MOVE -> for (k in 0 until e.pointerCount) {
                 dedos[e.getPointerId(k)]?.let { mover(it, e.getX(k), e.getY(k)) }

@@ -96,7 +96,7 @@ class Respuesta(c: Context) {
         val e = try {
             when {
                 // Golpe fuerte y seco: el motor a fuerza máxima por un instante (14 ms), sin cola
-                v.hasAmplitudeControl() -> VibrationEffect.createOneShot(14L, 255)
+                v.hasAmplitudeControl() -> VibrationEffect.createOneShot(10L, 255)   // fuerte, corto y suave al dedo
                 v.areAllEffectsSupported(VibrationEffect.EFFECT_HEAVY_CLICK) == Vibrator.VIBRATION_EFFECT_SUPPORT_YES ->
                     VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK)
                 v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_CLICK) ->
@@ -115,7 +115,7 @@ class Respuesta(c: Context) {
         val e = try {
             when {
                 // Teclas grandes: el mismo golpe seco, un poco más largo y contundente (22 ms)
-                v.hasAmplitudeControl() -> VibrationEffect.createOneShot(22L, 255)
+                v.hasAmplitudeControl() -> VibrationEffect.createOneShot(16L, 255)
                 v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_THUD, VibrationEffect.Composition.PRIMITIVE_CLICK) ->
                     VibrationEffect.startComposition()
                         .addPrimitive(VibrationEffect.Composition.PRIMITIVE_THUD, 0.8f)
