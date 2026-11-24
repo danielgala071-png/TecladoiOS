@@ -61,7 +61,8 @@ class KeyboardView(context: Context) : View(context) {
     private var LETRA_PRESIONADA = 0xFF48484A.toInt()
     private val FUNCION = Color.BLACK               // mayúscula, borrar, 123, emoji, espacio, intro
     private var FUNCION_PRESIONADA = 0xFF3A3A3C.toInt()   // se aclara al presionar (más notorio)
-    private val CONTORNO = 0xFF3A3A3C.toInt()
+    private val CONTORNO = 0xFF2C2C2E.toInt()
+    private val LETRA_AMOLED = 0xFF111113.toInt()   // letras: casi negro, se distinguen de las de función
     private val TEXTO = Color.WHITE
     private val ELEGIDA = 0xFF636366.toInt()        // opción elegida al mantener una tecla
 
@@ -753,8 +754,8 @@ class KeyboardView(context: Context) : View(context) {
 
     // ---------- Dibujo ----------
     private val relleno = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val contorno = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1f); color = CONTORNO }
-    private val letras = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; textAlign = Paint.Align.CENTER; typeface = Typeface.create("sans-serif", Typeface.NORMAL) }
+    private val contorno = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(0.8f); color = CONTORNO }
+    private val letras = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; textAlign = Paint.Align.CENTER; typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL) }
     private val etiquetas = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; textAlign = Paint.Align.CENTER; typeface = Typeface.create("sans-serif", Typeface.NORMAL) }
     private val trazo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; style = Paint.Style.STROKE; strokeWidth = dp(1.25f); strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND }   // íconos finos estilo SF
     private val lleno = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; style = Paint.Style.FILL }
@@ -791,7 +792,7 @@ class KeyboardView(context: Context) : View(context) {
         if (!CON_COLOR) {
             // Negro AMOLED total: todas las teclas negras con un contorno fino; al presionar, grafito
             relleno.color = when {
-                !apretada || conGlobo -> FUNCION
+                !apretada || conGlobo -> if (t.funcion) FUNCION else LETRA_AMOLED
                 t.funcion -> FUNCION_PRESIONADA
                 else -> LETRA_PRESIONADA
             }
@@ -853,7 +854,7 @@ class KeyboardView(context: Context) : View(context) {
     private val textoBarraFuerte = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = TEXTO; textAlign = Paint.Align.CENTER; typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL) }
     private val TEXTO_SUAVE = 0xFFD1D1D6.toInt()
     private val fondoTarjeta = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
-    private val bordeTarjeta = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1f); color = CONTORNO }   // gris neutro
+    private val bordeTarjeta = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(0.8f); color = CONTORNO }   // gris neutro
     private val divisorTarjeta = Paint().apply { color = 0xFF48484A.toInt() }
     private val tarjeta = RectF()
     private val casilla = RectF()
